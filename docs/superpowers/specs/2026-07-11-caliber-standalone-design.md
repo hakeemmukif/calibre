@@ -2,6 +2,7 @@
 
 **Status:** Approved design (2026-07-11). Feeds implementation planning (writing-plans).
 **Home:** `/Users/hakeem/calibre` (new repo, no runtime dependency on `career-ops`).
+**See §11 — Vision expansion & niche (2026-07-11): supersedes where in conflict.** §1–§10 describe porting the 13 kit screens; §11 re-aims the product around the confirmed niche and adds the new surfaces.
 
 ---
 
@@ -183,3 +184,57 @@ Each phase is separately plannable; this doc ties them together. "All faithful s
 - **Interviews scheduling** is genuinely net-new (no donor code); v1 delivers prep/story-bank only, scheduling deferred.
 - **Single-operator assumption**: no auth in v1; revisit before any real multi-user exposure (donor's shared-file-plane bug is avoided by not porting the file plane).
 - **Model choice on OpenRouter**: defaults in `config/models.yml` to be tuned for cost/quality per task; needs a first-pass calibration in Phase B.
+
+---
+
+## 11. Vision expansion & niche (2026-07-11)
+
+This section re-aims the product. §1–§10 stand as the technical foundation (framework, boundaries, design-system lift, backend rebuild, data contract); §11 changes *what we point it at* and *which surfaces lead*.
+
+### 11.1 Niche & wedge (confirmed)
+- **Primary user:** Malaysian (then SEA) professionals seeking **remote/global** roles — the builder is the first user. **Malaysia-local** job sources ship at launch too (user decision: "remote + local at launch").
+- **Wedge (the headline):** every posting scored for **fit + legitimacy** — ghost-job / scam probability foregrounded. Ghost/fake postings are 18–45% of listings (2025–26 studies); Malaysia logged 1,537 job-scam cases / RM31.8M lost in Q1 2026. **No incumbent tracker (Teal/Huntr/Simplify) leads with legitimacy.** The donor's "Block G" legitimacy detector already implements this — it becomes the marquee.
+- **Retention layer:** the lifelong tracker (one-stop career management across years).
+- **Template optimization:** an **internal** quality engine (log which scoring templates correlate with real interview outcomes per job family → proprietary data moat), NOT a user-facing headline.
+- **Pricing frame:** ~RM19–39/mo, undercutting Teal ($29). Respect Simplify's free-tier bar.
+- **Deferred, not dropped:** B40 (later B2G/NGO licensing of the legitimacy engine, funded by Persona A revenue); local white-collar mass-market (later expansion; sits in SEEK's AI kill-zone).
+
+### 11.2 Accepted added scope (vs the donor)
+The donor scans global ATS only. Launching local means net-new: **Malaysian-board source connectors** (JobStreet/Hiredly/Maukerja/FastJobs) and **Bahasa Malaysia template variants**. Handled by a **source-connector abstraction** + **`PersonaToggle`** (switches active source-set, language, and role-type presets: `remote-global` ⇄ `malaysia-local`).
+
+### 11.3 Vision → workstreams (fable-able units)
+| # | Requirement | Donor coverage | New work |
+|---|---|---|---|
+| 1 | Scan new jobs as they arrive | scan engine (5 ATS), `scan_jobs`, radar | continuous/scheduled ingestion + "new since last visit" + alerts |
+| 2 | Paste a URL to eval a role | `evaluateUrlForUser`, verdict + `jd_cache`/`verdict_cache` | front-door omnibox UI + Caliber styling (logic ~done) |
+| 3 | Cheapest model, template-guided LLM | `modes/*.md`, `config/models.yml`, 6-block rubric | OpenRouter routing per task + wire templates to model-config |
+| 4 | Templates measured/optimized per job type | `eval_feedback` learning loop, rubric | template registry + per-template metrics (cost/accuracy/calibration) + outcome loop (internal) |
+| 5 | Lifelong one-stop career dashboard | tracker, applications, reports, resume, cover, analytics | career-timeline / multi-year history framing |
+| 6 | Two directions (remote-global / MY-local) | profile/targets, source config, role-matcher | MY-board connectors + BM templates + `PersonaToggle` presets |
+| 7 | Niche strategy | — | resolved (§11.1) |
+
+### 11.4 New design-system components (compose the 13 primitives; none reinvent them)
+1. **`UrlEvalBar`** (header omnibox: Input+Button) → **`EvalResultCard`** (ScoreBadge + FitBar + **legitimacy Tag foregrounded**). Front door for #2.
+2. **`FeedStream`** — the hero: live verified-jobs feed; each row scored for fit **and** legitimacy, with **`NewBadge`** for since-last-visit items (#1). Distinct from the batch "Matches" screen.
+3. **`NotificationBell` + `AlertList`** — "N new roles match your targets" (#1 alerting).
+4. **`TemplateStudio`** (internal page) — author/version templates + **`TemplateMetricCard`** (cost/accuracy/calibration) + **`PromptDiff`** (#4).
+5. **`PersonaToggle`** — remote-global ⇄ malaysia-local; flips sources/language/role-types (#6). In onboarding + profile + app header.
+6. **`CareerTimeline`** — multi-year chronological application history (#5).
+7. **Extended `Sources`** + **`SourceConnector`** rows — add Malaysian boards (#6).
+
+### 11.5 Hero re-ordering
+v1 leads with **(a)** the verified-jobs `FeedStream` (fit + legitimacy), **(b)** `UrlEvalBar` paste-to-eval, **(c)** the lifelong tracker as retention. Template Studio is internal. The 13 kit screens remain the base; these compositions sit on top.
+
+### 11.6 Validation gates (go/no-go, from the market scan)
+Treat as pre-build/early-build checks, not afterthoughts:
+1. 10 Malaysian remote-seekers prepay RM29/mo (or RM99 founder-lifetime) off a landing page in 30 days.
+2. Ghost-job scorer ≥ ~75% precision on 100 hand-labeled postings (else the wedge is marketing, not product).
+3. ≥50% of target users' desired jobs live on scannable ATS sources vs locked platforms (LinkedIn) — else pivot to paste-URL-first.
+4. Users self-report outcomes (interview/no-reply) at ≥20% — else the template-optimization moat and tracker stickiness weaken.
+5. Inference cost < ~RM3/user/month at 50 scans/day on OpenRouter's cheap tier — else the free tier is unsustainable.
+
+### 11.7 Phase impact
+- **Phase A** adds: `FeedStream`, `UrlEvalBar`/`EvalResultCard`, `PersonaToggle`, `NotificationBell` as faithful shells (legitimacy foregrounded in the visual language).
+- **Phase B** adds: source-connector abstraction (global ATS + MY boards), continuous ingestion + "new-since" diffing, OpenRouter routing.
+- **Phase C** adds: `TemplateStudio` + metrics, Bahasa template variants, `CareerTimeline`.
+- Gate #2 (ghost-job precision) and #5 (inference cost) are validated during Phase B.
