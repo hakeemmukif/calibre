@@ -1,0 +1,23 @@
+{
+  "name": "calibre-web",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "storybook build"
+  },
+  "dependencies": {
+    "lucide-react": "^1.24.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@storybook/react-vite": "^8.6.18",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^4.7.0",
+    "storybook": "^8.6.18",
+    "typescript": "^7.0.2",
+    "vite": "^6.4.3"
+  }
+}

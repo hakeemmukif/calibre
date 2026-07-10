@@ -1,0 +1,123 @@
+/* ============================================================
+   Caliber — Design System tokens + base
+   Single entry point. Link this one file; everything reads from
+   the custom properties below.
+
+   IDENTITY: "Swiss Grid" (direction 07) — International Typographic
+   Style. Helvetica, a strict black-on-white grid, one signal red,
+   hard 90° corners, no shadows. Delineation by rule, not elevation.
+   Numbers are the heroes: large, tabular, red where they matter.
+   ============================================================ */
+
+:root {
+  /* — Type families — Helvetica / Arial system stack (no webfont) — */
+  --font-body: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-display: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --weight-bold: 700;
+
+  /* — Type scale (CSS `font` shorthand: weight size/line-height family) — */
+  --type-h1: 700 31px/1.08 var(--font-display);
+  --type-h2: 700 22px/1.16 var(--font-display);
+  --type-h3: 600 16px/1.28 var(--font-display);
+  --type-body-lg: 400 17px/1.55 var(--font-body);
+  --type-body: 400 15px/1.5 var(--font-body);
+  --type-label: 600 13.5px/1.35 var(--font-body);
+  --type-caption: 400 12.5px/1.45 var(--font-body);
+  --type-eyebrow: 600 11px/1.3 var(--font-body);
+
+  /* — Font sizes (used standalone via fontSize) — */
+  --text-md: 15px;
+  --text-sm: 13.5px;
+  --text-xs: 11.5px;
+
+  --tracking-tighter: -0.03em;   /* tight Helvetica display tracking */
+  --tracking-caps: 0.12em;       /* wide tracked uppercase labels */
+
+  /* — Surfaces (stark white, grey wells) — */
+  --bg-app: #f6f7fb;          /* app canvas (tweakable) */
+  --bg-subtle: #f4f4f4;       /* faint panel inside cards */
+  --surface: #ffffff;         /* cards / paper */
+  --surface-sunken: #eef0f5;  /* sunken wells, tracks (tweakable) */
+  --neutral-50: #f7f7f7;
+  --neutral-300: #d4d4d4;
+  --neutral-400: #a3a3a3;
+  --ink-900: #ffffff;         /* text on the red accent fill (white) */
+
+  /* — Borders — hairline grey for fields, true black for emphasis — */
+  --border: #e2e2e2;
+  --border-faint: #ececec;
+  --border-strong: #000000;
+
+  /* — Accent: the one signal color (red). Tweakable at runtime — */
+  --accent: #e8482b;
+  --accent-hover: #cc3a20;
+  --accent-soft: #fce8e3;
+  --accent-ink: #cc3a20;
+  --primary: #cc3a20;         /* heading rules / accented icons */
+  --focus-ring: #e8482b;
+  --lime-400: #e8482b;        /* legacy name — now the signal red */
+
+  /* — Fit / signal system (strong › mid › weak › ghost) —
+     strong = a confident green (positive), mid = amber, weak/ghost = grey.
+     The red is reserved as the brand action accent, not a fit color. — */
+  --fit-strong: #1f8a4c;  --fit-strong-soft: #e3f3ea;
+  --fit-mid: #b45309;     --fit-mid-soft: #f7e7d2;
+  --fit-weak: #6b7280;    --fit-weak-soft: #f1f2f4;
+  --ghost: #8a8a8a;       --ghost-soft: #f0f0f0;
+
+  /* — Status — */
+  --success: #1f8a4c;     --success-soft: #e3f3ea;
+  --danger-ink: #b3261e;  --danger-soft: #fbe3e0;
+  --verified: #0f766e;    --verified-soft: #d6efea;
+
+  /* — Text — black on white — */
+  --text-strong: #000000;
+  --text-body: #222222;
+  --text-muted: #757575;
+  --text-faint: #a0a0a0;
+
+  /* — Radius — hard 90° corners everywhere — */
+  --radius-sm: 9px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-pill: 999px;   /* tags / chips / count badges */
+  --radius-bar: 999px;    /* progress + score tracks */
+
+  /* — Elevation — flat. Floating layers (popover/modal) only. — */
+  --shadow-xs: none;
+  --shadow-sm: none;
+  --shadow-md: 0 4px 14px rgba(0,0,0,.10);
+  --shadow-lg: 0 10px 34px rgba(0,0,0,.18);
+  --shadow-focus: 0 0 0 3px rgba(232,72,43,.30);
+
+  /* — Motion — */
+  --transition: 140ms cubic-bezier(.4, 0, .2, 1); /* @kind other */
+
+  /* — Gradients — */
+  --gradient-score: linear-gradient(90deg, #34a85a, #1f8a4c); /* @kind color */
+  --gradient-brand: linear-gradient(135deg, #1a1a1a 0%, #000000 100%); /* @kind color */
+
+  /* — Layout — */
+  --sidebar-w: 248px;
+  --content-max: 1120px;
+}
+
+/* — Base reset — */
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  font: var(--type-body);
+  color: var(--text-body);
+  background: var(--bg-app);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+h1, h2, h3, h4, h5, h6 { margin: 0; color: var(--text-strong); }
+p { margin: 0; }
+ul, ol { margin: 0; }
+button { font-family: inherit; }
+a { color: inherit; text-decoration: none; }
+img { display: block; max-width: 100%; }
+::selection { background: var(--accent); color: #fff; }
