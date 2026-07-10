@@ -1,0 +1,211 @@
+// Caliber contract types — Zod schemas are the single source of truth.
+// Verbatim from docs/architecture/api-contract.md §2. Everything (fixtures,
+// compositions, future server routes) imports from here; nothing redeclares
+// these shapes. `Schema.parse(...)` at every boundary — no silent defaults.
+import { z } from "zod";
+
+export const Persona = z.enum(["remote", "local"]);
+export type Persona = z.infer<typeof Persona>;
+
+export const LegitimacyTier = z.enum(["verified", "clear", "suspicious", "ghost", "scam"]); // §11.8
+export type LegitimacyTier = z.infer<typeof LegitimacyTier>;
+
+export const Tone = z.enum(["verified", "good", "warn", "ghost", "danger"]);
+export type Tone = z.infer<typeof Tone>;
+
+export const Legitimacy = z.object({
+  tier: LegitimacyTier,
+  tone: Tone,
+  summary: z.string(),
+  confidence: z.number().min(0).max(1).optional(), // only if scorer emits a real number (§11.8 D/G)
+});
+export type Legitimacy = z.infer<typeof Legitimacy>;
+
+export const SourceRef = z.object({ // Source entity, referenced from Job
+  id: z.string(),
+  name: z.string(),
+  kind: z.enum(["ats", "board"]),
+  persona: Persona,
+});
+export type SourceRef = z.infer<typeof SourceRef>;
+
+export const Job = z.object({ // §5 frozen + §11.8 extensions
+  id: z.string(),
+  score: z.number().min(0).max(5),
+  ghost: z.boolean().optional(),
+  role: z.string(),
+  company: z.string(),
+  meta: z.string(),
+  verdict: z.string(),
+  why: z.string(),
+  tags: z.array(z.object({ tone: Tone, label: z.string() })),
+  breakdown: z.array(
+    z.object({
+      label: z.string(),
+      value: z.number(),
+      display: z.string().optional(),
+      tone: Tone.optional(),
+    }),
+  ),
+  fit: z.array(z.object({ k: z.string(), v: z.string() })),
+  gaps: z.array(z.object({ tone: z.enum(["warn", "ok"]), k: z.string(), v: z.string() })),
+  legitimacy: Legitimacy,
+  applyUrl: z.string().url(), // F3: the canonical posting URL
+  source: SourceRef,
+  persona: Persona,
+  firstSeen: z.string().datetime(),
+  isNew: z.boolean(),
+});
+export type Job = z.infer<typeof Job>;
+
+export const Resume = z.object({ // §5; `hasResume` is NOT a field — absence = 404
+  id: z.string(),
+  atsScore: z.number().int().min(0).max(100),
+  updatedAt: z.string().datetime(), // wire form of kit's `updated`; UI derives "3d ago"
+  headline: z.string(),
+  location: z.string(),
+  summary: z.string(),
+  experience: z.array(
+    z.object({ title: z.string(), company: z.string(), dates: z.string(), bullets: z.array(z.string()) }),
+  ),
+  skills: z.array(z.string()),
+  rawText: z.string(), // parse provenance, grounds F4/F6
+});
+export type Resume = z.infer<typeof Resume>;
+
+export const RunStatus = z.enum(["queued", "running", "completed", "failed"]);
+export type RunStatus = z.infer<typeof RunStatus>;
+
+export const Progress = z.object({ // donor JobProgress shape
+  stage: z.string(),
+  current: z.number().int(),
+  total: z.number().int(),
+  label: z.string(),
+});
+export type Progress = z.infer<typeof Progress>;
+
+export const SearchRun = z.object({
+  id: z.string(),
+  status: RunStatus,
+  persona: Persona,
+  sources: z.array(z.string()), // SourceRef ids in scope
+  progress: Progress.nullable(),
+  stats: z.object({
+    scanned: z.number().int(),
+    worth: z.number().int(),
+    ghosts: z.number().int(),
+  }), // §5 ScanStats, feeds summary strip
+  startedAt: z.string().datetime(),
+  finishedAt: z.string().datetime().nullable(),
+  error: z.string().nullable(),
+});
+export type SearchRun = z.infer<typeof SearchRun>;
+
+export const Application = z.object({ // §5 Applied, wire-normalised
+  id: z.string(),
+  jobId: z.string(),
+  role: z.string(),
+  company: z.string(),
+  meta: z.string(),
+  appliedAt: z.string().datetime(), // `appliedAgo` derived client-side
+  score: z.number().min(0).max(5),
+  stage: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]), // Applied→Screen→Interview→Decision
+  statusLabel: z.string(),
+  statusTone: z.enum(["good", "verified", "neutral"]), // neutral = closed
+  tailored: z.boolean(),
+  note: z.string(),
+  tailoredResumeId: z.string().nullable(),
+  answersId: z.string().nullable(),
+});
+export type Application = z.infer<typeof Application>;
+
+export const ApplicationQuestion = z.object({
+  id: z.string(),
+  prompt: z.string(),
+  kind: z.enum(["text", "textarea", "select", "multiselect", "boolean", "file"]),
+  options: z.array(z.string()).optional(), // required iff kind is (multi)select
+  required: z.boolean(),
+  maxLength: z.number().int().optional(),
+});
+export type ApplicationQuestion = z.infer<typeof ApplicationQuestion>;
+
+export const ApplicationAnswer = z.object({
+  questionId: z.string(),
+  prompt: z.string(),
+  answer: z.string(),
+  grounding: z.array(
+    z.object({
+      source: z.enum(["experience", "skills", "summary", "headline"]),
+      quote: z.string(),
+    }),
+  ), // every claim traces to the résumé
+});
+export type ApplicationAnswer = z.infer<typeof ApplicationAnswer>;
+
+export const ApplicationAnswers = z.object({ // persisted set entity
+  id: z.string(),
+  jobId: z.string(),
+  resumeId: z.string(),
+  answers: z.array(ApplicationAnswer),
+  model: z.string(),
+  createdAt: z.string().datetime(),
+});
+export type ApplicationAnswers = z.infer<typeof ApplicationAnswers>;
+
+export const TailoredResume = z.object({
+  id: z.string(),
+  jobId: z.string(),
+  resumeId: z.string(),
+  status: RunStatus,
+  progress: Progress.nullable(),
+  resume: Resume.omit({ id: true, rawText: true }).nullable(), // null until completed
+  diff: z.array(
+    z.object({
+      section: z.string(),
+      op: z.enum(["add", "remove", "modify"]),
+      before: z.string().optional(),
+      after: z.string().optional(),
+      reason: z.string(),
+    }),
+  ),
+  model: z.string(),
+  createdAt: z.string().datetime(),
+  completedAt: z.string().datetime().nullable(),
+});
+export type TailoredResume = z.infer<typeof TailoredResume>;
+
+export const ErrorEnvelope = z.object({
+  error: z.object({
+    code: z.enum([
+      "VALIDATION_ERROR",
+      "NOT_FOUND",
+      "CONFLICT",
+      "RUN_NOT_READY",
+      "PARSE_FAILED",
+      "EXTRACTION_FAILED",
+      "UPSTREAM_LLM_ERROR",
+      "PAYLOAD_TOO_LARGE",
+    ]),
+    message: z.string(),
+    details: z.unknown().optional(), // e.g. ZodIssue[] for VALIDATION_ERROR
+  }),
+});
+export type ErrorEnvelope = z.infer<typeof ErrorEnvelope>;
+
+// MatchDetail — JobDetail's enriched per-job view (§5 `MatchDetail`, not yet
+// frozen in §2). Minimal shape for the Fit·Legitimacy·Breakdown tabs; the
+// Shell/Feed/Eval group doesn't render JobDetail but the type is declared
+// here so the next builder doesn't have to re-derive it from §5's prose.
+export const MatchDetail = z.object({
+  archetype: z.string(),
+  legitimacy: Legitimacy,
+  breakdown: z.array(
+    z.object({
+      label: z.string(),
+      value: z.number(),
+      display: z.string().optional(),
+      tone: Tone.optional(),
+    }),
+  ),
+});
+export type MatchDetail = z.infer<typeof MatchDetail>;

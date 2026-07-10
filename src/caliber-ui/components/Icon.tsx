@@ -5,7 +5,9 @@ import {
   Radar, SlidersHorizontal, Sparkles, Send, Clock, Shield, Zap, Download, Upload,
   RefreshCw, ArrowRight, ArrowLeft, ChevronDown, ChevronUp, Calendar, BookOpen, BarChart3,
   TriangleAlert, Search, Ghost, Layers, Plus, CircleHelp, MessageSquare, Pencil,
-  Copy, Link2, Circle, Activity, Building2, Slash, type LucideIcon, type LucideProps,
+  Copy, Link2, Circle, Activity, Building2, Slash, Bell, Bookmark, Link,
+  ExternalLink, Trash2,
+  type LucideIcon, type LucideProps,
 } from "lucide-react";
 
 // Caliber's icon set: stable kebab-case names mapped to lucide-react components,
@@ -52,6 +54,11 @@ const ICONS: Record<string, LucideIcon> = {
   "linkedin": Link2,
   "activity": Activity,
   "building": Building2,
+  "bell": Bell,
+  "bookmark": Bookmark,
+  "link": Link,
+  "external-link": ExternalLink,
+  "trash-2": Trash2,
 };
 
 export type IconName = keyof typeof ICONS;
