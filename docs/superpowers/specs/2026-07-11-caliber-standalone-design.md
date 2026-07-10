@@ -238,3 +238,23 @@ Treat as pre-build/early-build checks, not afterthoughts:
 - **Phase B** adds: source-connector abstraction (global ATS + MY boards), continuous ingestion + "new-since" diffing, OpenRouter routing.
 - **Phase C** adds: `TemplateStudio` + metrics, Bahasa template variants, `CareerTimeline`.
 - Gate #2 (ghost-job precision) and #5 (inference cost) are validated during Phase B.
+
+### 11.8 Hero page — locked treatment: **A · Signal Pill**
+Chosen from the 8-treatment exploration (artifact: `claude.ai/code/artifact/b69138d2-d3ff-49d4-b34a-e2cefb03d3f2`). Comfortable, calm cards — legitimacy present but not shouting.
+
+**Header (`AppShell` top row):** `PersonaToggle` (segmented pill: Remote·global ⇄ Malaysia·local) · `UrlEvalBar` (Input + primary "Check" Button, link icon) · `NotificationBell` (count badge).
+
+**Summary strip:** Scanned today · Worth your time · **Flagged ghost/scam** (rendered in `--accent-ink` to draw the eye) · Since last scan. Tabular numerals.
+
+**Filter chips (real, not decorative):** All · New · Verified · Suspicious · Remote · Fit ≥ 4. Each actually filters the feed.
+
+**Feed row (the composition):** `Card` (hover lift) → [ `ScoreBadge` fit ring, left ] · [ role title + `Tag` legitimacy pill + `NewBadge` · company/location/comp sub · why-you-fit snippet ] · [ `Open` / `Save` / `Skip`·`Dismiss` actions ].
+
+**Legitimacy tones (Tag), semantic — separate from the red accent:** Verified → `verified` teal + badge-check · Clear → `good` green + check · Suspicious → `warn` amber + alert · Ghost → `ghost` grey · Likely scam → `danger` red + alert.
+
+**Data (extends the frozen `Job` type):** `legitimacy { tier: 'verified'|'clear'|'suspicious'|'ghost'|'scam'; tone; summary; confidence?: number }`, `source`, `persona: 'remote'|'local'`, `firstSeen`, `isNew`.
+
+**Adopted alongside A (not v1-blocking):**
+- **C · Console** (sortable table) becomes the **saved/tracker view** — the direct "LinkedIn has no tracker" answer.
+- **H's plain-language warning banner** may dress the *flagged tail* of the feed as an enhancement once the ghost-scorer is live (turns a legitimacy field into the scam-shield story). Decide after Gate #2.
+- **D/G confidence meter** only if the ghost-scorer emits a real confidence *number* (else a tier-only pill is honest; a meter over-promises). Open item for Phase B.
