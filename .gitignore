@@ -3,6 +3,7 @@ storybook-static/
 dist/
 .next/
 out/
+*.tsbuildinfo
 *.log
 .DS_Store
 data/uploads/
