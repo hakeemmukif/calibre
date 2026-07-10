@@ -24,6 +24,7 @@ export function Chip({
   onClick,
   children,
   style,
+  disabled = false,
   ...rest
 }: ChipProps) {
   const [hover, setHover] = React.useState(false);
@@ -44,6 +45,7 @@ export function Chip({
   return (
     <button
       type="button"
+      disabled={disabled}
       onClick={onClick}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
@@ -57,8 +59,9 @@ export function Chip({
         background: skin.bg,
         color: skin.fg,
         border: skin.bd,
-        cursor: "pointer",
-        filter: hover && !selected ? "brightness(0.98)" : "none",
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.5 : 1,
+        filter: !disabled && hover && !selected ? "brightness(0.98)" : "none",
         transition: "background var(--transition), border-color var(--transition), color var(--transition)",
         ...style,
       }}

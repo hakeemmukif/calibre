@@ -2,16 +2,20 @@
 import * as React from "react";
 import { Button } from "../../components/Button";
 import { Icon } from "../../components/Icon";
-import { SummaryStrip, type SummaryStripStats } from "./SummaryStrip";
+import { SummaryStrip } from "./SummaryStrip";
 import { FilterChips, FEED_FILTERS, type FeedFilter } from "./FilterChips";
 import { JobRow } from "./JobRow";
-import type { Job } from "../../../types";
+import type { Job, SummaryStripStats } from "../../../types";
 
 export type JobRowAction = "open" | "save" | "dismiss";
 
 export interface JobFeedProps {
   jobs: Job[];
   filter: FeedFilter;
+  onFilterChange(f: FeedFilter): void;
+  /** Server-computed Feed hero numbers (api-contract.md `GET /api/jobs`
+   * `stats`) — never derived client-side from the (paginated) `jobs` page. */
+  stats: SummaryStripStats;
   loading: boolean;
   error?: string;
   /** Not in the frozen component-inventory signature; added so the
@@ -37,16 +41,6 @@ function matchesFilter(job: Job, filter: FeedFilter): boolean {
   }
 }
 
-function computeStats(jobs: Job[]): SummaryStripStats {
-  return {
-    scanned: jobs.length,
-    worth: jobs.filter((j) => j.legitimacy.tier === "verified" || j.legitimacy.tier === "clear").length,
-    ghosts: jobs.filter((j) => j.ghost || j.legitimacy.tier === "ghost").length,
-    flagged: jobs.filter((j) => j.legitimacy.tier === "suspicious" || j.legitimacy.tier === "scam").length,
-    sinceLast: jobs.filter((j) => j.isNew).length,
-  };
-}
-
 function computeCounts(jobs: Job[]): Record<FeedFilter, number> {
   const counts = {} as Record<FeedFilter, number>;
   for (const f of FEED_FILTERS) counts[f.value] = jobs.filter((j) => matchesFilter(j, f.value)).length;
@@ -54,21 +48,19 @@ function computeCounts(jobs: Job[]): Record<FeedFilter, number> {
 }
 
 // JobFeed (FeedStream) — the live scored feed (F2), §11.8's hero: SummaryStrip
-// + FilterChips + JobRow[] + a "new since last visit" divider. Summary stats
-// and filter counts are derived from `jobs` — they aren't separately passed.
-export function JobFeed({ jobs, filter, loading, error, onRetry, onRowAction }: JobFeedProps) {
-  const [activeFilter, setActiveFilter] = React.useState<FeedFilter>(filter);
-
-  const stats = computeStats(jobs);
+// + FilterChips + JobRow[] + a "new since last visit" divider. `stats` is
+// server-computed and required; only the FilterChips counts (a legitimate
+// client-side tally of the currently-loaded `jobs`) are derived here.
+export function JobFeed({ jobs, filter, onFilterChange, stats, loading, error, onRetry, onRowAction }: JobFeedProps) {
   const counts = computeCounts(jobs);
-  const filtered = jobs.filter((j) => matchesFilter(j, activeFilter));
+  const filtered = jobs.filter((j) => matchesFilter(j, filter));
   const newJobs = filtered.filter((j) => j.isNew);
   const olderJobs = filtered.filter((j) => !j.isNew);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <SummaryStrip stats={stats} />
-      <FilterChips active={activeFilter} counts={counts} onChange={setActiveFilter} />
+      <FilterChips active={filter} counts={counts} onChange={onFilterChange} />
 
       {loading && (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -83,7 +75,6 @@ export function JobFeed({ jobs, filter, loading, error, onRetry, onRowAction }: 
               }}
             />
           ))}
-          <style>{`@keyframes caliber-pulse { from { opacity: .55; } to { opacity: 1; } }`}</style>
         </div>
       )}
 

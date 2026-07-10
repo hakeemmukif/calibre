@@ -7,13 +7,18 @@ import { QuestionListEditor } from "./QuestionListEditor";
 import { AnswerCard, type AnswerDraftStatus, type QuestionSource, type RegenerateMode } from "./AnswerCard";
 import { ResumeRail } from "./ResumeRail";
 import type { GroundingItem } from "./GroundingChips";
-import type { Job, Resume, ApplicationQuestion, ApplicationAnswer } from "../../../types";
-import { answers as answersFixture } from "../../fixtures";
+import type { Job, Resume, ApplicationQuestion, ApplicationAnswer, ApplicationAnswers } from "../../../types";
 
 export interface ApplyQuestionsAssistantProps {
   job: Job;
   resume: Resume;
   detected?: ApplicationQuestion[];
+  /** POST /api/apply/questions — extract questions from pasted form/JD text. */
+  onExtract(mode: IntakeMode, text: string): Promise<ApplicationQuestion[]>;
+  /** POST /api/apply/answers — draft résumé-grounded answers for all questions. */
+  onDraft(questions: ApplicationQuestion[]): Promise<ApplicationAnswers>;
+  /** A targeted re-draft of a single answer (PATCH /api/apply/answers/:id in effect). */
+  onRegenerate(questionId: string, mode: RegenerateMode): Promise<ApplicationAnswer>;
   onSaveAnswers(answers: ApplicationAnswer[]): void;
 }
 
@@ -26,43 +31,11 @@ interface Draft {
 
 let nextId = 1;
 
-// draftAnswerFor — the stand-in for POST /api/apply/answers (an LLM call in
-// production). Deterministic: reuses the job-grab-backend fixture answer
-// when the question matches one of the seeded ids, otherwise synthesizes a
-// résumé-grounded draft from `resume.summary` + the most recent bullet.
-// Boolean questions (e.g. work authorization) aren't backed by résumé text,
-// so they draft with empty grounding — the real "not found in résumé"
-// signal, per the api-contract's empty-grounding-array convention.
-function draftAnswerFor(question: ApplicationQuestion, resume: Resume, seeded?: ApplicationAnswer): ApplicationAnswer {
-  if (seeded) return seeded;
-  if (question.kind === "boolean") {
-    return { questionId: question.id, prompt: question.prompt, answer: "Yes", grounding: [] };
-  }
-  const bullet = resume.experience[0]?.bullets[0];
-  const text = `${resume.summary} ${bullet ? `For example: ${bullet}` : ""}`.trim();
-  const clipped = question.maxLength ? text.slice(0, question.maxLength) : text;
-  return {
-    questionId: question.id,
-    prompt: question.prompt,
-    answer: clipped,
-    grounding: [
-      { source: "summary", quote: resume.summary },
-      ...(bullet ? ([{ source: "experience" as const, quote: bullet }]) : []),
-    ],
-  };
-}
-
-function regenerateText(base: string, mode: RegenerateMode, resume: Resume): string {
-  if (mode === "shorter") return base.slice(0, Math.max(40, Math.floor(base.length * 0.6))).trim();
-  if (mode === "more-formal") return `I would like to note that ${base.charAt(0).toLowerCase()}${base.slice(1)}`;
-  return `${base} Specifically, ${resume.experience[0]?.bullets[0]?.toLowerCase() || "this drew directly on my recent work"}.`;
-}
-
 // ApplyQuestionsAssistant — F4 in full (§2): intake → extract → review
 // questions → draft → edit/copy, with a résumé side-rail grounding chips
 // scroll to. Renders as a full page from JobDetail's "Answer questions"
 // launch, not a modal.
-export function ApplyQuestionsAssistant({ job, resume, detected, onSaveAnswers }: ApplyQuestionsAssistantProps) {
+export function ApplyQuestionsAssistant({ job, resume, detected, onExtract, onDraft, onRegenerate, onSaveAnswers }: ApplyQuestionsAssistantProps) {
   const [phase, setPhase] = React.useState<Phase>(detected && detected.length > 0 ? "review" : "intake");
   const [intakeMode, setIntakeMode] = React.useState<IntakeMode>("detected");
   const [questions, setQuestions] = React.useState<ApplicationQuestion[]>(detected ?? []);
@@ -76,26 +49,22 @@ export function ApplyQuestionsAssistant({ job, resume, detected, onSaveAnswers }
   const [railOpen, setRailOpen] = React.useState(false);
   const [railActive, setRailActive] = React.useState<GroundingItem | undefined>();
 
-  function handleExtract(mode: IntakeMode, text?: string) {
-    const wordCount = (text || "").trim().split(/\s+/).filter(Boolean).length;
+  async function handleExtract(mode: IntakeMode, text?: string) {
     setExtracting(true);
     setExtractError(undefined);
-    window.setTimeout(() => {
-      setExtracting(false);
-      if (wordCount < 5 || (text || "").toLowerCase().includes("no questions")) {
-        setExtractError("Couldn't find any questions in that text — try Paste JD, or add them manually.");
-        return;
-      }
+    try {
+      const parsed = await onExtract(mode, text ?? "");
       const source: QuestionSource = mode === "paste-jd" ? "jd-inferred" : "pasted-form";
-      const parsed = [
-        { id: `q-${nextId++}`, prompt: "Why do you want to work here?", kind: "textarea" as const, required: true, maxLength: 600 },
-        { id: `q-${nextId++}`, prompt: "Describe relevant experience for this role.", kind: "textarea" as const, required: true, maxLength: 800 },
-        { id: `q-${nextId++}`, prompt: "Are you authorized to work in this location?", kind: "boolean" as const, required: true },
-      ];
       setQuestions(parsed);
       setSources(Object.fromEntries(parsed.map((q) => [q.id, source])));
       setPhase("review");
-    }, 700);
+    } catch (err) {
+      setExtractError(
+        err instanceof Error ? err.message : "Couldn't find any questions in that text — try Paste JD, or add them manually.",
+      );
+    } finally {
+      setExtracting(false);
+    }
   }
 
   function handleManualAdd() {
@@ -123,35 +92,49 @@ export function ApplyQuestionsAssistant({ job, resume, detected, onSaveAnswers }
     setQuestions((qs) => [...qs, { id, prompt: "New question", kind: "text", required: false }]);
   }
 
-  function handleDraftAll() {
+  async function handleDraftAll() {
     setDraftingAll(true);
     setPhase("answers");
     setDrafts(Object.fromEntries(questions.map((q) => [q.id, { answer: { questionId: q.id, prompt: q.prompt, answer: "", grounding: [] }, status: "drafting" as const }])));
-    questions.forEach((q, i) => {
-      window.setTimeout(() => {
-        // Reuse the seeded fixture answer verbatim when this job/question
-        // matches the pre-baked answers.json (job-grab-backend's q1–q3);
-        // otherwise synthesize a fresh draft from the résumé.
-        const seeded = job.id === answersFixture.jobId ? answersFixture.answers.find((a) => a.questionId === q.id) : undefined;
-        const answer = draftAnswerFor(q, resume, seeded);
-        setDrafts((d) => ({ ...d, [q.id]: { answer, status: "ready" } }));
-        if (i === questions.length - 1) setDraftingAll(false);
-      }, 500 + i * 450);
-    });
+    try {
+      const result = await onDraft(questions);
+      const byId = new Map(result.answers.map((a) => [a.questionId, a]));
+      setDrafts(
+        Object.fromEntries(
+          questions.map((q) => {
+            const answer = byId.get(q.id);
+            return [
+              q.id,
+              answer
+                ? { answer, status: "ready" as const }
+                : { answer: { questionId: q.id, prompt: q.prompt, answer: "", grounding: [] }, status: "error" as const },
+            ];
+          }),
+        ),
+      );
+    } catch {
+      setDrafts((d) =>
+        Object.fromEntries(
+          questions.map((q) => [q.id, { answer: d[q.id]?.answer ?? { questionId: q.id, prompt: q.prompt, answer: "", grounding: [] }, status: "error" as const }]),
+        ),
+      );
+    } finally {
+      setDraftingAll(false);
+    }
   }
 
   function handleChangeText(id: string, text: string) {
     setDrafts((d) => ({ ...d, [id]: { answer: { ...d[id].answer, answer: text }, status: "edited" } }));
   }
 
-  function handleRegenerate(id: string, mode: RegenerateMode) {
+  async function handleRegenerate(id: string, mode: RegenerateMode) {
     setDrafts((d) => ({ ...d, [id]: { ...d[id], status: "drafting" } }));
-    window.setTimeout(() => {
-      setDrafts((d) => ({
-        ...d,
-        [id]: { answer: { ...d[id].answer, answer: regenerateText(d[id].answer.answer, mode, resume) }, status: "ready" },
-      }));
-    }, 450);
+    try {
+      const answer = await onRegenerate(id, mode);
+      setDrafts((d) => ({ ...d, [id]: { answer, status: "ready" } }));
+    } catch {
+      setDrafts((d) => ({ ...d, [id]: { ...d[id], status: "error" } }));
+    }
   }
 
   function handleCopy(id: string) {

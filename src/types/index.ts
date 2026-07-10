@@ -192,20 +192,15 @@ export const ErrorEnvelope = z.object({
 });
 export type ErrorEnvelope = z.infer<typeof ErrorEnvelope>;
 
-// MatchDetail — JobDetail's enriched per-job view (§5 `MatchDetail`, not yet
-// frozen in §2). Minimal shape for the Fit·Legitimacy·Breakdown tabs; the
-// Shell/Feed/Eval group doesn't render JobDetail but the type is declared
-// here so the next builder doesn't have to re-derive it from §5's prose.
-export const MatchDetail = z.object({
-  archetype: z.string(),
-  legitimacy: Legitimacy,
-  breakdown: z.array(
-    z.object({
-      label: z.string(),
-      value: z.number(),
-      display: z.string().optional(),
-      tone: Tone.optional(),
-    }),
-  ),
+// SummaryStripStats — the Feed hero stat row (§11.8): scanned/worth/ghosts
+// mirror SearchRun's scan stats, `flagged`/`sinceLast` are the two Feed-only
+// additions. `GET /api/jobs` returns this alongside the page of jobs so
+// JobFeed never derives it client-side from the (paginated) `items` array.
+export const SummaryStripStats = z.object({
+  scanned: z.number().int(),
+  worth: z.number().int(),
+  ghosts: z.number().int(),
+  flagged: z.number().int(),
+  sinceLast: z.number().int(),
 });
-export type MatchDetail = z.infer<typeof MatchDetail>;
+export type SummaryStripStats = z.infer<typeof SummaryStripStats>;

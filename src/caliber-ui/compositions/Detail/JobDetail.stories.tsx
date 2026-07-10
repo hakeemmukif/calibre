@@ -2,10 +2,9 @@ import type { Meta, StoryObj } from "@storybook/react";
 import { JobDetail } from "./JobDetail";
 import { Card } from "../../components/Card";
 import { jobs, applications } from "../../fixtures";
-import { MatchDetail, type Job } from "../../../types";
 
 const meta: Meta<typeof JobDetail> = {
-  title: "Compositions/Apply/JobDetail",
+  title: "Compositions/Detail/JobDetail",
   component: JobDetail,
   parameters: { layout: "padded" },
 };
@@ -15,25 +14,12 @@ type Story = StoryObj<typeof JobDetail>;
 const noop = () => console.log("action");
 const noopAsync = () => Promise.resolve();
 
-// MatchDetail isn't in the shared fixtures module (only jobs/resume/
-// applications/questions/answers/tailored are) — derived locally here from
-// each job's own legitimacy/breakdown so it stays Zod-validated without
-// touching the shared fixtures file another builder may be editing.
-function toMatchDetail(job: Job) {
-  return MatchDetail.parse({
-    archetype: job.persona === "remote" ? "Global remote — APAC-friendly" : "Malaysia local — on-site/hybrid",
-    legitimacy: job.legitimacy,
-    breakdown: job.breakdown,
-  });
-}
-
 const grab = jobs.find((j) => j.id === "job-grab-backend")!;
 const scam = jobs.find((j) => j.id === "job-wfh-scam")!;
 
 export const Populated: Story = {
   args: {
     job: grab,
-    detail: toMatchDetail(grab),
     onApply: noop,
     onTailor: noop,
     onAnswerQuestions: noop,
@@ -44,7 +30,6 @@ export const Populated: Story = {
 export const AlreadyApplied: Story = {
   args: {
     job: grab,
-    detail: toMatchDetail(grab),
     applied: applications.find((a) => a.jobId === "job-grab-backend"),
     onApply: noop,
     onTailor: noop,
@@ -56,7 +41,6 @@ export const AlreadyApplied: Story = {
 export const ScamTier: Story = {
   args: {
     job: scam,
-    detail: toMatchDetail(scam),
     onApply: noop,
     onTailor: noop,
     onAnswerQuestions: noop,

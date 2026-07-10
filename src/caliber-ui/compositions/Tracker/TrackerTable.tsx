@@ -8,6 +8,7 @@ import { IconButton } from "../../components/IconButton";
 import { Icon } from "../../components/Icon";
 import { Button } from "../../components/Button";
 import { StagePips } from "./StagePips";
+import { agoLabel } from "../../lib/format";
 import type { Application } from "../../../types";
 
 // SortSpec isn't defined anywhere in the contract/component-inventory docs —
@@ -34,18 +35,6 @@ export interface TrackerTableProps {
 }
 
 type Tab = "active" | "closed";
-
-// "3d ago" — derived client-side from Application.appliedAt, same approach as
-// ResumeView's agoLabel (each composition owns its own; no shared date util).
-function agoLabel(iso: string): string {
-  const ms = Date.now() - new Date(iso).getTime();
-  const days = Math.floor(ms / 86_400_000);
-  if (days <= 0) return "today";
-  if (days === 1) return "1d ago";
-  if (days < 30) return `${days}d ago`;
-  const months = Math.floor(days / 30);
-  return months === 1 ? "1mo ago" : `${months}mo ago`;
-}
 
 const COLUMNS: { key: TrackerSortKey; label: string }[] = [
   { key: "score", label: "Fit" },
@@ -80,17 +69,15 @@ const thStyle: React.CSSProperties = {
 // per the contract note on Application.statusTone).
 export function TrackerTable({ rows, sort, onSort, onOpen, onLogUpdate, onGoToFeed, initialTab = "active" }: TrackerTableProps) {
   const [tab, setTab] = React.useState<Tab>(initialTab);
-  const [activeSort, setActiveSort] = React.useState<SortSpec>(sort);
+  const [focusedRow, setFocusedRow] = React.useState<string | null>(null);
 
   function handleSort(key: TrackerSortKey) {
-    const dir: SortSpec["dir"] = activeSort.key === key && activeSort.dir === "desc" ? "asc" : "desc";
-    const next: SortSpec = { key, dir };
-    setActiveSort(next);
-    onSort(next);
+    const dir: SortSpec["dir"] = sort.key === key && sort.dir === "desc" ? "asc" : "desc";
+    onSort({ key, dir });
   }
 
   const scoped = rows.filter((r) => (tab === "closed" ? r.statusTone === "neutral" : r.statusTone !== "neutral"));
-  const sorted = [...scoped].sort((a, b) => compare(a, b, activeSort.key) * (activeSort.dir === "asc" ? 1 : -1));
+  const sorted = [...scoped].sort((a, b) => compare(a, b, sort.key) * (sort.dir === "asc" ? 1 : -1));
 
   const counts = {
     active: rows.filter((r) => r.statusTone !== "neutral").length,
@@ -127,7 +114,7 @@ export function TrackerTable({ rows, sort, onSort, onOpen, onLogUpdate, onGoToFe
             <thead>
               <tr>
                 {COLUMNS.map((c) => {
-                  const on = activeSort.key === c.key;
+                  const on = sort.key === c.key;
                   return (
                     <th key={c.key} style={thStyle}>
                       <button
@@ -146,7 +133,7 @@ export function TrackerTable({ rows, sort, onSort, onOpen, onLogUpdate, onGoToFe
                         }}
                       >
                         {c.label}
-                        {on && <Icon name={activeSort.dir === "asc" ? "chevron-up" : "chevron-down"} size={13} />}
+                        {on && <Icon name={sort.dir === "asc" ? "chevron-up" : "chevron-down"} size={13} />}
                       </button>
                     </th>
                   );
@@ -158,7 +145,27 @@ export function TrackerTable({ rows, sort, onSort, onOpen, onLogUpdate, onGoToFe
             </thead>
             <tbody>
               {sorted.map((row) => (
-                <tr key={row.id} onClick={() => onOpen(row.id)} style={{ cursor: "pointer", borderBottom: "1px solid var(--border-faint)" }}>
+                <tr
+                  key={row.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onOpen(row.id)}
+                  onKeyDown={(e) => {
+                    if (e.target !== e.currentTarget) return;
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onOpen(row.id);
+                    }
+                  }}
+                  onFocus={() => setFocusedRow(row.id)}
+                  onBlur={() => setFocusedRow((f) => (f === row.id ? null : f))}
+                  style={{
+                    cursor: "pointer",
+                    borderBottom: "1px solid var(--border-faint)",
+                    outline: focusedRow === row.id ? "2px solid var(--focus-ring)" : "none",
+                    outlineOffset: -2,
+                  }}
+                >
                   <td style={{ padding: "12px 16px" }}>
                     <ScoreBadge score={row.score} size="sm" />
                   </td>

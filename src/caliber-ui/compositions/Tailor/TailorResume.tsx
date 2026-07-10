@@ -12,70 +12,48 @@ export type TailorUiState = "configuring" | "generating" | "review" | "error" | 
 export interface TailorResumeProps {
   job: Job;
   resume: Resume;
-  /** The generated tailoring result. Optional because Storybook has no live
-   * `POST /api/tailor` run to await — additive, seeds the review panel. */
+  /** The generated tailoring result — absent until a `POST /api/tailor` run
+   * completes. */
   tailored?: TailoredResume;
-  /** Additive: sets which panel renders on mount, since there's no backend
-   * driving real state transitions in Storybook (mirrors JobFeed's
-   * externally-controlled `loading`/`error`). Defaults from `tailored`. */
-  status?: TailorUiState;
+  /** Fully controlled: which panel renders. The parent owns the state
+   * machine (mirrors JobFeed's externally-controlled `loading`/`error`) —
+   * this component holds no UI-phase state of its own. */
+  status: TailorUiState;
   /** Shown in the `error` state. */
   error?: string;
-  /** Additive: seeds each diff entry's accept flag, so a story can land
-   * directly on "all changes rejected" without a click-through. */
-  initialAccepted?: boolean[];
-  onGenerate?(): void;
-  onExport(): void;
-  onSave(t: TailoredResume): void;
+  /** Fully controlled: one accept flag per `tailored.diff` entry, by index. */
+  accepted: boolean[];
+  onToggle(index: number, accept: boolean): void;
+  onGenerate(): void;
+  onSave(tailoredId: string, acceptedIndices: number[]): void;
+  onExport(acceptedIndices: number[]): void;
 }
 
 // TailorResume — F6, diff-review not a split editor (§3): TailorControls →
 // ChangeList (grouped by section) + TailorPreview (accepted-only paper
 // preview) → ExportBar. States: configuring · generating · review
 // (all-rejected is a derived banner inside review, not a separate mode) ·
-// generation-error · saved · exporting.
-export function TailorResume({ job, resume, tailored, status, error, initialAccepted, onGenerate, onExport, onSave }: TailorResumeProps) {
-  const [uiState, setUiState] = React.useState<TailorUiState>(status ?? (tailored ? "review" : "configuring"));
-  const [accepted, setAccepted] = React.useState<boolean[]>(
-    () => initialAccepted ?? tailored?.diff.map(() => true) ?? [],
-  );
-
-  function handleGenerate() {
-    setUiState("generating");
-    onGenerate?.();
-    window.setTimeout(() => {
-      if (tailored) {
-        setAccepted(tailored.diff.map(() => true));
-        setUiState("review");
-      } else {
-        setUiState("error");
-      }
-    }, 900);
-  }
-
-  function handleToggle(index: number, accept: boolean) {
-    setAccepted((prev) => prev.map((a, i) => (i === index ? accept : a)));
-  }
+// generation-error · saved · exporting. Purely presentational — every
+// transition (`onGenerate`/`onToggle`/`onSave`/`onExport`) is a prop call;
+// simulating the backend run lives only in the stories.
+export function TailorResume({ job, resume, tailored, status, error, accepted, onToggle, onGenerate, onSave, onExport }: TailorResumeProps) {
+  const acceptedIndices = accepted.reduce<number[]>((acc, a, i) => (a ? [...acc, i] : acc), []);
+  const acceptedCount = acceptedIndices.length;
 
   function handleSave() {
     if (!tailored) return;
-    onSave(tailored);
-    setUiState("saved");
+    onSave(tailored.id, acceptedIndices);
   }
 
   function handleExport() {
-    setUiState("exporting");
-    onExport();
-    window.setTimeout(() => setUiState("review"), 900);
+    onExport(acceptedIndices);
   }
-
-  const acceptedCount = accepted.filter(Boolean).length;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      <TailorControls job={job} status={uiState === "generating" ? "generating" : "configuring"} onGenerate={handleGenerate} />
+      <TailorControls job={job} status={status === "generating" ? "generating" : "configuring"} onGenerate={onGenerate} />
 
-      {uiState === "generating" && (
+      {status === "generating" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {[0, 1, 2].map((i) => (
             <div
@@ -84,15 +62,14 @@ export function TailorResume({ job, resume, tailored, status, error, initialAcce
                 height: 96,
                 borderRadius: "var(--radius-lg)",
                 background: "var(--surface-sunken)",
-                animation: "caliber-tailor-pulse 1.1s ease-in-out infinite alternate",
+                animation: "caliber-pulse 1.1s ease-in-out infinite alternate",
               }}
             />
           ))}
-          <style>{`@keyframes caliber-tailor-pulse { from { opacity: .55; } to { opacity: 1; } }`}</style>
         </div>
       )}
 
-      {uiState === "error" && (
+      {status === "error" && (
         <div
           style={{
             display: "flex",
@@ -110,9 +87,9 @@ export function TailorResume({ job, resume, tailored, status, error, initialAcce
         </div>
       )}
 
-      {tailored && (uiState === "review" || uiState === "saved" || uiState === "exporting") && (
+      {tailored && (status === "review" || status === "saved" || status === "exporting") && (
         <>
-          {uiState === "saved" && (
+          {status === "saved" && (
             <div style={{ display: "flex", alignItems: "center", gap: 8, font: "var(--type-body)", color: "var(--fit-strong)" }}>
               <Icon name="circle-check" size={16} />
               Saved a copy of your tailored résumé.
@@ -121,7 +98,7 @@ export function TailorResume({ job, resume, tailored, status, error, initialAcce
 
           <div style={{ display: "flex", gap: 24, flexWrap: "wrap", alignItems: "flex-start" }}>
             <div style={{ flex: "1 1 360px", minWidth: 320 }}>
-              <ChangeList changes={tailored.diff} accepted={accepted} onToggle={handleToggle} />
+              <ChangeList changes={tailored.diff} accepted={accepted} onToggle={onToggle} />
             </div>
             {tailored.resume && (
               <div style={{ flex: "1 1 360px", minWidth: 320 }}>
@@ -133,7 +110,7 @@ export function TailorResume({ job, resume, tailored, status, error, initialAcce
           <ExportBar
             acceptedCount={acceptedCount}
             totalCount={tailored.diff.length}
-            exporting={uiState === "exporting"}
+            exporting={status === "exporting"}
             onSave={handleSave}
             onExport={handleExport}
           />

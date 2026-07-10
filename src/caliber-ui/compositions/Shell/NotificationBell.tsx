@@ -24,7 +24,7 @@ export function NotificationBell({ count, onClick }: NotificationBellProps) {
             padding: "0 4px",
             borderRadius: "var(--radius-pill, 999px)",
             background: "var(--accent)",
-            color: "#fff",
+            color: "var(--ink-900)",
             font: "700 10px/16px var(--font-body)",
             textAlign: "center",
             fontVariantNumeric: "tabular-nums",

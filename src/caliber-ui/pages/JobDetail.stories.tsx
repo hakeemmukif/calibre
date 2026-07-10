@@ -1,7 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react";
 import { JobDetail } from "../compositions/Detail/JobDetail";
 import { jobs, applications } from "../fixtures";
-import { MatchDetail, type Job } from "../../types";
 
 const meta: Meta = {
   title: "Pages/JobDetail",
@@ -9,14 +8,6 @@ const meta: Meta = {
 };
 export default meta;
 type Story = StoryObj;
-
-function toMatchDetail(job: Job) {
-  return MatchDetail.parse({
-    archetype: job.persona === "remote" ? "Global remote — APAC-friendly" : "Malaysia local — on-site/hybrid",
-    legitimacy: job.legitimacy,
-    breakdown: job.breakdown,
-  });
-}
 
 // Pages/JobDetail — the full posting view assembled on fixtures, in its
 // page chrome (§11.8 cool ground). onApply opens the job's real applyUrl.
@@ -29,7 +20,6 @@ function JobDetailPage({ jobId }: { jobId: string }) {
       <div style={{ maxWidth: "var(--content-max, 900px)", margin: "0 auto" }}>
         <JobDetail
           job={job}
-          detail={toMatchDetail(job)}
           applied={applied}
           onApply={() => window.open(job.applyUrl, "_blank", "noopener")}
           onTailor={() => console.log("tailor", job.id)}

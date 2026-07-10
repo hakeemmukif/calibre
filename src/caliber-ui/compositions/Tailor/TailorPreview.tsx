@@ -13,23 +13,31 @@ export interface TailorPreviewProps {
 }
 
 // Section-level merge: for each named section in the diff, use the tailored
-// value when its change is accepted, the original otherwise. Diff entries
-// carry only the changed fragment (`before`/`after`), not a full-document
-// patch, so the preview swaps whole sections rather than doing text surgery —
-// a "paper preview of accepted-only state" (§3) without inventing a generic
-// diff-apply engine the contract doesn't specify.
-function sectionValue<T>(diff: TailoredResume["diff"], accepted: boolean[], section: string, base: T, tailored: T): T {
-  const idx = diff.findIndex((d) => d.section === section);
-  if (idx === -1) return base;
-  return accepted[idx] ? tailored : base;
+// value when ANY of that section's changes is accepted, the original
+// otherwise. Diff entries carry only the changed fragment (`before`/`after`),
+// not a full-document patch, so the preview swaps whole sections rather than
+// doing text surgery — a "paper preview of accepted-only state" (§3) without
+// inventing a generic diff-apply engine the contract doesn't specify.
+// Accept/reject is keyed by diff INDEX, not by section name: two diff
+// entries can legitimately target the same section, and looking up "the"
+// index for a section (rather than every index) would silently drop one of
+// them.
+function sectionIndices(diff: TailoredResume["diff"], section: string): number[] {
+  return diff.reduce<number[]>((acc, d, i) => (d.section === section ? [...acc, i] : acc), []);
 }
 
-function experienceDiffIndex(diff: TailoredResume["diff"], company: string): number {
-  return diff.findIndex((d) => {
-    if (!d.section.startsWith("Experience · ")) return false;
+function sectionValue<T>(diff: TailoredResume["diff"], accepted: boolean[], section: string, base: T, tailored: T): T {
+  const indices = sectionIndices(diff, section);
+  const anyAccepted = indices.some((i) => accepted[i]);
+  return anyAccepted ? tailored : base;
+}
+
+function experienceDiffIndices(diff: TailoredResume["diff"], company: string): number[] {
+  return diff.reduce<number[]>((acc, d, i) => {
+    if (!d.section.startsWith("Experience · ")) return acc;
     const tag = d.section.slice("Experience · ".length).trim();
-    return company.includes(tag);
-  });
+    return company.includes(tag) ? [...acc, i] : acc;
+  }, []);
 }
 
 export function TailorPreview({ resume, tailoredResume, diff, accepted }: TailorPreviewProps) {
@@ -37,9 +45,10 @@ export function TailorPreview({ resume, tailoredResume, diff, accepted }: Tailor
   const summary = sectionValue(diff, accepted, "Summary", resume.summary, tailoredResume.summary);
   const skills = sectionValue(diff, accepted, "Skills", resume.skills, tailoredResume.skills);
   const experience = resume.experience.map((entry) => {
-    const idx = experienceDiffIndex(diff, entry.company);
+    const indices = experienceDiffIndices(diff, entry.company);
+    const anyAccepted = indices.some((i) => accepted[i]);
     const tailoredEntry = tailoredResume.experience.find((e) => e.company === entry.company) ?? entry;
-    return idx !== -1 && accepted[idx] ? tailoredEntry : entry;
+    return anyAccepted ? tailoredEntry : entry;
   });
 
   return (

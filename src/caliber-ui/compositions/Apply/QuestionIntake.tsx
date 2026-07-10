@@ -4,6 +4,7 @@ import { Card } from "../../components/Card";
 import { Tabs } from "../../components/Tabs";
 import { Button } from "../../components/Button";
 import { Icon } from "../../components/Icon";
+import { Textarea } from "../../components/Textarea";
 import type { ApplicationQuestion } from "../../../types";
 
 export type IntakeMode = "detected" | "paste-form" | "paste-jd";
@@ -58,7 +59,7 @@ export function QuestionIntake({ mode, onModeChange, detected, onExtract, extrac
 
         {(mode === "paste-form" || mode === "paste-jd") && (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <textarea
+            <Textarea
               value={text}
               onChange={(e) => setText(e.target.value)}
               placeholder={
@@ -68,15 +69,6 @@ export function QuestionIntake({ mode, onModeChange, detected, onExtract, extrac
               }
               rows={7}
               disabled={extracting}
-              style={{
-                width: "100%",
-                boxSizing: "border-box",
-                padding: "10px 12px",
-                font: "var(--type-body)",
-                border: "1px solid var(--border-strong)",
-                borderRadius: "var(--radius-sm)",
-                resize: "vertical",
-              }}
             />
             {error && (
               <div style={{ display: "flex", alignItems: "center", gap: 6, font: "var(--type-caption)", color: "var(--danger-ink)" }}>

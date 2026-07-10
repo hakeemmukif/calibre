@@ -26,7 +26,7 @@ export const Rejected: Story = {
   render: () => <ChangeCard change={summaryChange} accepted={false} onToggle={() => {}} />,
 };
 
-export const Interactive_: Story = {
+export const InteractiveToggle: Story = {
   name: "Interactive (toggleable)",
   render: () => <Interactive change={headlineChange} />,
 };

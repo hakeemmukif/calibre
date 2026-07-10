@@ -19,17 +19,37 @@ export interface JobRowProps {
 // Open/Save/Dismiss IconButtons.
 export function JobRow({ job, onOpen, onSave, onDismiss }: JobRowProps) {
   const isGhost = job.ghost || job.legitimacy.tier === "ghost";
+  const [focused, setFocused] = React.useState(false);
 
   function stop(e: React.MouseEvent, fn: () => void) {
     e.stopPropagation();
     fn();
   }
 
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.target !== e.currentTarget) return;
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onOpen();
+    }
+  }
+
   return (
     <Card
       interactive
+      role="button"
+      tabIndex={0}
       onClick={onOpen}
-      style={{ display: "flex", alignItems: "center", gap: 16, opacity: isGhost ? 0.72 : 1 }}
+      onKeyDown={handleKeyDown}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 16,
+        opacity: isGhost ? 0.72 : 1,
+        ...(focused ? { boxShadow: "var(--shadow-focus)" } : {}),
+      }}
     >
       <ScoreBadge score={job.score} size="md" tone={isGhost ? "ghost" : undefined} />
 
@@ -39,6 +59,7 @@ export function JobRow({ job, onOpen, onSave, onDismiss }: JobRowProps) {
             style={{
               font: "var(--type-h3)",
               color: "var(--text-strong)",
+              minWidth: 0,
               whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",

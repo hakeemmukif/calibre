@@ -5,30 +5,13 @@ import { ScoreBadge } from "../../components/ScoreBadge";
 import { FitBar } from "../../components/FitBar";
 import { Button } from "../../components/Button";
 import { LegitimacyTag } from "../../lib/legitimacy";
-import type { Job, Tone } from "../../../types";
-import type { FitBarTone } from "../../components/FitBar";
+import { toFitBarTone } from "../../lib/format";
+import type { Job } from "../../../types";
 
 export interface EvalResultCardProps {
   job: Job;
   onOpen(): void;
   onSave(): void;
-}
-
-// A Job breakdown row's `tone` is the wider contract Tone; FitBar only knows
-// good/warn/weak. `verified`/`ghost` read as neutral-good/weak here.
-function toFitBarTone(tone: Tone | undefined): FitBarTone | undefined {
-  switch (tone) {
-    case "good":
-    case "verified":
-      return "good";
-    case "warn":
-    case "danger":
-      return "warn";
-    case "ghost":
-      return "weak";
-    default:
-      return undefined;
-  }
 }
 
 // EvalResultCard — the single-URL verdict from UrlEvalBar (F2): ScoreBadge +

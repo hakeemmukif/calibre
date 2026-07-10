@@ -3,17 +3,16 @@ import * as React from "react";
 import { Card } from "../../components/Card";
 import { Tabs } from "../../components/Tabs";
 import { FitBar } from "../../components/FitBar";
-import type { FitBarTone } from "../../components/FitBar";
 import { Tag } from "../../components/Tag";
 import { Button } from "../../components/Button";
 import { Icon } from "../../components/Icon";
 import { AppliedButton } from "../Apply/AppliedButton";
 import { LegitimacyTag } from "../../lib/legitimacy";
-import type { Job, MatchDetail, Application, Tone } from "../../../types";
+import { agoLabel, toFitBarTone } from "../../lib/format";
+import type { Job, Application } from "../../../types";
 
 export interface JobDetailProps {
   job: Job;
-  detail: MatchDetail;
   applied?: Application;
   onApply(): void;
   onTailor(): void;
@@ -21,39 +20,17 @@ export interface JobDetailProps {
   /** Not in the frozen component-inventory signature; added so AppliedButton
    * (a composed primitive of JobDetail per §1) has a real handler to call —
    * optional, additive, mirrors JobFeed's onRetry precedent. */
-  onMarkApplied?(): Promise<void>;
-}
-
-// A Job/MatchDetail breakdown row's `tone` is the wider contract Tone;
-// FitBar only knows good/warn/weak (same mapping EvalResultCard uses).
-function toFitBarTone(tone: Tone | undefined): FitBarTone | undefined {
-  switch (tone) {
-    case "good":
-    case "verified":
-      return "good";
-    case "warn":
-    case "danger":
-      return "warn";
-    case "ghost":
-      return "weak";
-    default:
-      return undefined;
-  }
-}
-
-function agoLabel(iso: string): string {
-  const ms = Date.now() - new Date(iso).getTime();
-  const days = Math.floor(ms / 86_400_000);
-  if (days <= 0) return "today";
-  if (days === 1) return "1d ago";
-  return `${days}d ago`;
+  onMarkApplied(): Promise<void>;
 }
 
 // JobDetail — the full posting view (F3/F4/F6 launcher): Card + Tabs
 // (Fit·Legitimacy·Breakdown) + FitBar[] + Tag + Apply Button (primary,
 // external-link icon) + AppliedButton. Scam-tier demotes Apply to a
-// secondary action behind a warning banner.
-export function JobDetail({ job, detail, applied, onApply, onTailor, onAnswerQuestions, onMarkApplied }: JobDetailProps) {
+// secondary action behind a warning banner. Consumes `Job` alone — there is
+// no separate detail entity in MVP (api-contract.md §1); the Fit/
+// Legitimacy/Breakdown tabs read `job.fit`/`job.legitimacy`/`job.breakdown`
+// directly.
+export function JobDetail({ job, applied, onApply, onTailor, onAnswerQuestions, onMarkApplied }: JobDetailProps) {
   const [tab, setTab] = React.useState<"fit" | "legitimacy" | "breakdown">("fit");
   const isScam = job.legitimacy.tier === "scam";
 
@@ -139,13 +116,12 @@ export function JobDetail({ job, detail, applied, onApply, onTailor, onAnswerQue
       {tab === "legitimacy" && (
         <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <LegitimacyTag legitimacy={detail.legitimacy} />
-            <span style={{ font: "var(--type-caption)", color: "var(--text-muted)" }}>Archetype: {detail.archetype}</span>
+            <LegitimacyTag legitimacy={job.legitimacy} />
           </div>
-          <p style={{ font: "var(--type-body)", color: "var(--text-body)", margin: 0 }}>{detail.legitimacy.summary}</p>
-          {typeof detail.legitimacy.confidence === "number" && (
+          <p style={{ font: "var(--type-body)", color: "var(--text-body)", margin: 0 }}>{job.legitimacy.summary}</p>
+          {typeof job.legitimacy.confidence === "number" && (
             <div style={{ font: "var(--type-caption)", color: "var(--text-muted)" }}>
-              Confidence: {Math.round(detail.legitimacy.confidence * 100)}%
+              Confidence: {Math.round(job.legitimacy.confidence * 100)}%
             </div>
           )}
         </div>
@@ -153,7 +129,7 @@ export function JobDetail({ job, detail, applied, onApply, onTailor, onAnswerQue
 
       {tab === "breakdown" && (
         <div style={{ marginTop: 16 }}>
-          {detail.breakdown.map((b) => (
+          {job.breakdown.map((b) => (
             <FitBar key={b.label} label={b.label} value={b.value} display={b.display} tone={toFitBarTone(b.tone)} />
           ))}
         </div>
@@ -165,13 +141,11 @@ export function JobDetail({ job, detail, applied, onApply, onTailor, onAnswerQue
         </Button>
         <Button variant="soft-accent" iconLeft="sparkles" onClick={onTailor}>Tailor résumé</Button>
         <Button variant="secondary" iconLeft="file-text" onClick={onAnswerQuestions}>Answer questions</Button>
-        {(applied || onMarkApplied) && (
-          <AppliedButton
-            applied={!!applied}
-            appliedAgo={applied ? agoLabel(applied.appliedAt) : undefined}
-            onMarkApplied={onMarkApplied ?? (() => Promise.resolve())}
-          />
-        )}
+        <AppliedButton
+          applied={!!applied}
+          appliedAgo={applied ? agoLabel(applied.appliedAt) : undefined}
+          onMarkApplied={onMarkApplied}
+        />
       </div>
     </Card>
   );

@@ -8,6 +8,7 @@ export * from "./Chip";
 export * from "./Avatar";
 export * from "./Input";
 export * from "./Select";
+export * from "./Textarea";
 export * from "./ScoreBadge";
 export * from "./FitBar";
 export * from "./Tabs";

@@ -1,9 +1,9 @@
 "use client";
 import * as React from "react";
 import { Card } from "../../components/Card";
-import type { SearchRun } from "../../../types";
+import type { SummaryStripStats } from "../../../types";
 
-export type SummaryStripStats = SearchRun["stats"] & { flagged: number; sinceLast: number };
+export type { SummaryStripStats };
 
 export interface SummaryStripProps {
   stats: SummaryStripStats;

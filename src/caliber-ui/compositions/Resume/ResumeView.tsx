@@ -5,24 +5,13 @@ import { Button } from "../../components/Button";
 import { Tag } from "../../components/Tag";
 import { Tabs } from "../../components/Tabs";
 import { ScoreBadge } from "../../components/ScoreBadge";
+import { agoLabel } from "../../lib/format";
 import type { Resume } from "../../../types";
 
 export interface ResumeViewProps {
   resume: Resume;
   onTailor?(): void;
   onReupload(): void;
-}
-
-// "3d ago" — derived client-side from Resume.updatedAt (§5: the wire form
-// carries the ISO timestamp, the UI owns relative formatting).
-function agoLabel(iso: string): string {
-  const ms = Date.now() - new Date(iso).getTime();
-  const days = Math.floor(ms / 86_400_000);
-  if (days <= 0) return "today";
-  if (days === 1) return "1d ago";
-  if (days < 30) return `${days}d ago`;
-  const months = Math.floor(days / 30);
-  return months === 1 ? "1mo ago" : `${months}mo ago`;
 }
 
 // ResumeView — the parsed structured résumé (F1). Card sections for

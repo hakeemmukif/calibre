@@ -30,9 +30,11 @@ function TailorPage() {
           resume={resume}
           tailored={tailored}
           status="review"
+          accepted={tailored.diff.map(() => true)}
+          onToggle={(index, accept) => console.log("toggle", index, accept)}
           onGenerate={() => console.log("generate")}
-          onExport={() => console.log("export")}
-          onSave={(t) => console.log("save", t)}
+          onExport={(acceptedIndices) => console.log("export", acceptedIndices)}
+          onSave={(tailoredId, acceptedIndices) => console.log("save", tailoredId, acceptedIndices)}
         />
       </div>
     </div>

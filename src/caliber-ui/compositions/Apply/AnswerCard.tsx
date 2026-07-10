@@ -4,6 +4,9 @@ import { Card } from "../../components/Card";
 import { Button } from "../../components/Button";
 import { Tag } from "../../components/Tag";
 import { Icon } from "../../components/Icon";
+import { Chip } from "../../components/Chip";
+import { Select } from "../../components/Select";
+import { Textarea } from "../../components/Textarea";
 import { GroundingChips, type GroundingItem } from "./GroundingChips";
 import type { ApplicationQuestion, ApplicationAnswer, Resume } from "../../../types";
 
@@ -97,7 +100,6 @@ export function AnswerCard({
               }}
             />
           ))}
-          <style>{`@keyframes caliber-pulse { from { opacity: .5; } to { opacity: 1; } }`}</style>
           <span style={{ font: "var(--type-caption)", color: "var(--text-muted)" }}>Drafting from your résumé…</span>
         </div>
       )}
@@ -131,40 +133,60 @@ export function AnswerCard({
       )}
 
       {(status === "ready" || status === "edited") && question.kind === "select" && (
-        <select
+        <Select
           value={answer.answer}
           onChange={(e) => onChangeText(e.target.value)}
+          options={[{ value: "", label: "Choose an option…" }, ...(question.options || []).map((o) => ({ value: o, label: o }))]}
+        />
+      )}
+
+      {(status === "ready" || status === "edited") && question.kind === "multiselect" && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {(question.options || []).map((o) => {
+            const selectedValues = answer.answer.split(",").map((s) => s.trim()).filter(Boolean);
+            const isSelected = selectedValues.includes(o);
+            return (
+              <Chip
+                key={o}
+                selected={isSelected}
+                iconLeft={isSelected ? "check" : undefined}
+                onClick={() => {
+                  const next = isSelected ? selectedValues.filter((v) => v !== o) : [...selectedValues, o];
+                  onChangeText(next.join(", "));
+                }}
+              >
+                {o}
+              </Chip>
+            );
+          })}
+        </div>
+      )}
+
+      {(status === "ready" || status === "edited") && question.kind === "file" && (
+        <div
           style={{
-            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
             padding: "10px 12px",
-            font: "var(--type-body)",
-            border: "1px solid var(--border-strong)",
             borderRadius: "var(--radius-sm)",
+            background: "var(--surface-sunken)",
+            color: "var(--text-muted)",
           }}
         >
-          <option value="" disabled>Choose an option…</option>
-          {(question.options || []).map((o) => (
-            <option key={o} value={o}>{o}</option>
-          ))}
-        </select>
+          <Icon name="file-text" size={16} />
+          <span style={{ font: "var(--type-body)" }}>
+            This question requires a file upload — attach it directly in the ATS; Caliber doesn't submit files on your behalf.
+          </span>
+        </div>
       )}
 
       {(status === "ready" || status === "edited") && (question.kind === "text" || question.kind === "textarea") && (
         <div>
-          <textarea
+          <Textarea
             value={answer.answer}
             onChange={(e) => onChangeText(e.target.value)}
             rows={question.kind === "textarea" ? 5 : 2}
-            style={{
-              width: "100%",
-              boxSizing: "border-box",
-              padding: "10px 12px",
-              font: "var(--type-body)",
-              color: "var(--text-strong)",
-              border: "1px solid var(--border-strong)",
-              borderRadius: "var(--radius-sm)",
-              resize: "vertical",
-            }}
           />
           {question.maxLength != null && (
             <div

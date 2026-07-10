@@ -2,6 +2,7 @@
 // Every export is Schema.parse(...)-validated at module load: a contract
 // mismatch throws here, at import time, not silently in a story. Never
 // lorem — real remote/Malaysia job-search content.
+import { z } from "zod";
 import {
   Job,
   Resume,
@@ -198,7 +199,7 @@ const rawJobs = [
     firstSeen: "2026-06-20T03:00:00Z",
     isNew: false,
   },
-] satisfies unknown[];
+] satisfies z.input<typeof Job>[];
 
 export const jobs: Job[] = Job.array().parse(rawJobs);
 

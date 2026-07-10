@@ -3,6 +3,7 @@ import * as React from "react";
 import { Card } from "../../components/Card";
 import { Button } from "../../components/Button";
 import { Icon } from "../../components/Icon";
+import { Textarea } from "../../components/Textarea";
 
 export type ResumeUploadStatus = "idle" | "uploading" | "parsing" | "error" | "done";
 
@@ -89,21 +90,11 @@ export function ResumeUpload({ onFile, status, progress, error }: ResumeUploadPr
       {status === "idle" && pasting && (
         <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "6px 4px", textAlign: "left" }}>
           <div style={{ font: "var(--type-label)", color: "var(--text-strong)" }}>Paste your résumé text</div>
-          <textarea
+          <Textarea
             value={pastedText}
             onChange={(e) => setPastedText(e.target.value)}
             placeholder="Paste the plain text of your résumé (min. 100 characters)…"
             rows={8}
-            style={{
-              width: "100%",
-              boxSizing: "border-box",
-              padding: "10px 12px",
-              font: "var(--type-body)",
-              color: "var(--text-strong)",
-              border: "1px solid var(--border-strong)",
-              borderRadius: "var(--radius-sm)",
-              resize: "vertical",
-            }}
           />
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <Button variant="ghost" onClick={() => setPasting(false)}>Cancel</Button>
@@ -117,7 +108,6 @@ export function ResumeUpload({ onFile, status, progress, error }: ResumeUploadPr
       {busy && (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: "24px 8px" }}>
           <Icon name="refresh-cw" size={26} style={{ color: "var(--accent)", animation: "caliber-spin 1s linear infinite" }} />
-          <style>{`@keyframes caliber-spin { to { transform: rotate(360deg); } }`}</style>
           <div style={{ font: "var(--type-body)", color: "var(--text-body)" }}>
             {status === "uploading" ? "Uploading résumé…" : "Parsing résumé…"}
           </div>
@@ -141,20 +131,11 @@ export function ResumeUpload({ onFile, status, progress, error }: ResumeUploadPr
           </div>
           {pasting && (
             <div style={{ width: "100%", textAlign: "left", marginTop: 4 }}>
-              <textarea
+              <Textarea
                 value={pastedText}
                 onChange={(e) => setPastedText(e.target.value)}
                 placeholder="Paste the plain text of your résumé (min. 100 characters)…"
                 rows={6}
-                style={{
-                  width: "100%",
-                  boxSizing: "border-box",
-                  padding: "10px 12px",
-                  font: "var(--type-body)",
-                  border: "1px solid var(--border-strong)",
-                  borderRadius: "var(--radius-sm)",
-                  resize: "vertical",
-                }}
               />
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
                 <Button variant="primary" disabled={pastedText.trim().length < 100} onClick={usePastedText}>

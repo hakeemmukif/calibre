@@ -14,12 +14,16 @@ Schema-first: Zod schemas in `src/types` are the single source of truth; OpenAPI
 | F2/F3 | GET | `/api/jobs/:id` | Single job incl. `applyUrl` (F3 is client-side: open `applyUrl`; no apply endpoint) | sync |
 | F4 | POST | `/api/apply/questions` | Extract application questions from a posting URL or pasted form | sync (LLM) |
 | F4 | POST | `/api/apply/answers` | Draft résumé-grounded answers for extracted questions | sync (LLM) |
+| F4 | PATCH | `/api/apply/answers/:id` | Edit a persisted answer set (user edits/regenerates after drafting) | sync |
 | F5 | POST | `/api/applications` | Mark applied (persist tracker row) | sync |
 | F5 | GET | `/api/applications` | List tracker rows | sync |
 | F5 | PATCH | `/api/applications/:id` | Update stage / status / note / tailored flag | sync |
 | F6 | POST | `/api/tailor` | Start tailoring the résumé to a job | async, 202 |
 | F6 | GET | `/api/tailor/:id` | Tailor status + result; SSE via `Accept: text/event-stream` | sync / SSE |
-| F6 | GET | `/api/tailor/:id/pdf` | Rendered PDF of tailored résumé | sync, binary |
+| F6 | POST | `/api/tailor/:id/finalize` | Persist the accepted-only diff (renders an accepted-only résumé) | sync |
+| F6 | GET | `/api/tailor/:id/pdf` | Rendered PDF of the finalized (accepted-only) résumé | sync, binary |
+
+`GET /api/jobs/:id` returns the frozen `Job` entity verbatim — there is no separate detail/`MatchDetail` entity in MVP; `JobDetail`'s Fit/Legitimacy/Breakdown tabs are derived entirely from `Job.fit`/`Job.legitimacy`/`Job.breakdown`. An `archetype` field (e.g. "Global remote — APAC-friendly") was drafted during component design but is **deferred** — not part of `Job`, not returned by this route.
 
 Search and tailor share one **run pattern**: `POST` returns `202` with the run entity; the `GET :id` route serves both polling (JSON) and streaming (SSE) via content negotiation — one path, two documented content types in OpenAPI.
 
@@ -74,9 +78,14 @@ export const SearchRun = z.object({
   sources: z.array(z.string()),                      // SourceRef ids in scope
   progress: Progress.nullable(),
   stats: z.object({ scanned: z.number().int(), worth: z.number().int(),
-    ghosts: z.number().int() }),                     // §5 ScanStats, feeds summary strip
+    ghosts: z.number().int() }),                     // §5 ScanStats
   startedAt: z.string().datetime(), finishedAt: z.string().datetime().nullable(),
   error: z.string().nullable(),
+});
+
+export const SummaryStripStats = z.object({          // Feed hero row (§11.8); GET /api/jobs' `stats`
+  scanned: z.number().int(), worth: z.number().int(), ghosts: z.number().int(),
+  flagged: z.number().int(), sinceLast: z.number().int(),
 });
 
 export const Application = z.object({                // §5 Applied, wire-normalised
@@ -138,13 +147,15 @@ Boundary rule everywhere: `Schema.parse(body)` at the route handler; `ZodError` 
 
 **GET /api/search/:id** — → `200 SearchRun` | `404`. With `Accept: text/event-stream` → SSE (§4).
 
-**GET /api/jobs** — query (all validated, unknown params rejected): `persona?`, `tier?` (repeatable), `minScore?` (0–5), `isNew?`, `remote?`, `q?`, `cursor?`, `limit?` (1–100, default 25). → `200 { items: Job[], nextCursor: string | null, stats: SearchRun['stats'] }`. Params map 1:1 to the §11.8 hero filter chips.
+**GET /api/jobs** — query (all validated, unknown params rejected): `persona?`, `tier?` (repeatable), `minScore?` (0–5), `isNew?`, `remote?`, `q?`, `cursor?`, `limit?` (1–100, default 25). → `200 { items: Job[], nextCursor: string | null, stats: SummaryStripStats }`. Params map 1:1 to the §11.8 hero filter chips. `stats` is the Feed hero row's numbers (scanned/worth/ghosts/flagged/sinceLast) computed server-side over the full scoped result set, not derived client-side from the (paginated) `items` page.
 
 **GET /api/jobs/:id** — → `200 Job` | `404`.
 
 **POST /api/apply/questions** — `{ jobId?, url?, pastedForm? }` with `.refine` requiring **exactly one** of the three (422 otherwise). → `200 { questions: ApplicationQuestion[], sourceUrl: string | null }`. Errors: `404` (unknown jobId), `502 EXTRACTION_FAILED` (unfetchable URL / no questions found — never returns `[]` as a guess).
 
 **POST /api/apply/answers** — `{ jobId, questions: ApplicationQuestion[].min(1) }`. → `200 ApplicationAnswers`. `409` if no résumé; `502 UPSTREAM_LLM_ERROR`. Grounding array is required per answer — an answer the model can't ground still returns, with empty `grounding`, so the UI can flag it (visible, not silently dropped).
+
+**PATCH /api/apply/answers/:id** — `{ answers: ApplicationAnswer[].min(1) }` (empty patch → 422). → `200 ApplicationAnswers` | `404`. Covers user edits and per-question regenerate/redraft after the initial `POST /api/apply/answers` — the assistant's Regenerate/edit actions persist through this route rather than mutating client-only state.
 
 **POST /api/applications** — `{ jobId, note?, tailoredResumeId?, answersId? }`. → `201 Application` (server sets `appliedAt`, `stage: 0`, `statusLabel/statusTone` via `features/applied/status-map.ts`). **Idempotency: unique on `jobId`** → duplicate `409 CONFLICT` with `details: { existingId }`.
 
@@ -156,7 +167,9 @@ Boundary rule everywhere: `Schema.parse(body)` at the route handler; `ZodError` 
 
 **GET /api/tailor/:id** — → `200 TailoredResume` | `404`; SSE via Accept header.
 
-**GET /api/tailor/:id/pdf** — → `200 application/pdf` | `404` | `409 RUN_NOT_READY` while `status !== 'completed'`.
+**POST /api/tailor/:id/finalize** — `{ acceptedIndices: z.array(z.number().int()) }` (indices into `TailoredResume.diff`). → `200 TailoredResume`, server-rendered with only the accepted diff entries applied (`resume` reflects the accepted-only merge, not the full-tailor draft). `404` unknown id, `409 RUN_NOT_READY` while `status !== 'completed'`. The accept/reject mask never lives only in client state — the UI's ChangeList/ExportBar accept flags are indices passed here, and `GET /api/tailor/:id/pdf` renders whatever this route last finalized.
+
+**GET /api/tailor/:id/pdf** — → `200 application/pdf` | `404` | `409 RUN_NOT_READY` while the run hasn't been finalized (`POST .../finalize` not yet called, or `status !== 'completed'`).
 
 ## 4. Streaming (SSE)
 
