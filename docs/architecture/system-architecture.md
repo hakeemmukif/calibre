@@ -83,7 +83,7 @@ Model tiers (`config/models.yml`): `resume-extract`, `jd-extract`, `match-score`
 4. **Auth:** none in-app (spec non-goal); if deployed publicly, basic-auth at the proxy. Revisit before multi-user.
 5. **PDF:** Playwright-Chromium baked into the Docker image, invoked in-process — validate the base image in Phase B.
 6. **Template/model config:** `config/models.yml` (task→model+escalation) + versioned template `.md` files with Zod json_schemas; template hash = `policyVersion` (also seeds the §11 internal metrics moat later).
-7. **DB:** Postgres prod / SQLite dev — restrict to Drizzle-portable `json` + `text` column modes; no pg-only types.
+7. **DB:** Postgres everywhere (`drizzle-orm/pg-core`); tests run on **PGlite** (in-memory Postgres, same dialect). *(Revised 2026-07-11: the original "Postgres prod / SQLite dev" was dropped — Drizzle has no cross-dialect schema, `pgTable` and `sqliteTable` are separate constructors, so one PG schema + PGlite removes the portability-layer problem. See `docs/superpowers/plans/2026-07-11-phase-b-backend.md` B1.)*
 8. **Cost cap (Gate #5):** per-run score cap (~30 jobs) + daily cap env var; `costUsd` recorded per score/answer/tailor row from day one.
 
 Open risk: **MY-board connectors are the only truly unproven component** (no donor code, scraping fragility, possible ToS friction) — build one (JobStreet) first behind the connector interface and let the persona toggle degrade gracefully if a board breaks.
