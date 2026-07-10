@@ -258,3 +258,15 @@ Chosen from the 8-treatment exploration (artifact: `claude.ai/code/artifact/b691
 - **C · Console** (sortable table) becomes the **saved/tracker view** — the direct "LinkedIn has no tracker" answer.
 - **H's plain-language warning banner** may dress the *flagged tail* of the feed as an enhancement once the ghost-scorer is live (turns a legitimacy field into the scam-shield story). Decide after Gate #2.
 - **D/G confidence meter** only if the ghost-scorer emits a real confidence *number* (else a tier-only pill is honest; a meter over-promises). Open item for Phase B.
+
+---
+
+## 12. Delivery tooling & sustainability (2026-07-11)
+
+Confirmed workflow decisions (no Figma seat currently).
+
+- **Source of truth: CODE.** Components live as TSX in `caliber-ui`; tokens as CSS custom properties. There is exactly one canon; we never hand-sync two systems.
+- **Component + page gallery: Storybook.** The living, browsable, deployable "front-end of all pages," generated from the real code so it can't drift. This is *how we see all pages*. Every primitive and every screen gets a story; design explorations (like the 8 feed treatments) live on as story variants rather than throwaway HTML.
+- **Figma: deferred, one-way if ever.** No install now. If a Figma file is needed later (designer handoff, stakeholder review), populate it *from code* via the official Figma MCP's **Code-to-Canvas** (Claude-Code-only write, Feb 2026 partnership) or **html.to.design** — never a manual two-way sync.
+- **API contract: schema-first.** **Zod schemas** (co-located with the frozen `src/types` data contract) are the source; generate **OpenAPI** from them (`zod-to-openapi`), and from that a typed client + interactive docs (Scalar/Redoc). Runtime validation, types, and docs all derive from one schema. Versioned in the repo.
+- **Phase A gains:** Storybook scaffold + stories for the 13 primitives and the hero page; the Zod→OpenAPI contract surface stood up alongside the data contract.
