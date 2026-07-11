@@ -41,15 +41,31 @@ export type AppPatch = Pick<
 
 const DEFAULT_LIMIT = 25;
 
-type Cursor = { appliedAt: string; id: string };
+// id-correlated keyset: the comparison tuple is fetched fresh from the DB
+// (full microsecond precision) rather than round-tripped through a JS Date,
+// which only carries millisecond precision and would silently drop rows
+// sharing a millisecond with the cursor row.
+type Cursor = { id: string };
 
 function encodeCursor(row: AppRow): string {
-  const c: Cursor = { appliedAt: row.appliedAt.toISOString(), id: row.id };
+  const c: Cursor = { id: row.id };
   return Buffer.from(JSON.stringify(c)).toString("base64url");
 }
 
 function decodeCursor(cursor: string): Cursor {
   return JSON.parse(Buffer.from(cursor, "base64url").toString("utf-8"));
+}
+
+// A job may carry multiple job_scores rows (résumé replacement / policy bump
+// — unique key is (jobId, resumeId, policyVersion)). Joins must pick exactly
+// one — the latest by created_at — so an application never fans out into
+// duplicate rows and getJoined never returns an arbitrary score.
+function latestJobScores(db: Db) {
+  return db
+    .selectDistinctOn([jobScores.jobId], { id: jobScores.id })
+    .from(jobScores)
+    .orderBy(jobScores.jobId, desc(jobScores.createdAt))
+    .as("latest_job_scores");
 }
 
 function metaOf(location: string, salaryRaw: string | null): string {
@@ -86,9 +102,11 @@ export function createApplicationsRepo(db: Db) {
       if (q.cursor) {
         const c = decodeCursor(q.cursor);
         conditions.push(
-          sql`(${applications.appliedAt}, ${applications.id}) < (${new Date(c.appliedAt)}, ${c.id})`,
+          sql`(${applications.appliedAt}, ${applications.id}) < (SELECT ${applications.appliedAt}, ${applications.id} FROM ${applications} WHERE ${applications.id} = ${c.id})`,
         );
       }
+
+      const latest = latestJobScores(db);
 
       const rows = await db
         .select({
@@ -102,6 +120,7 @@ export function createApplicationsRepo(db: Db) {
         .from(applications)
         .innerJoin(jobs, eq(jobs.id, applications.jobId))
         .innerJoin(jobScores, eq(jobScores.jobId, jobs.id))
+        .innerJoin(latest, eq(latest.id, jobScores.id))
         .where(conditions.length > 0 ? and(...conditions) : undefined)
         .orderBy(desc(applications.appliedAt), desc(applications.id))
         .limit(limit + 1);
@@ -120,6 +139,7 @@ export function createApplicationsRepo(db: Db) {
     },
 
     async getJoined(id: string): Promise<AppJoinJobScore | null> {
+      const latest = latestJobScores(db);
       const [row] = await db
         .select({
           application: applications,
@@ -132,6 +152,7 @@ export function createApplicationsRepo(db: Db) {
         .from(applications)
         .innerJoin(jobs, eq(jobs.id, applications.jobId))
         .innerJoin(jobScores, eq(jobScores.jobId, jobs.id))
+        .innerJoin(latest, eq(latest.id, jobScores.id))
         .where(eq(applications.id, id))
         .limit(1);
       if (!row) return null;

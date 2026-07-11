@@ -1,7 +1,18 @@
+import { sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
+import { applications } from "../schema";
 import { createTestDb } from "../test-db";
 import { insertJob, insertJobScore, insertResume, insertSource } from "./__fixtures__/helpers";
 import { ApplicationConflictError, createApplicationsRepo } from "./applications";
+
+// Explicit, same-millisecond-different-microsecond appliedAt values —
+// deterministic collision regardless of host/loop speed (JS Date can't
+// represent microseconds, so this bypasses the driver's Date parsing via a
+// raw SQL literal to set full-precision timestamps directly).
+function collidingTimestamp(i: number): ReturnType<typeof sql> {
+  const micros = (100000 + i).toString().padStart(6, "0");
+  return sql.raw(`'2024-01-01 00:00:00.${micros}'::timestamp`);
+}
 
 describe("applicationsRepo", () => {
   it("round-trips insertUniqueByJob", async () => {
@@ -94,6 +105,74 @@ describe("applicationsRepo", () => {
     expect(items[0].company).toBe("Acme Corp");
     expect(items[0].meta).toBe("Kuala Lumpur · RM12k-16k");
     expect(items[0].score).toBe(4.7);
+  });
+
+  it("listJoined pages through every row with no drops when rows collide within a millisecond (regression)", async () => {
+    const db = await createTestDb();
+    const repo = createApplicationsRepo(db);
+    const source = await insertSource(db);
+    const resume = await insertResume(db);
+
+    const insertedIds: string[] = [];
+    for (let i = 0; i < 40; i += 1) {
+      const job = await insertJob(db, source.id);
+      await insertJobScore(db, job.id, resume.id);
+      const [app] = await db
+        .insert(applications)
+        .values({
+          jobId: job.id,
+          resumeId: resume.id,
+          stage: 0,
+          statusLabel: "Applied",
+          statusTone: "good",
+          note: "",
+          appliedAt: collidingTimestamp(i) as unknown as Date,
+        })
+        .returning();
+      insertedIds.push(app.id);
+    }
+
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    for (let i = 0; i < insertedIds.length; i += 1) {
+      const page = await repo.listJoined({ limit: 1, cursor });
+      expect(page.items).toHaveLength(1);
+      seen.push(page.items[0].id);
+      if (!page.nextCursor) break;
+      cursor = page.nextCursor;
+    }
+
+    expect(seen).toHaveLength(40);
+    expect(new Set(seen).size).toBe(40);
+    expect([...seen].sort()).toEqual([...insertedIds].sort());
+  });
+
+  it("listJoined/getJoined return the latest score once when a job has multiple score rows (regression)", async () => {
+    const db = await createTestDb();
+    const repo = createApplicationsRepo(db);
+    const source = await insertSource(db);
+    const resume = await insertResume(db);
+    const job = await insertJob(db, source.id);
+
+    await insertJobScore(db, job.id, resume.id, { policyVersion: "v1", score: 3.0 });
+    await new Promise((r) => setTimeout(r, 5));
+    await insertJobScore(db, job.id, resume.id, { policyVersion: "v2", score: 4.5 });
+
+    const app = await repo.insertUniqueByJob({
+      jobId: job.id,
+      resumeId: resume.id,
+      stage: 0,
+      statusLabel: "Applied",
+      statusTone: "good",
+      note: "",
+    });
+
+    const { items } = await repo.listJoined({});
+    expect(items).toHaveLength(1);
+    expect(items[0].score).toBe(4.5);
+
+    const found = await repo.getJoined(app.id);
+    expect(found?.score).toBe(4.5);
   });
 
   it("getJoined returns a single joined row", async () => {

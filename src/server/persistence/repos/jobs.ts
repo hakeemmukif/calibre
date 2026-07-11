@@ -31,15 +31,31 @@ export type JobsQuery = {
 
 const DEFAULT_LIMIT = 25;
 
-type Cursor = { firstSeenAt: string; id: string };
+// id-correlated keyset: the comparison tuple is fetched fresh from the DB
+// (full microsecond precision) rather than round-tripped through a JS Date,
+// which only carries millisecond precision and would silently drop rows
+// sharing a millisecond with the cursor row.
+type Cursor = { id: string };
 
 function encodeCursor(row: JobRow): string {
-  const c: Cursor = { firstSeenAt: row.firstSeenAt.toISOString(), id: row.id };
+  const c: Cursor = { id: row.id };
   return Buffer.from(JSON.stringify(c)).toString("base64url");
 }
 
 function decodeCursor(cursor: string): Cursor {
   return JSON.parse(Buffer.from(cursor, "base64url").toString("utf-8"));
+}
+
+// A job may carry multiple job_scores rows (résumé replacement / policy bump
+// — unique key is (jobId, resumeId, policyVersion)). Joins must pick exactly
+// one — the latest by created_at — so a job never fans out into duplicate
+// rows and getById never returns an arbitrary score.
+function latestJobScores(db: Db) {
+  return db
+    .selectDistinctOn([jobScores.jobId], { id: jobScores.id })
+    .from(jobScores)
+    .orderBy(jobScores.jobId, desc(jobScores.createdAt))
+    .as("latest_job_scores");
 }
 
 export function createJobsRepo(db: Db) {
@@ -76,13 +92,18 @@ export function createJobsRepo(db: Db) {
       }
       if (q.cursor) {
         const c = decodeCursor(q.cursor);
-        conditions.push(sql`(${jobs.firstSeenAt}, ${jobs.id}) < (${new Date(c.firstSeenAt)}, ${c.id})`);
+        conditions.push(
+          sql`(${jobs.firstSeenAt}, ${jobs.id}) < (SELECT ${jobs.firstSeenAt}, ${jobs.id} FROM ${jobs} WHERE ${jobs.id} = ${c.id})`,
+        );
       }
+
+      const latest = latestJobScores(db);
 
       const rows = await db
         .select({ job: jobs, score: jobScores })
         .from(jobs)
         .innerJoin(jobScores, eq(jobScores.jobId, jobs.id))
+        .innerJoin(latest, eq(latest.id, jobScores.id))
         .where(conditions.length > 0 ? and(...conditions) : undefined)
         .orderBy(desc(jobs.firstSeenAt), desc(jobs.id))
         .limit(limit + 1);
@@ -94,10 +115,12 @@ export function createJobsRepo(db: Db) {
     },
 
     async getById(id: string): Promise<JobJoinScore | null> {
+      const latest = latestJobScores(db);
       const [row] = await db
         .select({ job: jobs, score: jobScores })
         .from(jobs)
         .innerJoin(jobScores, eq(jobScores.jobId, jobs.id))
+        .innerJoin(latest, eq(latest.id, jobScores.id))
         .where(eq(jobs.id, id))
         .limit(1);
       return row ?? null;
