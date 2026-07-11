@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, ilike, inArray, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, gte, ilike, inArray, or, sql } from "drizzle-orm";
 import { getDb } from "../db";
 import { jobs, jobScores, sources, type JobAlias } from "../schema";
 import type { Db } from "./db";
@@ -72,7 +72,11 @@ function buildFilterConditions(q: Omit<JobsQuery, "cursor" | "limit">) {
     conditions.push(inArray(sql`(${jobScores.legitimacy}->>'tier')`, q.tier));
   }
   if (q.minScore !== undefined) conditions.push(gte(jobScores.score, q.minScore));
-  if (q.isNew) conditions.push(gte(jobs.firstSeenAt, q.isNew));
+  // Strict `>`, not `>=` — matches assembleJob's `firstSeen > cutoff` and
+  // sinceLast's `firstSeenAt > cutoff` (task-B6 fix pass finding 4): a job
+  // whose firstSeenAt is exactly the cutoff must be consistent across all
+  // three, not "new" only in this filter.
+  if (q.isNew) conditions.push(gt(jobs.firstSeenAt, q.isNew));
   if (q.q) {
     const like = `%${q.q}%`;
     conditions.push(or(ilike(jobs.title, like), ilike(jobs.company, like)));

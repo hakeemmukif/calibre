@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import type { LlmClient } from "@/lib/llm/client";
 import { makeMockLlm } from "@/lib/llm/mock";
 import { insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
 import { createSearchRunsRepo, type SearchRunRow } from "@/server/persistence/repos/searchRuns";
@@ -27,10 +28,46 @@ const testLlm = makeMockLlm({
     fit: [{ k: "SQL", v: "5 years" }],
     gaps: [],
     reasons: { for: ["Matches stack"], against: [] },
-    legitimacy: { tier: "High Confidence", summary: "Established company.", signals: [] },
+    legitimacy: { tier: "clear", summary: "Established company.", signals: [] },
     lowConfidence: false,
   },
 });
+
+// Finding 3 (daily cost cap): a non-zero-cost LlmClient so `spentToday` can
+// actually cross `dailyCapUsd` inside a single run — `testLlm`/`makeMockLlm`
+// always reports costUsd: 0, which can never trip the cap.
+const costingLlm: LlmClient = {
+  async complete(args) {
+    if (args.task === "jd-extract") {
+      return {
+        data: args.responseSchema.parse({
+          title: "Data Engineer",
+          mustHaves: ["SQL"],
+          niceToHaves: [],
+          responsibilities: ["Build pipelines"],
+          redFlags: [],
+        }),
+        model: "mock",
+        costUsd: 0.01,
+      };
+    }
+    return {
+      data: args.responseSchema.parse({
+        score: 4.1,
+        verdict: "Apply",
+        why: "Strong data engineering overlap.",
+        breakdown: [{ label: "Skills", value: 4.5 }],
+        fit: [{ k: "SQL", v: "5 years" }],
+        gaps: [],
+        reasons: { for: ["Matches stack"], against: [] },
+        legitimacy: { tier: "clear", summary: "Established company.", signals: [] },
+        lowConfidence: false,
+      }),
+      model: "mock",
+      costUsd: 0.01,
+    };
+  },
+};
 
 async function findJobByDedupeKey(db: TestDb, dedupeKey: string) {
   const [row] = await db.select().from(jobs).where(eq(jobs.dedupeKey, dedupeKey)).limit(1);
@@ -126,6 +163,7 @@ describe("startSearch", () => {
       title: "Data Engineer",
       company: "Acme",
       location: "Remote",
+      description: "Build data pipelines with SQL.",
     };
     const nonMatching: RawPosting = {
       sourceId: good.id,
@@ -334,6 +372,7 @@ describe("startSearch", () => {
       title: "Data Engineer",
       company: "Acme",
       location: "Remote",
+      description: "Build data pipelines with SQL.",
     };
 
     const runPromise = startSearch(
@@ -352,6 +391,9 @@ describe("startSearch", () => {
     expect(finalRow.stats.scored).toBe(1);
     expect(finalRow.stats.worth).toBe(1);
     expect(finalRow.stats.ghosts).toBe(0);
+    // Finding 3: candidates-exhausted, not cap-stopped — distinct from the
+    // dedicated daily-cap test below, which asserts `capStopped: true`.
+    expect(finalRow.stats.capStopped).toBe(false);
 
     const order = events.map((e) => e.event);
     // progress(sources) ... progress(fetch) ... progress(score)×k ... job ... progress(legitimacy) ... done
@@ -371,5 +413,52 @@ describe("startSearch", () => {
     const jobEvent = events.find((e) => e.event === "job")!;
     expect((jobEvent.data as { verdict: string }).verdict).toBe("Apply");
     expect((jobEvent.data as { legitimacy: { tier: string } }).legitimacy.tier).toBe("clear");
+  });
+
+  it("daily cost cap: stops scoring early once dailyCapUsd is reached, still completes (finding 3)", async () => {
+    const runsRepo = createSearchRunsRepo(state.testDb);
+    await insertResume(state.testDb, { ...resumeFixture, isActive: true });
+    const good = await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
+
+    // Two matching candidates; costingLlm charges 0.02/job (0.01 jd-extract +
+    // 0.01 match-score) — a 0.015 cap lets the 1st job through, then the
+    // pre-scoring check for the 2nd sees spentToday (0.02) >= cap and stops.
+    const postings: RawPosting[] = [
+      {
+        sourceId: good.id,
+        url: "https://example.com/jobs/cap-1",
+        title: "Data Engineer",
+        company: "Acme",
+        location: "Remote",
+        description: "Build data pipelines with SQL.",
+      },
+      {
+        sourceId: good.id,
+        url: "https://example.com/jobs/cap-2",
+        title: "Data Engineer",
+        company: "Beta Corp", // deliberately distinct from postings[0] — same
+        // company+title+location would collide into a single canonical job
+        // (dedupe.ts secondaryKey), leaving only one candidate to score.
+        location: "Remote",
+        description: "Build more data pipelines with SQL.",
+      },
+    ];
+
+    const run = await startSearch(
+      { persona: "remote" },
+      {
+        llm: costingLlm,
+        dailyCapUsd: 0.015,
+        connectorForSource: (source) => stubConnector(source, postings),
+      },
+    );
+
+    const finalRow = await waitForTerminal(runsRepo, run.id);
+
+    expect(finalRow.status).toBe("completed");
+    expect(finalRow.stats.matched).toBe(2);
+    expect(finalRow.stats.scored).toBeLessThan(finalRow.stats.matched);
+    expect(finalRow.stats.scored).toBe(1);
+    expect(finalRow.stats.capStopped).toBe(true);
   });
 });

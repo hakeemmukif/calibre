@@ -17,37 +17,36 @@ describe("legitimacyTone", () => {
 });
 
 describe("resolveLegitimacyTier", () => {
-  it("High Confidence + active liveness -> clear", () => {
-    expect(resolveLegitimacyTier({ donorTier: "High Confidence", liveness: "active" })).toBe("clear");
+  it("clear + active liveness -> clear", () => {
+    expect(resolveLegitimacyTier({ tier: "clear", liveness: "active" })).toBe("clear");
   });
 
-  it("High Confidence + corroborated -> verified", () => {
-    expect(resolveLegitimacyTier({ donorTier: "High Confidence", liveness: "active", corroborated: true })).toBe(
-      "verified",
-    );
+  it("verified + corroborated -> verified", () => {
+    expect(resolveLegitimacyTier({ tier: "verified", liveness: "active", corroborated: true })).toBe("verified");
   });
 
-  it("Caution -> suspicious", () => {
-    expect(resolveLegitimacyTier({ donorTier: "Caution", liveness: "active" })).toBe("suspicious");
+  it("verified without corroboration is downgraded to clear", () => {
+    expect(resolveLegitimacyTier({ tier: "verified", liveness: "active", corroborated: false })).toBe("clear");
+    expect(resolveLegitimacyTier({ tier: "verified", liveness: "active" })).toBe("clear");
   });
 
-  it("Suspicious -> suspicious", () => {
-    expect(resolveLegitimacyTier({ donorTier: "Suspicious", liveness: "active" })).toBe("suspicious");
+  it("suspicious passes through unchanged", () => {
+    expect(resolveLegitimacyTier({ tier: "suspicious", liveness: "active" })).toBe("suspicious");
   });
 
-  it("expired liveness overrides a good donor tier -> ghost", () => {
-    expect(resolveLegitimacyTier({ donorTier: "High Confidence", liveness: "expired" })).toBe("ghost");
+  it("expired liveness overrides a good model tier -> ghost", () => {
+    expect(resolveLegitimacyTier({ tier: "clear", liveness: "expired" })).toBe("ghost");
   });
 
-  it("Scam donor tier -> scam even when liveness is active", () => {
-    expect(resolveLegitimacyTier({ donorTier: "Scam", liveness: "active" })).toBe("scam");
+  it("model scam tier -> scam even when liveness is active", () => {
+    expect(resolveLegitimacyTier({ tier: "scam", liveness: "active" })).toBe("scam");
   });
 
-  it("Scam wins over expired liveness too", () => {
-    expect(resolveLegitimacyTier({ donorTier: "Scam", liveness: "expired" })).toBe("scam");
+  it("scam wins over expired liveness too", () => {
+    expect(resolveLegitimacyTier({ tier: "scam", liveness: "expired" })).toBe("scam");
   });
 
   it("uncertain liveness does not itself force ghost", () => {
-    expect(resolveLegitimacyTier({ donorTier: "High Confidence", liveness: "uncertain" })).toBe("clear");
+    expect(resolveLegitimacyTier({ tier: "clear", liveness: "uncertain" })).toBe("clear");
   });
 });

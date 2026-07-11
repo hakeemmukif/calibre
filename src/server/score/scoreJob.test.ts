@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { LlmClient } from "@/lib/llm/client";
 import { makeMockLlm } from "@/lib/llm/mock";
@@ -11,7 +12,7 @@ const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
 vi.mock("./liveness", () => ({ probeLivenessDeep: vi.fn().mockResolvedValue("active") }));
 
-const { scoreJob } = await import("./index");
+const { scoreJob, EmptyJobDescriptionError } = await import("./index");
 const { probeLivenessDeep } = await import("./liveness");
 
 const jdFacts: JdFacts = {
@@ -30,7 +31,7 @@ const cheapEval: EvalScores = {
   fit: [{ k: "TypeScript", v: "5 years" }],
   gaps: [{ tone: "ok", k: "Cloud", v: "AWS experience present" }],
   reasons: { for: ["Matches core stack"], against: [] },
-  legitimacy: { tier: "High Confidence", summary: "Established company.", signals: [] },
+  legitimacy: { tier: "clear", summary: "Established company.", signals: [] },
   lowConfidence: false,
 };
 
@@ -134,4 +135,23 @@ describe("scoreJob", () => {
     const rows = await state.testDb.select().from(jobScores);
     expect(rows.filter((r) => r.jobId === job.id)).toHaveLength(1);
   });
+
+  it.each([null, ""])(
+    "a job with description %j is skipped: no LLM call, no job_scores row, throws EmptyJobDescriptionError",
+    async (description) => {
+      const source = await insertSource(state.testDb);
+      const job = await insertJob(state.testDb, source.id, { description });
+      const resume = await insertResume(state.testDb);
+      const complete = vi.fn(async () => {
+        throw new Error("LLM must not be called for a job with no description");
+      });
+      const llm: LlmClient = { complete };
+
+      await expect(scoreJob({ job, resume, llm })).rejects.toThrow(EmptyJobDescriptionError);
+      expect(complete).not.toHaveBeenCalled();
+
+      const rows = await state.testDb.select().from(jobScores).where(eq(jobScores.jobId, job.id));
+      expect(rows).toHaveLength(0);
+    },
+  );
 });

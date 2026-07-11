@@ -14,12 +14,25 @@ import { extractJdFacts } from "./jdFacts";
 import { legitimacyTone, resolveLegitimacyTier } from "./legitimacy";
 import { probeLivenessDeep } from "./liveness";
 
+// Thrown when a job has no description to extract facts from — the caller
+// (server/search/run.ts) is expected to SKIP scoring and record the job as
+// unscored, never fabricate `jdFacts` from an empty string (fail-loud: no
+// `?? ""` LLM call).
+export class EmptyJobDescriptionError extends Error {
+  constructor(jobId: string) {
+    super(`job ${jobId} has no description — skipping scoring rather than extracting jdFacts from an empty JD.`);
+    this.name = "EmptyJobDescriptionError";
+  }
+}
+
 export async function scoreJob(args: { job: JobRow; resume: ResumeRow; llm: LlmClient }): Promise<JobScoreRow> {
   const { job, resume, llm } = args;
 
+  if (!job.description) throw new EmptyJobDescriptionError(job.id);
+
   const liveness = await probeLivenessDeep(job.applyUrl ?? job.url);
 
-  const jdFactsResult = await extractJdFacts(llm, job.description ?? "");
+  const jdFactsResult = await extractJdFacts(llm, job.description);
 
   const cheap = await scoreMatch(llm, { jdFacts: jdFactsResult.data, resume: resume.structured });
 
@@ -35,7 +48,7 @@ export async function scoreJob(args: { job: JobRow; resume: ResumeRow; llm: LlmC
   }
 
   const tier = resolveLegitimacyTier({
-    donorTier: final.data.legitimacy.tier,
+    tier: final.data.legitimacy.tier,
     liveness,
     corroborated: final.data.legitimacy.corroborated,
   });

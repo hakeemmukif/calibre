@@ -11,7 +11,12 @@ scores with short labels, reasons for and against applying, concrete fit
 points, gaps (each tagged "warn" or "ok"), and a legitimacy assessment
 (tier: one of "verified" | "clear" | "suspicious" | "ghost" | "scam", a
 matching tone, and a short summary) based on the red-flag signals in the
-job facts and posting behaviour. If your confidence in this pass is low —
+job facts and posting behaviour. Only use "verified" together with
+`corroborated: true`, and only set `corroborated: true` when the job facts
+themselves contain independent corroborating evidence for the posting
+(e.g. a named company career-site URL, a verifiable company domain, or a
+cross-referenced posting elsewhere) — never from tone or writing quality
+alone; otherwise use "clear". If your confidence in this pass is low —
 conflicting signals, thin job facts, or a borderline score near a verdict
 boundary — set a `lowConfidence` flag so the caller can decide whether to
 re-run this evaluation on a stronger model.

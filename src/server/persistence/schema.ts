@@ -41,6 +41,8 @@ type SearchRunStats = {
   worth: number; // B6 addition: Apply/Consider verdict count, feeds toSearchRun's stats.worth
   ghosts: number;
   perSource: PerSourceStat[];
+  unscored?: number; // B6 fix pass: jobs skipped for a null/empty description, never fabricated
+  capStopped?: boolean; // B6 fix pass: true iff dailyCapUsd cut scoring short (distinct from candidates-exhausted)
 };
 
 type ApplicationAnswerEntry = {

@@ -15,7 +15,7 @@ import { resumesRepo, type ResumeRow } from "@/server/persistence/repos/resumes"
 import { searchRunsRepo, type SearchRunRow } from "@/server/persistence/repos/searchRuns";
 import { sourcesRepo, type SourceRow } from "@/server/persistence/repos/sources";
 import { create, release, getActiveRunForPersona, type RunHandle } from "@/server/runs/registry";
-import { scoreJob } from "@/server/score";
+import { EmptyJobDescriptionError, scoreJob } from "@/server/score";
 import type { ErrorEnvelope, Persona, SearchRun } from "@/types";
 import { toSearchRun } from "./assemble-run";
 import type { RawPosting, SourceConnector } from "./connector";
@@ -108,6 +108,8 @@ export async function startSearch(input: StartSearchInput, deps: StartSearchDeps
         worth: 0,
         ghosts: 0,
         perSource: scopedSources.map((s) => ({ sourceId: s.id, found: 0, errors: 0 })),
+        unscored: 0,
+        capStopped: false,
       },
     });
 
@@ -221,7 +223,14 @@ async function runFanOut(
   clearTimeout(hardCapTimer);
 
   const upsertedJobs = await upsertMatchedPostings(matchedPostings, persona);
-  const { scored, worth, ghosts } = await scoreTopCandidates(row, upsertedJobs, resumeRow, persona, handle, deps);
+  const { scored, worth, ghosts, unscored, capStopped } = await scoreTopCandidates(
+    row,
+    upsertedJobs,
+    resumeRow,
+    persona,
+    handle,
+    deps,
+  );
 
   const stats = {
     scanned,
@@ -230,6 +239,8 @@ async function runFanOut(
     worth,
     ghosts,
     perSource: [...perSource.entries()].map(([sourceId, s]) => ({ sourceId, found: s.found, errors: s.errors })),
+    unscored,
+    capStopped,
   };
   await searchRunsRepo.updateStats(row.id, stats);
   const finished = await searchRunsRepo.updateStatus(row.id, "completed", { finishedAt: new Date() });
@@ -331,13 +342,15 @@ async function scoreTopCandidates(
   persona: Persona,
   handle: RunHandle,
   deps: StartSearchDeps,
-): Promise<{ scored: number; worth: number; ghosts: number }> {
+): Promise<{ scored: number; worth: number; ghosts: number; unscored: number; capStopped: boolean }> {
   const topCandidates = candidates.slice(0, TOP_N_CANDIDATES);
   let scored = 0;
   let worth = 0;
   let ghosts = 0;
+  let unscored = 0;
+  let capStopped = false;
 
-  if (topCandidates.length === 0) return { scored, worth, ghosts };
+  if (topCandidates.length === 0) return { scored, worth, ghosts, unscored, capStopped };
 
   const isNewCutoff = await resolveIsNewCutoff(persona);
   const llm = deps.llm ?? getLlm();
@@ -353,6 +366,7 @@ async function scoreTopCandidates(
   for (const [index, { job, source }] of topCandidates.entries()) {
     if (dailyCapUsd !== undefined && spentToday >= dailyCapUsd) {
       console.error(`search run ${row.id}: daily LLM cost cap ($${dailyCapUsd}) reached — stopping further scoring`);
+      capStopped = true;
       break;
     }
 
@@ -365,10 +379,17 @@ async function scoreTopCandidates(
 
       handle.emit({ event: "job", data: assembleJob({ job, score: scoreRow, source }, { isNewCutoff }) });
     } catch (err) {
-      // A single job's scoring failure (LLM error, malformed response) is
-      // tolerated the same way a connector failure is (B5 precedent) — the
-      // run keeps going rather than crashing over one bad candidate.
-      console.error(`search run ${row.id}: scoring job ${job.id} failed:`, err);
+      if (err instanceof EmptyJobDescriptionError) {
+        // Expected, not a failure — a board connector without fetchDetail
+        // left `description` null. Recorded distinctly (stats.unscored)
+        // rather than folded into the generic tolerated-failure log below.
+        unscored += 1;
+      } else {
+        // A single job's scoring failure (LLM error, malformed response) is
+        // tolerated the same way a connector failure is (B5 precedent) — the
+        // run keeps going rather than crashing over one bad candidate.
+        console.error(`search run ${row.id}: scoring job ${job.id} failed:`, err);
+      }
     }
 
     handle.emit({
@@ -387,5 +408,5 @@ async function scoreTopCandidates(
     data: { stage: "legitimacy", current: topCandidates.length, total: topCandidates.length, label: "Legitimacy checks complete" },
   });
 
-  return { scored, worth, ghosts };
+  return { scored, worth, ghosts, unscored, capStopped };
 }

@@ -4,28 +4,28 @@
 // legitimacy_signals inside EvalScores — no separate verdict module").
 // `EvalScoresSchema` is shaped to supply everything `assembleJob` needs for
 // a valid frozen `Job`: score, verdict, why, breakdown/fit/gaps/reasons, plus
-// the donor 3(+1)-tier legitimacy block `server/score/legitimacy.ts` combines
-// with liveness into the frozen 5-tier. Escalation itself is owned by the
-// CALLER (server/score/index.ts) per the task brief — this module only
-// performs one `complete()` call per invocation.
+// the frozen 5-tier legitimacy block `server/score/legitimacy.ts` overlays
+// liveness + corroboration onto. The model emits the frozen `LegitimacyTier`
+// directly (task-B6 fix pass: the template already instructed the 5-tier
+// vocabulary — a donor 3-tier schema here just broke every real run).
+// Escalation itself is owned by the CALLER (server/score/index.ts) per the
+// task brief — this module only performs one `complete()` call per
+// invocation.
 import { z } from "zod";
 import type { LlmClient } from "@/lib/llm/client";
 import { renderTemplate } from "@/lib/llm/templates";
-import { Tone } from "@/types";
-
-// Donor 3-tier (system-architecture.md §1) + the template's explicit `Scam`
-// output — reconciled into the frozen 5-tier by `legitimacy.ts`.
-export const DonorLegitimacyTier = z.enum(["High Confidence", "Caution", "Suspicious", "Scam"]);
-export type DonorLegitimacyTier = z.infer<typeof DonorLegitimacyTier>;
+import { LegitimacyTier, Tone } from "@/types";
 
 export const EvalLegitimacySchema = z.object({
-  tier: DonorLegitimacyTier,
+  tier: LegitimacyTier,
   summary: z.string(),
   confidence: z.number().min(0).max(1).optional(),
   signals: z.array(z.string()),
   // Model-asserted corroboration signal — the only path to the frozen
   // `verified` tier (system-architecture.md §1: "reserved for corroborated
-  // signals"); never inferred from "High Confidence" alone.
+  // signals"); never inferred from the model's own "verified" claim alone
+  // (config/templates/match-score.md instructs the model to set this
+  // explicitly, separately from `tier`).
   corroborated: z.boolean().optional(),
 });
 
