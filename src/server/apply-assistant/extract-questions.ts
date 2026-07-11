@@ -34,11 +34,20 @@ const PasteExtractResponse = z.object({ questions: z.array(ApplicationQuestion) 
 
 async function tier3Paste(pastedForm: string): Promise<ApplicationQuestion[]> {
   const llm = getLlm();
-  const result = await llm.complete({
-    task: "question-extract",
-    messages: renderTemplate("question-extract", { formText: pastedForm }),
-    responseSchema: PasteExtractResponse,
-  });
+  let result: { data: z.infer<typeof PasteExtractResponse>; model: string; costUsd: number };
+  try {
+    result = await llm.complete({
+      task: "question-extract",
+      messages: renderTemplate("question-extract", { formText: pastedForm }),
+      responseSchema: PasteExtractResponse,
+    });
+  } catch (err) {
+    // A malformed model reply (schema-invalid JSON, ignored json_schema, ...)
+    // is an UPSTREAM failure, not a bad request — must land as 502
+    // EXTRACTION_FAILED, never the bare ZodError the route would otherwise
+    // catch as 422 VALIDATION_ERROR (fix pass finding 1).
+    throw new ExtractionFailedError(`Paste parsing failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
   return result.data.questions;
 }
 
@@ -69,7 +78,14 @@ export async function extractQuestions(input: {
     const connector = connectorForSource(joined.source);
     tier1Fields = connector.extractQuestions ? await connector.extractQuestions(job) : null;
     if (tier1Fields && tier1Fields.length > 0) {
-      return { questions: mapFields(tier1Fields), sourceUrl };
+      try {
+        return { questions: mapFields(tier1Fields), sourceUrl };
+      } catch {
+        // A mapping failure (unrecognized field_type, or an unparseable
+        // limit -> ApplicationQuestion.parse throw) on tier 1 is NOT a
+        // reason to 500 — fall through to tier 2 same as an empty tier-1
+        // result (fix pass finding 2). Falls into the tier-2 code below.
+      }
     }
   } else if (input.url !== undefined) {
     sourceUrl = input.url;
@@ -81,7 +97,16 @@ export async function extractQuestions(input: {
 
   const tier2Fields = await parseFormViaDom(sourceUrl);
   if (tier2Fields && tier2Fields.length > 0) {
-    return { questions: mapFields(tier2Fields), sourceUrl };
+    try {
+      return { questions: mapFields(tier2Fields), sourceUrl };
+    } catch (err) {
+      // Same mapping-failure class as tier 1, but there's no further tier to
+      // fall through to — must still land as 502 EXTRACTION_FAILED, never a
+      // bare 500 (fix pass finding 2).
+      throw new ExtractionFailedError(
+        `Could not map extracted form fields for "${sourceUrl}": ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   throw new ExtractionFailedError(

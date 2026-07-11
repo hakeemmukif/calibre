@@ -129,4 +129,32 @@ describe("extractQuestions", () => {
     expect(domParse.fn).toHaveBeenCalledWith("https://example.com/careers/apply");
     expect(result.questions).toHaveLength(1);
   });
+
+  it("tier 3 (paste): schema-invalid LLM reply -> ExtractionFailedError, not a bare ZodError (regression, fix pass finding 1)", async () => {
+    llm.scripted = { "question-extract": { kind: "long" } };
+    await expect(extractQuestions({ pastedForm: "Why do you want to work here? ____" })).rejects.toBeInstanceOf(
+      ExtractionFailedError,
+    );
+  });
+
+  it("tier 1 mapping failure (unrecognized field_type) falls through to tier 2; both empty -> ExtractionFailedError, never a bare Error (regression, fix pass finding 2)", async () => {
+    const source = await insertSource(state.testDb, { id: "greenhouse", kind: "ats", config: { slug: "acme" } });
+    const job = await insertJob(state.testDb, source.id, {
+      sourceId: "greenhouse",
+      externalId: "424242",
+      url: "https://boards.greenhouse.io/acme/jobs/424242",
+      applyUrl: "https://boards.greenhouse.io/acme/jobs/424242",
+    });
+    const resume = await insertResume(state.testDb);
+    await insertJobScore(state.testDb, job.id, resume.id);
+
+    const fixture = {
+      questions: [{ label: "Mystery field", required: false, fields: [{ name: "value", type: "totally-unknown-type" }] }],
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(fixture), { status: 200 })));
+    domParse.fn.mockResolvedValue(null);
+
+    await expect(extractQuestions({ jobId: job.id })).rejects.toBeInstanceOf(ExtractionFailedError);
+    expect(domParse.fn).toHaveBeenCalled();
+  });
 });

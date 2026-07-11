@@ -8,7 +8,9 @@ import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
 
-const { draftAnswers, patchAnswers, NoActiveResumeError, UpstreamLlmError, UnknownAnswersIdError } = await import("./answer");
+const { draftAnswers, patchAnswers, NoActiveResumeError, UpstreamLlmError, UnknownAnswersIdError, UnknownJobError } = await import(
+  "./answer"
+);
 
 describe("draftAnswers", () => {
   beforeAll(async () => {
@@ -21,6 +23,15 @@ describe("draftAnswers", () => {
     await state.testDb.delete(jobs);
     await state.testDb.delete(resumes);
     await state.testDb.delete(sources);
+  });
+
+  it("unknown jobId -> UnknownJobError, not an FK-violation 500 (regression, fix pass finding 3)", async () => {
+    await expect(
+      draftAnswers(
+        { jobId: crypto.randomUUID(), questions: [{ id: "q1", prompt: "Why us?", kind: "text", required: true }] },
+        { llm: makeMockLlm({}) },
+      ),
+    ).rejects.toBeInstanceOf(UnknownJobError);
   });
 
   it("no active résumé -> NoActiveResumeError", async () => {

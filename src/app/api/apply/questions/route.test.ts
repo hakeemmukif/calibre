@@ -114,4 +114,38 @@ describe("POST /api/apply/questions", () => {
     expect(body.sourceUrl).toBe("https://boards.greenhouse.io/acme/jobs/123456");
     expect(body.questions).toHaveLength(1);
   });
+
+  it("tier 3 (paste): schema-invalid LLM reply -> 502 EXTRACTION_FAILED, not 422 (regression, fix pass finding 1)", async () => {
+    llm.scripted = { "question-extract": { kind: "long" } };
+    const res = await POST(jsonRequest({ pastedForm: "Why us? ____" }));
+    expect(res.status).toBe(502);
+    expect((await res.json()).error.code).toBe("EXTRACTION_FAILED");
+  });
+
+  it("tier 1 mapping failure (unrecognized field_type) falls through to tier 2; both empty -> 502, never a raw 500 (regression, fix pass finding 2)", async () => {
+    const source = await insertSource(state.testDb, { id: "greenhouse", kind: "ats", config: { slug: "acme" } });
+    const job = await insertJob(state.testDb, source.id, {
+      sourceId: "greenhouse",
+      externalId: "424242",
+      url: "https://boards.greenhouse.io/acme/jobs/424242",
+      applyUrl: "https://boards.greenhouse.io/acme/jobs/424242",
+    });
+    const resume = await insertResume(state.testDb);
+    await insertJobScore(state.testDb, job.id, resume.id);
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({ questions: [{ label: "Mystery field", required: false, fields: [{ name: "value", type: "totally-unknown-type" }] }] }),
+          { status: 200 },
+        ),
+      ),
+    );
+    domParse.fn.mockResolvedValue(null);
+
+    const res = await POST(jsonRequest({ jobId: job.id }));
+    expect(res.status).toBe(502);
+    expect((await res.json()).error.code).toBe("EXTRACTION_FAILED");
+  });
 });

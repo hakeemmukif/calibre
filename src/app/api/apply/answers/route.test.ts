@@ -37,6 +37,14 @@ describe("POST /api/apply/answers", () => {
     await state.testDb.delete(sources);
   });
 
+  it("unknown jobId -> 404 NOT_FOUND, not a raw FK-violation 500 (regression, fix pass finding 3)", async () => {
+    const res = await POST(
+      jsonRequest({ jobId: crypto.randomUUID(), questions: [{ id: "q1", prompt: "Why us?", kind: "text", required: true }] }),
+    );
+    expect(res.status).toBe(404);
+    expect((await res.json()).error.code).toBe("NOT_FOUND");
+  });
+
   it("no résumé -> 409 CONFLICT", async () => {
     const source = await insertSource(state.testDb);
     const job = await insertJob(state.testDb, source.id);

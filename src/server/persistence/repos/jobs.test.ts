@@ -342,4 +342,25 @@ describe("jobsRepo", () => {
     expect(found?.job.id).toBe(job.id);
     expect(found?.score.jobId).toBe(job.id);
   });
+
+  it("existsById is true for an unscored job (unlike getById) and false for an unknown id", async () => {
+    const db = await createTestDb();
+    const repo = createJobsRepo(db);
+    const source = await insertSource(db);
+    const job = await repo.upsertByDedupeKey({
+      dedupeKey: "dk-unscored",
+      url: "https://example.com/unscored",
+      sourceId: source.id,
+      title: "Job Unscored",
+      company: "Acme",
+      location: "Remote",
+      persona: "remote",
+      aliases: [],
+      raw: {},
+    });
+
+    expect(await repo.existsById(job.id)).toBe(true);
+    expect(await repo.getById(job.id)).toBeNull();
+    expect(await repo.existsById(crypto.randomUUID())).toBe(false);
+  });
 });

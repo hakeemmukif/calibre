@@ -3,7 +3,7 @@
 // server/apply-assistant/answer.ts (api-contract.md §3 "POST /api/apply/answers").
 import { NextRequest, NextResponse } from "next/server";
 import { z, ZodError } from "zod";
-import { NoActiveResumeError, UpstreamLlmError, draftAnswers } from "@/server/apply-assistant/answer";
+import { NoActiveResumeError, UnknownJobError, UpstreamLlmError, draftAnswers } from "@/server/apply-assistant/answer";
 import { ApplicationQuestion, type ErrorEnvelope } from "@/types";
 
 const RequestBody = z.object({
@@ -31,6 +31,9 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     if (err instanceof ZodError) {
       return errorResponse(422, "VALIDATION_ERROR", "Invalid apply/answers request.", err.issues);
+    }
+    if (err instanceof UnknownJobError) {
+      return errorResponse(404, "NOT_FOUND", err.message);
     }
     if (err instanceof NoActiveResumeError) {
       return errorResponse(409, "CONFLICT", err.message);

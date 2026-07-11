@@ -161,6 +161,15 @@ export function createJobsRepo(db: Db) {
       return row ?? null;
     },
 
+    // Raw existence check, deliberately NOT `getById` — that method inner-
+    // joins job_scores, so an existing-but-unscored job would falsely read
+    // as "doesn't exist" here (fix pass finding 3: draftAnswers must 404 an
+    // unknown jobId, not an unscored one).
+    async existsById(id: string): Promise<boolean> {
+      const [row] = await db.select({ id: jobs.id }).from(jobs).where(eq(jobs.id, id)).limit(1);
+      return row !== undefined;
+    },
+
     // task-B6-brief.md "stats computed server-side over the FULL scoped
     // result set, not the page" — same filters as listScored, no
     // cursor/limit. Aggregated in JS rather than SQL COUNT FILTER: dataset
@@ -203,5 +212,6 @@ export const jobsRepo: ReturnType<typeof createJobsRepo> = {
   upsertByDedupeKey: (row) => createJobsRepo(getDb()).upsertByDedupeKey(row),
   listScored: (q) => createJobsRepo(getDb()).listScored(q),
   getById: (id) => createJobsRepo(getDb()).getById(id),
+  existsById: (id) => createJobsRepo(getDb()).existsById(id),
   statsForQuery: (q, sinceLastCutoff) => createJobsRepo(getDb()).statsForQuery(q, sinceLastCutoff),
 };

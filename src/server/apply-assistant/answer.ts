@@ -10,9 +10,17 @@ import { z } from "zod";
 import { getLlm, type LlmClient } from "@/lib/llm/client";
 import { renderTemplate } from "@/lib/llm/templates";
 import { applicationAnswersRepo, type ApplicationAnswersRow } from "@/server/persistence/repos/applicationAnswers";
+import { jobsRepo } from "@/server/persistence/repos/jobs";
 import { jobScoresRepo } from "@/server/persistence/repos/jobScores";
 import { resumesRepo } from "@/server/persistence/repos/resumes";
 import { ApplicationAnswer, ApplicationAnswers, type ApplicationQuestion } from "@/types";
+
+export class UnknownJobError extends Error {
+  constructor(jobId: string) {
+    super(`No job with id "${jobId}".`);
+    this.name = "UnknownJobError";
+  }
+}
 
 export class NoActiveResumeError extends Error {
   constructor(message = "No résumé exists — drafting answers requires an active résumé to ground against.") {
@@ -52,6 +60,8 @@ export async function draftAnswers(
   input: { jobId: string; questions: ApplicationQuestion[] },
   deps: { llm?: LlmClient } = {},
 ): Promise<ApplicationAnswers> {
+  if (!(await jobsRepo.existsById(input.jobId))) throw new UnknownJobError(input.jobId);
+
   const resumeRow = await resumesRepo.getActive();
   if (!resumeRow) throw new NoActiveResumeError();
 
