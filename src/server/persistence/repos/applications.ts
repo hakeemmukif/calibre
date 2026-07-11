@@ -64,7 +64,7 @@ function latestJobScores(db: Db) {
   return db
     .selectDistinctOn([jobScores.jobId], { id: jobScores.id })
     .from(jobScores)
-    .orderBy(jobScores.jobId, desc(jobScores.createdAt))
+    .orderBy(jobScores.jobId, desc(jobScores.createdAt), desc(jobScores.id))
     .as("latest_job_scores");
 }
 
