@@ -21,6 +21,7 @@
 - Existing 418 tests must stay green after every task (`npm test`); `npm run check` green at branch end.
 - Working branch: `scan-eval-live` (created from `main` with the prior session's scan-UI WIP committed as the base commit — controller does this before Task 1).
 - Donor repo (read-only reference): `/Users/hakeem/Projects/career-ops` (+ `careerops-web/`). Copy VALUES (slugs, prices, API params) from it; never import code from it.
+- UI canon (user directive 2026-07-12): ANY new UI — including anything not explicitly specified in a task — must follow the existing design system: compose ONLY the 13 primitives in `src/caliber-ui/components` (zero new primitives), style ONLY via the kit tokens in `src/caliber-ui/styles/tokens.css` (no hardcoded colors/radii/fonts), mirror the layout/idiom of the neighboring compositions (JobFeed, ScanProgress, JobDetail — prototype parity), and ship a Storybook story for every new composition. The original HTML prototype's approved values ARE these tokens/primitives (design spec §12: code is canon; explorations live as story variants). When in doubt, copy the visual pattern of the nearest existing composition rather than inventing one.
 
 ---
 
