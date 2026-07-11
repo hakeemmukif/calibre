@@ -1,0 +1,98 @@
+// Minimal valid-row builders shared across repo tests — every column here is
+// NOT NULL in schema.ts, so each helper fills the full shape once instead of
+// every test file repeating it.
+import { jobs, jobScores, resumes, sources } from "../../schema";
+import type { Db } from "../db";
+
+let counter = 0;
+function unique(prefix: string): string {
+  counter += 1;
+  return `${prefix}-${counter}`;
+}
+
+export async function insertSource(db: Db, overrides: Partial<typeof sources.$inferInsert> = {}) {
+  const [row] = await db
+    .insert(sources)
+    .values({
+      id: unique("source"),
+      kind: "ats",
+      persona: "remote",
+      enabled: true,
+      config: {},
+      ...overrides,
+    })
+    .returning();
+  return row;
+}
+
+export async function insertResume(db: Db, overrides: Partial<typeof resumes.$inferInsert> = {}) {
+  const [row] = await db
+    .insert(resumes)
+    .values({
+      rawText: "Jane Doe — Software Engineer",
+      structured: {
+        name: "Jane Doe",
+        contact: [{ label: "email", value: "jane@example.com" }],
+        summary: "Backend engineer.",
+        experience: [],
+        education: [],
+        skills: [],
+        extras: [],
+      },
+      sourceKind: "paste",
+      isActive: false,
+      ...overrides,
+    })
+    .returning();
+  return row;
+}
+
+export async function insertJob(db: Db, sourceId: string, overrides: Partial<typeof jobs.$inferInsert> = {}) {
+  const key = unique("job");
+  const [row] = await db
+    .insert(jobs)
+    .values({
+      dedupeKey: key,
+      url: `https://example.com/${key}`,
+      sourceId,
+      title: "Senior Backend Engineer",
+      company: "Example Co",
+      location: "Remote",
+      persona: "remote",
+      aliases: [],
+      raw: {},
+      ...overrides,
+    })
+    .returning();
+  return row;
+}
+
+export async function insertJobScore(
+  db: Db,
+  jobId: string,
+  resumeId: string,
+  overrides: Partial<typeof jobScores.$inferInsert> = {},
+) {
+  const [row] = await db
+    .insert(jobScores)
+    .values({
+      jobId,
+      resumeId,
+      score: 4.2,
+      verdict: "Apply",
+      legitimacy: { tier: "clear", tone: "good", summary: "Looks fine.", signals: [] },
+      liveness: "active",
+      breakdown: [],
+      reasons: { for: [], against: [] },
+      fit: [],
+      gaps: [],
+      jdFacts: {},
+      model: "test-model",
+      escalated: false,
+      costUsd: 0.01,
+      policyVersion: "v1",
+      ...overrides,
+    })
+    .returning();
+  return row;
+}
