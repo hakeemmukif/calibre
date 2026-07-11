@@ -64,6 +64,46 @@ describe("ashby connector", () => {
     ]);
   });
 
+  it("caps the yielded description at 40_000 chars", async () => {
+    const fixture = {
+      jobs: [
+        {
+          title: "Very Long Description",
+          jobUrl: "https://jobs.ashbyhq.com/acme/long-1",
+          descriptionHtml: "<p>" + "x".repeat(45_000) + "</p>",
+        },
+      ],
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(fixture), { status: 200 })));
+
+    const connector = createAshbyConnector(source());
+    const postings = await collect(
+      connector.discover({ targets: [], since: new Date(0), signal: new AbortController().signal, onProgress: () => {} }),
+    );
+
+    expect(postings).toHaveLength(1);
+    expect(postings[0].description).toHaveLength(40_000);
+  });
+
+  it("yields description undefined when descriptionHtml is absent or whitespace-only", async () => {
+    const fixture = {
+      jobs: [
+        { title: "No descriptionHtml field", jobUrl: "https://jobs.ashbyhq.com/acme/none-1" },
+        { title: "Whitespace descriptionHtml", jobUrl: "https://jobs.ashbyhq.com/acme/blank-1", descriptionHtml: "   " },
+      ],
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(fixture), { status: 200 })));
+
+    const connector = createAshbyConnector(source());
+    const postings = await collect(
+      connector.discover({ targets: [], since: new Date(0), signal: new AbortController().signal, onProgress: () => {} }),
+    );
+
+    expect(postings).toHaveLength(2);
+    expect(postings[0].description).toBeUndefined();
+    expect(postings[1].description).toBeUndefined();
+  });
+
   it("retries on failure and throws the last error once retries are exhausted", async () => {
     vi.useFakeTimers();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("rate limited", { status: 429 })));

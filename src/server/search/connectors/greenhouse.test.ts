@@ -73,6 +73,47 @@ describe("greenhouse connector", () => {
     expect(onProgress).toHaveBeenCalled();
   });
 
+  it("caps the yielded description at 40_000 chars", async () => {
+    const fixture = {
+      jobs: [
+        {
+          id: 789,
+          title: "Very Long Description",
+          absolute_url: "https://boards.greenhouse.io/acme/jobs/789",
+          content: "&lt;p&gt;" + "x".repeat(45_000) + "&lt;/p&gt;",
+        },
+      ],
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(fixture), { status: 200 })));
+
+    const connector = createGreenhouseConnector(source());
+    const postings = await collect(
+      connector.discover({ targets: [], since: new Date(0), signal: new AbortController().signal, onProgress: () => {} }),
+    );
+
+    expect(postings).toHaveLength(1);
+    expect(postings[0].description).toHaveLength(40_000);
+  });
+
+  it("yields description undefined when content is absent or whitespace-only", async () => {
+    const fixture = {
+      jobs: [
+        { id: 1, title: "No content field", absolute_url: "https://boards.greenhouse.io/acme/jobs/1" },
+        { id: 2, title: "Whitespace content", absolute_url: "https://boards.greenhouse.io/acme/jobs/2", content: "   " },
+      ],
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(fixture), { status: 200 })));
+
+    const connector = createGreenhouseConnector(source());
+    const postings = await collect(
+      connector.discover({ targets: [], since: new Date(0), signal: new AbortController().signal, onProgress: () => {} }),
+    );
+
+    expect(postings).toHaveLength(2);
+    expect(postings[0].description).toBeUndefined();
+    expect(postings[1].description).toBeUndefined();
+  });
+
   it("throws when the source has no config.slug", async () => {
     const connector = createGreenhouseConnector(source({ config: {} }));
     await expect(
