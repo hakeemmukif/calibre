@@ -236,7 +236,8 @@
                   "PARSE_FAILED",
                   "EXTRACTION_FAILED",
                   "UPSTREAM_LLM_ERROR",
-                  "PAYLOAD_TOO_LARGE"
+                  "PAYLOAD_TOO_LARGE",
+                  "INTERNAL"
                 ],
                 "type": "string"
               },

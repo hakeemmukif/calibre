@@ -51,7 +51,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
           const data =
             row.status === "completed"
               ? await toTailoredResume(row)
-              : ({ error: { code: "CONFLICT", message: `Tailor run ${id} failed.` } } satisfies ErrorEnvelope);
+              : ({ error: { code: "INTERNAL", message: `Tailor run ${id} failed.` } } satisfies ErrorEnvelope);
           controller.enqueue(encoder.encode(sseLine(eventName, data, 1)));
         } else {
           const envelope: ErrorEnvelope = {

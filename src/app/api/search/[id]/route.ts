@@ -51,9 +51,14 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       if (!handle || handle.isTerminal) {
         if (row.status === "completed") {
           controller.enqueue(encoder.encode(sseLine("done", toSearchRun(row), 1)));
+        } else if (row.status === "failed") {
+          const envelope: ErrorEnvelope = {
+            error: { code: "INTERNAL", message: row.error ?? `Search run ${id} failed.` },
+          };
+          controller.enqueue(encoder.encode(sseLine("error", envelope, 1)));
         } else {
           const envelope: ErrorEnvelope = {
-            error: { code: "CONFLICT", message: row.error ?? `Run ${id} is not streamable (status: ${row.status}).` },
+            error: { code: "CONFLICT", message: `Run ${id} is not streamable (status: ${row.status}).` },
           };
           controller.enqueue(encoder.encode(sseLine("error", envelope, 1)));
         }

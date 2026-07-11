@@ -50,4 +50,10 @@ describe('contract document', () => {
     const second = serializeDocument(buildDocument());
     expect(first).toBe(second);
   });
+
+  it("ErrorEnvelope code enum includes INTERNAL for run-crash failures", async () => {
+    const { ErrorEnvelope } = await import("@/types");
+    const codes = ErrorEnvelope.shape.error.shape.code.options;
+    expect(codes).toContain("INTERNAL");
+  });
 });

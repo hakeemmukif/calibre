@@ -185,6 +185,7 @@ export const ErrorEnvelope = z.object({
       "EXTRACTION_FAILED",
       "UPSTREAM_LLM_ERROR",
       "PAYLOAD_TOO_LARGE",
+      "INTERNAL",
     ]),
     message: z.string(),
     details: z.unknown().optional(), // e.g. ZodIssue[] for VALIDATION_ERROR
