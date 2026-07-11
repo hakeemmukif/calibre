@@ -5,11 +5,11 @@ import { escalateModelFor, modelFor, priceFor } from "./models";
 describe("models", () => {
   it("modelFor reads model/maxTokens/temperature from config/models.yml", () => {
     const config = modelFor("resume-extract");
-    expect(config).toEqual({ model: "openai/gpt-4o-mini", maxTokens: 2000, temperature: 0.1 });
+    expect(config).toEqual({ model: "openai/gpt-oss-120b", maxTokens: 2000, temperature: 0.1 });
   });
 
-  it("escalateModelFor returns the configured escalation model", () => {
-    expect(escalateModelFor("match-score")).toBe("openai/gpt-4o");
+  it("escalateModelFor returns null for match-score (no escalation valve configured)", () => {
+    expect(escalateModelFor("match-score")).toBeNull();
   });
 
   it("escalateModelFor returns null when a task has no escalateTo", () => {
@@ -17,7 +17,7 @@ describe("models", () => {
   });
 
   it("priceFor reads the prompt/completion price for a known model", () => {
-    expect(priceFor("openai/gpt-4o-mini")).toEqual({ promptUsdPerMTok: 0.15, completionUsdPerMTok: 0.6 });
+    expect(priceFor("openai/gpt-oss-120b")).toEqual({ promptUsdPerMTok: 0.03, completionUsdPerMTok: 0.15 });
   });
 
   it("throws on an unknown task", () => {

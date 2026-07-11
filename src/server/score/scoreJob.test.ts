@@ -84,21 +84,17 @@ describe("scoreJob", () => {
     expect(row.legitimacy.tone).toBe("ghost");
   });
 
-  it("escalates on a low-confidence cheap result: re-runs with the escalate model, marks escalated, sums costUsd", async () => {
+  it("does not escalate a low-confidence cheap result: match-score has no escalateTo configured (donor parity)", async () => {
     const source = await insertSource(state.testDb);
     const job = await insertJob(state.testDb, source.id, { description: "Backend role." });
     const resume = await insertResume(state.testDb);
-
-    const strongEval: EvalScores = { ...cheapEval, score: 3.5, verdict: "Consider", lowConfidence: false };
 
     const llm: LlmClient = {
       async complete(args) {
         if (args.task === "jd-extract") {
           return { data: args.responseSchema.parse(jdFacts), model: "cheap-jd-model", costUsd: 0.001 };
         }
-        if (args.modelOverride) {
-          return { data: args.responseSchema.parse(strongEval), model: args.modelOverride, costUsd: 0.05 };
-        }
+        expect(args.modelOverride).toBeUndefined();
         return {
           data: args.responseSchema.parse({ ...cheapEval, lowConfidence: true }),
           model: "cheap-match-model",
@@ -109,11 +105,9 @@ describe("scoreJob", () => {
 
     const row = await scoreJob({ job, resume, llm });
 
-    expect(row.escalated).toBe(true);
-    expect(row.score).toBeCloseTo(3.5);
-    expect(row.verdict).toBe("Consider");
-    expect(row.model).not.toBe("cheap-match-model");
-    expect(row.costUsd).toBeCloseTo(0.001 + 0.002 + 0.05);
+    expect(row.escalated).toBe(false);
+    expect(row.model).toBe("cheap-match-model");
+    expect(row.costUsd).toBeCloseTo(0.001 + 0.002);
   });
 
   it("verdict-cache: re-scoring the same (jobId, resumeId, policyVersion) updates the existing row instead of throwing", async () => {

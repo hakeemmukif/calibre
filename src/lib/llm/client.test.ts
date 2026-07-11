@@ -60,7 +60,7 @@ describe("getLlm", () => {
     const result = await llm.complete({ task: "resume-extract", messages: [], responseSchema: schema });
 
     expect(result.data).toEqual({ ok: true });
-    expect(result.model).toBe("openai/gpt-4o-mini");
+    expect(result.model).toBe("openai/gpt-oss-120b");
   });
 
   it("throws when the reply fails the caller's responseSchema", async () => {
@@ -78,8 +78,8 @@ describe("getLlm", () => {
 
     const result = await llm.complete({ task: "resume-extract", messages: [], responseSchema: schema });
 
-    // openai/gpt-4o-mini: promptUsdPerMTok 0.15, completionUsdPerMTok 0.6
-    expect(result.costUsd).toBeCloseTo(0.15 + 0.6, 10);
+    // openai/gpt-oss-120b: promptUsdPerMTok 0.03, completionUsdPerMTok 0.15
+    expect(result.costUsd).toBeCloseTo(0.03 + 0.15, 10);
   });
 
   it("modelOverride overrides the task's base model in the outgoing request and result", async () => {
@@ -89,14 +89,14 @@ describe("getLlm", () => {
 
     const result = await llm.complete({
       task: "match-score",
-      modelOverride: "openai/gpt-4o",
+      modelOverride: "openai/gpt-oss-120b",
       messages: [],
       responseSchema: schema,
     });
 
     const callArgs = mocks.create.mock.calls[0][0];
-    expect(callArgs.model).toBe("openai/gpt-4o");
-    expect(result.model).toBe("openai/gpt-4o");
+    expect(callArgs.model).toBe("openai/gpt-oss-120b");
+    expect(result.model).toBe("openai/gpt-oss-120b");
   });
 });
 
