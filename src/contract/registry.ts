@@ -215,6 +215,20 @@ registry.registerPath({
 
 registry.registerPath({
   method: "post",
+  path: "/api/jobs/{id}/evaluate",
+  summary: "On-demand re-score of a single job — F2 (Task 6)",
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: { description: "The freshly re-scored, frozen Job", content: { "application/json": { schema: Job } } },
+    404: { description: "Malformed or unknown job id", content: { "application/json": { schema: ErrorEnvelope } } },
+    409: { description: "No active résumé to score against", content: { "application/json": { schema: ErrorEnvelope } } },
+    422: { description: "No job description obtainable — nothing to extract facts from", content: { "application/json": { schema: ErrorEnvelope } } },
+    500: { description: "Unexpected failure", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "post",
   path: "/api/apply/questions",
   summary: "Extract application questions from a posting — F4 tier 1/2/3 (B7)",
   request: {

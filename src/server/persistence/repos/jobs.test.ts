@@ -391,4 +391,27 @@ describe("jobsRepo", () => {
     expect(await repo.getById(job.id)).toBeNull();
     expect(await repo.existsById(crypto.randomUUID())).toBe(false);
   });
+
+  it("getRowWithSourceById returns the joined job+source row, undefined for an unknown id", async () => {
+    const db = await createTestDb();
+    const repo = createJobsRepo(db);
+    const source = await insertSource(db);
+    const job = await repo.upsertByDedupeKey({
+      dedupeKey: "dk-with-source",
+      url: "https://example.com/with-source",
+      sourceId: source.id,
+      title: "Job With Source",
+      company: "Acme",
+      location: "Remote",
+      persona: "remote",
+      aliases: [],
+      raw: {},
+    });
+
+    const found = await repo.getRowWithSourceById(job.id);
+    expect(found?.job.id).toBe(job.id);
+    expect(found?.source.id).toBe(source.id);
+
+    expect(await repo.getRowWithSourceById(crypto.randomUUID())).toBeUndefined();
+  });
 });

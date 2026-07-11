@@ -159,6 +159,19 @@ export function createJobsRepo(db: Db) {
       return updated;
     },
 
+    // Job+source only (no job_scores join) — Task 6's per-job evaluate
+    // endpoint needs a job regardless of whether it's been scored before
+    // (unlike `getById`, which requires an existing job_scores row).
+    async getRowWithSourceById(id: string): Promise<{ job: JobRow; source: SourceRow } | undefined> {
+      const [row] = await db
+        .select({ job: jobs, source: sources })
+        .from(jobs)
+        .innerJoin(sources, eq(sources.id, jobs.sourceId))
+        .where(eq(jobs.id, id))
+        .limit(1);
+      return row ?? undefined;
+    },
+
     // Raw existence check, deliberately NOT `getById` — that method inner-
     // joins job_scores, so an existing-but-unscored job would falsely read
     // as "doesn't exist" here (fix pass finding 3: draftAnswers must 404 an
@@ -210,6 +223,7 @@ export const jobsRepo: ReturnType<typeof createJobsRepo> = {
   upsertByDedupeKey: (row) => createJobsRepo(getDb()).upsertByDedupeKey(row),
   listScored: (q) => createJobsRepo(getDb()).listScored(q),
   getById: (id) => createJobsRepo(getDb()).getById(id),
+  getRowWithSourceById: (id) => createJobsRepo(getDb()).getRowWithSourceById(id),
   updateDescription: (id, description) => createJobsRepo(getDb()).updateDescription(id, description),
   existsById: (id) => createJobsRepo(getDb()).existsById(id),
   statsForQuery: (q, sinceLastCutoff) => createJobsRepo(getDb()).statsForQuery(q, sinceLastCutoff),
