@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z, ZodError } from "zod";
 import { InvalidCursorError } from "@/server/persistence/repos/cursor";
+import { UuidParam } from "@/server/http/params";
 import {
   ApplicationConflictError,
   JobNotScoredError,
@@ -22,7 +23,7 @@ const Stage = z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]);
 const StageParam = z.preprocess((v) => (v === undefined ? undefined : Number(v)), Stage).optional();
 
 const RequestBody = z.object({
-  jobId: z.string().min(1),
+  jobId: UuidParam,
   note: z.string().optional(),
   tailoredResumeId: z.string().optional(),
   answersId: z.string().optional(),

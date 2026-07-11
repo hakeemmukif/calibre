@@ -116,6 +116,18 @@ describe("POST /api/applications", () => {
     expect(res.status).toBe(422);
     expect((await res.json()).error.code).toBe("VALIDATION_ERROR");
   });
+
+  it("a non-uuid jobId in the body returns 422 VALIDATION_ERROR, never a 500", async () => {
+    const res = await POST(
+      new NextRequest("http://localhost/api/applications", {
+        method: "POST",
+        body: JSON.stringify({ jobId: "abc" }),
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    expect(res.status).toBe(422);
+    expect((await res.json()).error.code).toBe("VALIDATION_ERROR");
+  });
 });
 
 describe("GET /api/applications", () => {
