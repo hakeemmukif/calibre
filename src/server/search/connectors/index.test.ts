@@ -25,6 +25,17 @@ describe("connectorForSource", () => {
     expect(() => connectorForSource(source("workday"))).toThrow(/workday/);
   });
 
+  it("resolves the connector from config.connector when present (per-company rows)", () => {
+    const connector = connectorForSource(
+      source("gh-gitlab", { name: "GitLab", config: { connector: "greenhouse", slug: "gitlab" } }),
+    );
+    expect(connector.id).toBe("gh-gitlab");
+  });
+
+  it("still throws fail-loud for an unknown connector key", () => {
+    expect(() => connectorForSource(source("mystery", { config: {} }))).toThrow(/No connector registered/);
+  });
+
   afterEach(() => {
     vi.unstubAllEnvs();
   });

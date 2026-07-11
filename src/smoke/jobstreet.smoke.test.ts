@@ -9,11 +9,17 @@ import type { SourceRow } from "@/server/persistence/repos/sources";
 function source(): SourceRow {
   return {
     id: "jobstreet",
-    name: "JobStreet",
+    name: "JobStreet Malaysia",
     kind: "board",
     persona: "local",
     enabled: true,
-    config: { query: "software engineer", maxPages: 1 },
+    config: {
+      api: "https://my.jobstreet.com/api/chalice-search/v4/search",
+      siteKey: "MY-Main",
+      query: "software engineer",
+      pageSize: 30,
+      maxPages: 1,
+    },
     createdAt: new Date(),
   };
 }
@@ -37,5 +43,9 @@ describe("jobstreet smoke", () => {
       return;
     }
     expect(postings.length).toBeGreaterThanOrEqual(1);
+    const [first] = postings;
+    expect(first?.title).toBeTruthy();
+    expect(first?.url).toMatch(/^https?:\/\//);
+    console.log(`[jobstreet smoke] first item: title="${first?.title}" company="${first?.company}" location="${first?.location}"`);
   });
 });
