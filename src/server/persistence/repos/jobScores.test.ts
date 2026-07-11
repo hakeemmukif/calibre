@@ -130,11 +130,65 @@ describe("jobScoresRepo", () => {
       score: 4,
     };
 
-    await repo.upsertByJobResumePolicy({ ...base, policyVersion: "v1" });
-    const latest = await repo.upsertByJobResumePolicy({ ...base, policyVersion: "v2", score: 4.5 });
+    await repo.upsertByJobResumePolicy({
+      ...base,
+      policyVersion: "v1",
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    });
+    const latest = await repo.upsertByJobResumePolicy({
+      ...base,
+      policyVersion: "v2",
+      score: 4.5,
+      createdAt: new Date("2026-01-02T00:00:00.000Z"),
+    });
 
     const found = await repo.getLatestByJobId(job.id);
     expect(found?.id).toBe(latest.id);
     expect(found?.jdFacts).toEqual({ title: "Backend Engineer" });
+  });
+
+  it("getLatestByJobId is deterministic across repeated queries when created_at ties", async () => {
+    const db = await createTestDb();
+    const repo = createJobScoresRepo(db);
+    const source = await insertSource(db);
+    const resume = await insertResume(db);
+    const job = await insertJob(db, source.id);
+
+    const base = {
+      jobId: job.id,
+      resumeId: resume.id,
+      verdict: "Apply" as const,
+      why: "x",
+      legitimacy: { tier: "clear" as const, tone: "good" as const, summary: "x", signals: [] },
+      liveness: "active" as const,
+      breakdown: [],
+      reasons: { for: [], against: [] },
+      fit: [],
+      gaps: [],
+      jdFacts: {},
+      model: "m1",
+      escalated: false,
+      costUsd: 0.01,
+      score: 4,
+    };
+
+    const tiedCreatedAt = new Date("2026-01-01T00:00:00.000Z");
+    await repo.upsertByJobResumePolicy({ ...base, policyVersion: "v1", createdAt: tiedCreatedAt });
+    const second = await repo.upsertByJobResumePolicy({
+      ...base,
+      policyVersion: "v2",
+      createdAt: tiedCreatedAt,
+    });
+
+    const firstQuery = await repo.getLatestByJobId(job.id);
+    const secondQuery = await repo.getLatestByJobId(job.id);
+    const thirdQuery = await repo.getLatestByJobId(job.id);
+
+    expect(firstQuery?.id).toBe(secondQuery?.id);
+    expect(secondQuery?.id).toBe(thirdQuery?.id);
+    // The tie-break is desc(id): the row with the lexicographically greater
+    // uuid wins, stably, regardless of insert order.
+    const expectedWinner = [second.id, firstQuery?.id].sort().reverse()[0];
+    expect(firstQuery?.id).toBe(expectedWinner);
   });
 });

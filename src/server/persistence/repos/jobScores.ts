@@ -49,7 +49,9 @@ export function createJobScoresRepo(db: Db) {
         .select()
         .from(jobScores)
         .where(eq(jobScores.jobId, jobId))
-        .orderBy(desc(jobScores.createdAt))
+        // desc(id) tie-breaks a created_at tie deterministically (id is uuid,
+        // so "highest" is arbitrary but stable, not Postgres's undefined pick).
+        .orderBy(desc(jobScores.createdAt), desc(jobScores.id))
         .limit(1);
       return row ?? null;
     },

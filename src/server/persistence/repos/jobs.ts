@@ -57,7 +57,9 @@ function latestJobScores(db: Db) {
   return db
     .selectDistinctOn([jobScores.jobId], { id: jobScores.id })
     .from(jobScores)
-    .orderBy(jobScores.jobId, desc(jobScores.createdAt))
+    // desc(id) tie-breaks a created_at tie deterministically (id is uuid,
+    // so "highest" is arbitrary but stable, not Postgres's undefined pick).
+    .orderBy(jobScores.jobId, desc(jobScores.createdAt), desc(jobScores.id))
     .as("latest_job_scores");
 }
 
