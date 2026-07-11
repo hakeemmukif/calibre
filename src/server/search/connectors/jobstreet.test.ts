@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SourceRow } from "@/server/persistence/repos/sources";
+import type { RawPosting } from "../connector";
 import { createJobstreetConnector } from "./jobstreet";
 
 function source(overrides: Partial<SourceRow> = {}): SourceRow {
@@ -21,10 +22,11 @@ async function collect<T>(iterable: AsyncIterable<T>): Promise<T[]> {
   return out;
 }
 
-// Representative shape of a chalice-search v4 `data[]` item (career-ops/
-// providers/jobstreet.mjs docblock) — not captured from a live request.
+// Representative shape of a jobsearch v5 `data[]` item — trimmed from a live
+// `GET my.jobstreet.com/api/jobsearch/v5/search` response captured 2026-07-12
+// (chalice-search v4 is retired upstream; see jobstreet.ts's header note).
 function fixturePage(items: unknown[]) {
-  return new Response(JSON.stringify({ data: items }), { status: 200 });
+  return new Response(JSON.stringify({ data: items, totalCount: items.length }), { status: 200 });
 }
 
 describe("jobstreet connector", () => {
@@ -32,18 +34,21 @@ describe("jobstreet connector", () => {
     vi.unstubAllGlobals();
   });
 
-  it("maps a fixture chalice-search page to RawPosting[], resolving relative jobUrl against the API host", async () => {
+  it("maps a fixture jobsearch v5 page to RawPosting[], constructing the job URL from id", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(
       fixturePage([
         {
-          title: "Backend Engineer",
-          jobUrl: "/id/job/123456",
-          branding: { companyName: "Tech Corp" },
-          location: "Jakarta Selatan",
-          listingDate: "2026-06-15T00:00:00Z",
+          id: "93132187",
+          title: "Graduate Software Engineer ",
+          companyName: "SEEK",
+          advertiser: { id: "adv1", description: "SEEK" },
+          branding: { serpLogoUrl: "https://bcassets.example/logo.png" },
+          locations: [{ label: "Kuala Lumpur", countryCode: "MY" }],
+          jobUrl: null,
+          listingDate: "2026-07-01T00:00:00Z",
         },
-        { title: "No URL Job" }, // dropped — no jobUrl
-        { jobUrl: "/id/job/999" }, // dropped — no title
+        { title: "No ID Job" }, // dropped — no id
+        { id: "999" }, // dropped — no title
       ]),
     );
     vi.stubGlobal("fetch", fetchMock);
@@ -56,19 +61,40 @@ describe("jobstreet connector", () => {
     expect(postings).toEqual([
       {
         sourceId: "jobstreet",
-        url: "https://id.jobstreet.com/id/job/123456",
-        title: "Backend Engineer",
-        company: "Tech Corp",
-        location: "Jakarta Selatan",
-        postedAt: "2026-06-15T00:00:00Z",
+        url: "https://my.jobstreet.com/job/93132187",
+        title: "Graduate Software Engineer",
+        company: "SEEK",
+        location: "Kuala Lumpur",
+        postedAt: "2026-07-01T00:00:00Z",
       },
     ]);
+  });
+
+  it("falls back to advertiser.description when companyName is absent", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      fixturePage([
+        {
+          id: "1",
+          title: "Backend Engineer",
+          advertiser: { description: "Acme Sdn Bhd" },
+          locations: [{ label: "Petaling Jaya" }],
+        },
+      ]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const connector = createJobstreetConnector(source());
+    const [posting] = await collect(
+      connector.discover({ targets: [], since: new Date(0), signal: new AbortController().signal, onProgress: () => {} }),
+    );
+
+    expect(posting?.company).toBe("Acme Sdn Bhd");
   });
 
   it("stops paginating once a page returns fewer than pageSize results", async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(fixturePage(Array.from({ length: 2 }, (_, i) => ({ title: `Job ${i}`, jobUrl: `/id/job/${i}` }))));
+      .mockResolvedValueOnce(fixturePage(Array.from({ length: 2 }, (_, i) => ({ id: `${i}`, title: `Job ${i}` }))));
     vi.stubGlobal("fetch", fetchMock);
 
     const connector = createJobstreetConnector(source({ config: { query: "x", pageSize: 30, maxPages: 3 } }));
@@ -99,9 +125,7 @@ describe("jobstreet connector", () => {
   it("degrades gracefully on a later-page failure: returns postings already collected instead of throwing", async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(
-        fixturePage(Array.from({ length: 2 }, (_, i) => ({ title: `Job ${i}`, jobUrl: `/id/job/${i}` }))),
-      )
+      .mockResolvedValueOnce(fixturePage(Array.from({ length: 2 }, (_, i) => ({ id: `${i}`, title: `Job ${i}` }))))
       .mockRejectedValueOnce(new Error("page 2 timed out"));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -114,34 +138,46 @@ describe("jobstreet connector", () => {
   });
 
   describe("fetchDetail", () => {
-    function posting(overrides: Partial<import("../connector").RawPosting> = {}): import("../connector").RawPosting {
+    function posting(overrides: Partial<RawPosting> = {}): RawPosting {
       return {
         sourceId: "jobstreet",
-        url: "https://id.jobstreet.com/id/job/123456",
-        title: "Backend Engineer",
-        company: "Tech Corp",
+        url: "https://my.jobstreet.com/job/93132187",
+        title: "Graduate Software Engineer",
+        company: "SEEK",
         ...overrides,
       };
     }
 
-    it("fetches the SSR job page and extracts text via htmlToText", async () => {
-      const html = "<html><body><h1>Backend Engineer</h1><p>Join our team.</p></body></html>";
-      const fetchMock = vi.fn().mockResolvedValue(new Response(html, { status: 200 }));
+    function graphqlResponse(content: string) {
+      return new Response(
+        JSON.stringify({ data: { jobDetails: { job: { id: "93132187", title: "Graduate Software Engineer", content } } } }),
+        { status: 200 },
+      );
+    }
+
+    it("posts the GraphQL jobDetails query and extracts text via htmlToText", async () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue(graphqlResponse("<strong>Company Description</strong>\n\n<p>Join our team.</p>"));
       vi.stubGlobal("fetch", fetchMock);
 
       const connector = createJobstreetConnector(source());
       const detail = await connector.fetchDetail!(posting());
 
-      expect(detail).toEqual({ description: "Backend Engineer Join our team." });
+      expect(detail).toEqual({ description: "Company Description Join our team." });
       expect(fetchMock).toHaveBeenCalledWith(
-        "https://id.jobstreet.com/id/job/123456",
-        expect.objectContaining({ headers: expect.objectContaining({ "user-agent": expect.any(String) }) }),
+        "https://my.jobstreet.com/graphql",
+        expect.objectContaining({
+          method: "POST",
+          headers: expect.objectContaining({ "content-type": "application/json", "user-agent": expect.any(String) }),
+          body: expect.stringContaining('"id":"93132187"'),
+        }),
       );
     });
 
     it("caps the extracted description at 40_000 chars", async () => {
       const html = `<p>${"x".repeat(50_000)}</p>`;
-      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(html, { status: 200 })));
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(graphqlResponse(html)));
 
       const connector = createJobstreetConnector(source());
       const detail = await connector.fetchDetail!(posting());
@@ -149,8 +185,15 @@ describe("jobstreet connector", () => {
       expect(detail.description).toHaveLength(40_000);
     });
 
-    it("throws when the detail page yields no text (fail loud, not a silent empty description)", async () => {
-      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("<script>track()</script>", { status: 200 })));
+    it("throws when the posting url has no /job/{id} segment (fail loud, not a silent skip)", async () => {
+      const connector = createJobstreetConnector(source());
+      await expect(
+        connector.fetchDetail!(posting({ url: "https://my.jobstreet.com/companies/seek" })),
+      ).rejects.toThrow(/could not extract job id/);
+    });
+
+    it("throws when GraphQL content is empty (fail loud, not a silent empty description)", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(graphqlResponse("")));
 
       const connector = createJobstreetConnector(source());
       await expect(connector.fetchDetail!(posting())).rejects.toThrow(/yielded no text/);

@@ -84,7 +84,12 @@ describe("ensureDescription", () => {
     });
     expect(job.description).toBeNull();
 
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("<p>Full JD text.</p>", { status: 200 })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ data: { jobDetails: { job: { content: "<p>Full JD text.</p>" } } } }), { status: 200 }),
+      ),
+    );
 
     const result = await ensureDescription(job, source);
 
@@ -111,7 +116,15 @@ describe("ensureDescription", () => {
       raw: {},
     });
 
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(`<p>${"x".repeat(50_000)}</p>`, { status: 200 })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({ data: { jobDetails: { job: { content: `<p>${"x".repeat(50_000)}</p>` } } } }),
+          { status: 200 },
+        ),
+      ),
+    );
 
     const result = await ensureDescription(job, source);
 

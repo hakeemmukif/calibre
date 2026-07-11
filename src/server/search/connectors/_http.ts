@@ -42,6 +42,28 @@ export async function fetchJson(url: string, opts: FetchJsonOptions = {}): Promi
   }
 }
 
+export async function postJson(url: string, body: unknown, opts: FetchJsonOptions = {}): Promise<unknown> {
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, headers = {}, signal } = opts;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const combined = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "user-agent": DEFAULT_USER_AGENT, "content-type": "application/json", ...headers },
+      body: JSON.stringify(body),
+      signal: combined,
+    });
+    if (!res.ok) {
+      const bodyText = await res.text().catch(() => "");
+      throw new ConnectorHttpError(`HTTP ${res.status}${bodyText ? `: ${bodyText.slice(0, 300)}` : ""}`, res.status);
+    }
+    return await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function fetchText(url: string, opts: FetchJsonOptions = {}): Promise<string> {
   const { timeoutMs = DEFAULT_TIMEOUT_MS, headers = {}, redirect = "follow", signal } = opts;
   const controller = new AbortController();

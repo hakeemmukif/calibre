@@ -27,7 +27,7 @@ export const sourceSeeds: (typeof sources.$inferInsert)[] = [
   {
     id: "jobstreet", name: "JobStreet Malaysia", kind: "board", persona: "local", enabled: true,
     config: {
-      api: "https://my.jobstreet.com/api/chalice-search/v4/search",
+      api: "https://my.jobstreet.com/api/jobsearch/v5/search",
       siteKey: "MY-Main",
       query: "software engineer",
       pageSize: 30,

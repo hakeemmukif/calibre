@@ -2,13 +2,12 @@
 // connectors are the only truly unproven component ... build one (JobStreet)
 // first ... let the persona toggle degrade gracefully if a board breaks."
 //
-// Shape below mirrors career-ops/providers/jobstreet.mjs (a working provider
-// against SEEK's public, no-auth chalice-search v4 API, shared by
-// jobstreet.com/seek.com.au/etc). It has NOT been live-probed against this
-// Caliber build — TODO: live-verify the endpoint/response shape (host,
-// `solrFields`, `data[]` item shape) against a real `id.jobstreet.com`
-// request before trusting this connector's output in production; tests here
-// exercise a fixture, never live network.
+// SEEK retired the chalice-search v4 API this connector originally targeted
+// (career-ops/providers/jobstreet.mjs's endpoint) — 404s on both
+// my.jobstreet.com and id.jobstreet.com. Live-verified 2026-07-12 replacement:
+// search via the current `jobsearch v5` API (unauthenticated, browser UA),
+// full description via the public `/graphql` `jobDetails` query — the SSR job
+// page itself is Cloudflare-walled (403) and cannot be scraped directly.
 //
 // Degrade-gracefully contract: this connector throws on a page-1 fetch
 // failure/timeout — same as every other connector — and run.ts's per-
@@ -17,12 +16,14 @@
 import type { SourceRow } from "@/server/persistence/repos/sources";
 import type { RawPosting, SourceConnector } from "../connector";
 import { htmlToText } from "./_html";
-import { fetchJson, fetchText } from "./_http";
+import { fetchJson, postJson } from "./_http";
 
-const DEFAULT_API = "https://id.jobstreet.com/api/chalice-search/v4/search";
-const DEFAULT_SITE_KEY = "ID-Main";
+const DEFAULT_API = "https://my.jobstreet.com/api/jobsearch/v5/search";
+const DEFAULT_SITE_KEY = "MY-Main";
 const DEFAULT_PAGE_SIZE = 30;
 const DEFAULT_MAX_PAGES = 3;
+
+const JOB_DETAILS_QUERY = `query jobDetails($id: ID!) { jobDetails(id: $id) { job { id title abstract content } } }`;
 
 interface JobstreetConfig {
   api?: string;
@@ -34,28 +35,17 @@ interface JobstreetConfig {
 }
 
 interface JobstreetItem {
+  id?: string;
   title?: string;
-  jobUrl?: string;
-  branding?: { companyName?: string };
   companyName?: string;
   advertiser?: { description?: string };
-  location?: string;
+  locations?: { label?: string }[];
   listingDate?: string;
 }
 
 function deriveBaseUrl(apiUrl: string): string {
   const parsed = new URL(apiUrl);
   return `${parsed.protocol}//${parsed.hostname}`;
-}
-
-function resolveJobUrl(rawUrl: string | undefined, baseUrl: string): string | undefined {
-  if (!rawUrl) return undefined;
-  try {
-    const parsed = new URL(rawUrl);
-    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.href : undefined;
-  } catch {
-    return rawUrl.startsWith("/") ? `${baseUrl}${rawUrl}` : undefined;
-  }
 }
 
 function buildSearchUrl(
@@ -68,10 +58,6 @@ function buildSearchUrl(
   if (params.location) url.searchParams.set("where", params.location);
   url.searchParams.set("pageSize", String(params.pageSize));
   url.searchParams.set("page", String(params.page));
-  url.searchParams.set(
-    "solrFields",
-    "id,title,location,listingDate,jobUrl,companyName,branding.companyName,advertiser.description,salary",
-  );
   return url.href;
 }
 
@@ -113,14 +99,17 @@ export function createJobstreetConnector(source: SourceRow): SourceConnector {
 
         for (const item of items) {
           const title = (item.title || "").trim();
-          const url = resolveJobUrl(item.jobUrl, baseUrl);
-          if (!title || !url) continue;
+          // v5 no longer returns a usable jobUrl (always null) — the job page
+          // URL is constructed from `id`. Missing id or title is a
+          // data-quality filter (matches the prior parser's skip semantics),
+          // not a fetch failure.
+          if (!item.id || !title) continue;
           const posting: RawPosting = {
             sourceId: source.id,
-            url,
+            url: `${baseUrl}/job/${item.id}`,
             title,
-            company: (item.branding?.companyName || item.companyName || item.advertiser?.description || "").trim(),
-            location: (item.location || "").trim() || undefined,
+            company: (item.companyName || item.advertiser?.description || "").trim(),
+            location: item.locations?.[0]?.label?.trim() || undefined,
             postedAt: item.listingDate || undefined,
           };
           yield posting;
@@ -130,14 +119,27 @@ export function createJobstreetConnector(source: SourceRow): SourceConnector {
         if (items.length < pageSize) break;
       }
     },
-    // The chalice-search v4 API carries no description (search.mjs precedent
-    // — description-bearing detail lives only on the SSR job page). Called
-    // by describe.ts's ensureDescription for the top-N scoring candidates
-    // only, never at discover-time fan-out scale.
+    // jobsearch v5 search results carry no full description (teaser/
+    // bulletPoints only); the SSR job page is Cloudflare-walled (403), so the
+    // full description comes from the public, unauthenticated `/graphql`
+    // `jobDetails` query instead. Called by describe.ts's ensureDescription
+    // for the top-N scoring candidates only, never at discover-time fan-out
+    // scale.
     async fetchDetail(p) {
-      const html = await fetchText(p.url, { signal: AbortSignal.timeout(10_000) });
-      const description = htmlToText(html).slice(0, 40_000);
-      if (!description) throw new Error(`JobStreet detail page yielded no text: ${p.url}`);
+      const match = p.url.match(/\/job\/(\d+)/);
+      if (!match) throw new Error(`JobStreet detail: could not extract job id from url: ${p.url}`);
+      const [, id] = match;
+      const graphqlUrl = `${new URL(p.url).origin}/graphql`;
+
+      const json = await postJson(
+        graphqlUrl,
+        { query: JOB_DETAILS_QUERY, variables: { id } },
+        { signal: AbortSignal.timeout(10_000) },
+      );
+      const content = (json as { data?: { jobDetails?: { job?: { content?: string } } } })?.data?.jobDetails?.job
+        ?.content;
+      const description = htmlToText(content || "").slice(0, 40_000);
+      if (!description) throw new Error(`JobStreet GraphQL detail yielded no text: ${p.url}`);
       return { description };
     },
   };
