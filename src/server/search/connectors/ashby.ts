@@ -6,6 +6,7 @@
 // unauthenticated hits); ported here as a fixed retry budget.
 import type { SourceRow } from "@/server/persistence/repos/sources";
 import type { RawPosting, SourceConnector } from "../connector";
+import { htmlToText } from "./_html";
 import { fetchJson } from "./_http";
 
 const ASHBY_TIMEOUT_MS = 30_000;
@@ -16,6 +17,7 @@ interface AshbyJob {
   jobUrl?: string;
   location?: string;
   publishedAt?: string;
+  descriptionHtml?: string;
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -59,6 +61,10 @@ export function createAshbyConnector(source: SourceRow): SourceConnector {
           title: j.title ?? "",
           company: slug,
           location: j.location || undefined,
+          description:
+            typeof j.descriptionHtml === "string" && j.descriptionHtml.trim().length > 0
+              ? htmlToText(j.descriptionHtml).slice(0, 40_000)
+              : undefined,
           postedAt: j.publishedAt || undefined,
         };
         yield posting;

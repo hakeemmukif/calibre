@@ -28,6 +28,8 @@ describe("ashby connector", () => {
   });
 
   it("maps the posting-api fixture payload to RawPosting[], using jobUrl as url", async () => {
+    // `descriptionHtml` is a trimmed REAL HTML snippet, curled 2026-07-12 from
+    // `api.ashbyhq.com/posting-api/job-board/supabase?includeCompensation=true`.
     const fixture = {
       jobs: [
         {
@@ -35,6 +37,8 @@ describe("ashby connector", () => {
           jobUrl: "https://jobs.ashbyhq.com/acme/abc-123",
           location: "Remote",
           publishedAt: "2026-06-01T00:00:00.000Z",
+          descriptionHtml:
+            '<p style="min-height:1.5em">Supabase is the Postgres development platform, built by developers for developers. We provide a complete backend solution including Database, Auth, Storage, Edge Functions, Realtime, and Vector Search. All services are deeply integrated and designed for growth.</p>',
         },
         { title: "No jobUrl" },
       ],
@@ -53,6 +57,8 @@ describe("ashby connector", () => {
         title: "Senior Backend Engineer",
         company: "acme",
         location: "Remote",
+        description:
+          "Supabase is the Postgres development platform, built by developers for developers. We provide a complete backend solution including Database, Auth, Storage, Edge Functions, Realtime, and Vector Search. All services are deeply integrated and designed for growth.",
         postedAt: "2026-06-01T00:00:00.000Z",
       },
     ]);

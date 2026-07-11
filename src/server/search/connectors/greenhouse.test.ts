@@ -28,6 +28,8 @@ describe("greenhouse connector", () => {
   });
 
   it("maps the boards-api fixture payload to RawPosting[], using absolute_url as url", async () => {
+    // `content` is a trimmed REAL escaped-HTML snippet, curled 2026-07-12 from
+    // `boards-api.greenhouse.io/v1/boards/gitlab/jobs?content=true`.
     const fixture = {
       jobs: [
         {
@@ -36,6 +38,8 @@ describe("greenhouse connector", () => {
           absolute_url: "https://boards.greenhouse.io/acme/jobs/123",
           location: { name: "Remote" },
           first_published: "2026-06-01T00:00:00Z",
+          content:
+            "&lt;div class=&quot;content-intro&quot;&gt;&lt;p&gt;GitLab is the intelligent orchestration platform for DevSecOps. GitLab enables organizations to increase developer productivity, improve operational efficiency, reduce security and compliance risk, and accelerate digital transformation. More than 50 million registered users and more than 50% of the Fortune 100* trust GitLab to ship better, more secure software faster.&lt;/p&gt;&lt;/div&gt;",
         },
         { id: 456, title: "No URL Job", absolute_url: "" }, // dropped — no absolute_url
       ],
@@ -57,11 +61,13 @@ describe("greenhouse connector", () => {
         title: "Senior Backend Engineer",
         company: "acme",
         location: "Remote",
+        description:
+          "GitLab is the intelligent orchestration platform for DevSecOps. GitLab enables organizations to increase developer productivity, improve operational efficiency, reduce security and compliance risk, and accelerate digital transformation. More than 50 million registered users and more than 50% of the Fortune 100* trust GitLab to ship better, more secure software faster.",
         postedAt: "2026-06-01T00:00:00.000Z",
       },
     ]);
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://boards-api.greenhouse.io/v1/boards/acme/jobs",
+      "https://boards-api.greenhouse.io/v1/boards/acme/jobs?content=true",
       expect.objectContaining({ redirect: "error" }),
     );
     expect(onProgress).toHaveBeenCalled();

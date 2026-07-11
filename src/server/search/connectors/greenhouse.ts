@@ -6,6 +6,7 @@
 import type { SourceRow } from "@/server/persistence/repos/sources";
 import type { Job } from "@/types";
 import type { FormField, RawPosting, SourceConnector } from "../connector";
+import { htmlToText, unescapeEntities } from "./_html";
 import { fetchJson } from "./_http";
 
 interface GreenhouseJob {
@@ -14,6 +15,7 @@ interface GreenhouseJob {
   absolute_url?: string;
   location?: { name?: string };
   first_published?: string;
+  content?: string;
 }
 
 // F4 tier 1 (task-B7-brief.md) — the Greenhouse job-boards API's questions
@@ -68,7 +70,7 @@ export function createGreenhouseConnector(source: SourceRow): SourceConnector {
       if (!slug) throw new Error(`greenhouse: source "${source.id}" has no config.slug`);
 
       ctx.onProgress({ stage: "fetch", current: 0, total: 1, label: `Scanning Greenhouse (${slug})…` });
-      const json = (await fetchJson(`https://boards-api.greenhouse.io/v1/boards/${slug}/jobs`, {
+      const json = (await fetchJson(`https://boards-api.greenhouse.io/v1/boards/${slug}/jobs?content=true`, {
         signal: ctx.signal,
         redirect: "error",
       })) as { jobs?: GreenhouseJob[] };
@@ -83,6 +85,10 @@ export function createGreenhouseConnector(source: SourceRow): SourceConnector {
           title: j.title ?? "",
           company: slug,
           location: j.location?.name || undefined,
+          description:
+            typeof j.content === "string" && j.content.trim().length > 0
+              ? htmlToText(unescapeEntities(j.content)).slice(0, 40_000)
+              : undefined,
           postedAt: toEpochIso(j.first_published),
         };
         yield posting;
