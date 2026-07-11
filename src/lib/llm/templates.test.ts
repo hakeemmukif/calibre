@@ -1,7 +1,11 @@
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { TaskName } from "./client";
 import { policyVersion, renderTemplate } from "./templates";
+import { ApplicationAnswer, ApplicationQuestion, LegitimacyTier } from "@/types";
+import { EvalScoresSchema } from "@/server/score/evalScores";
+import { DiffEntrySchema } from "@/server/tailor/merge";
 
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
@@ -56,5 +60,76 @@ describe("renderTemplate", () => {
 
   it("throws when a required var is missing", () => {
     expect(() => renderTemplate("jd-extract", {})).toThrow(/missing template variable/i);
+  });
+});
+
+// Seam test (task-1.9, generalizing the B6 evalScores.test.ts pattern to all
+// 6 TaskName templates): catches schema/template/contract vocabulary drift
+// WITHOUT a real LLM call. For every task whose response schema has a
+// closed z.enum, assert the template's prose lists exactly those tokens —
+// if either drifts, this fails cheaply instead of a real LLM response
+// throwing at runtime and being silently swallowed.
+const TEMPLATES: TaskName[] = [
+  "resume-extract",
+  "jd-extract",
+  "match-score",
+  "question-extract",
+  "question-answer",
+  "tailor",
+];
+
+function readTemplateFile(name: TaskName): string {
+  return readFileSync(join(process.cwd(), "config", "templates", `${name}.md`), "utf-8");
+}
+
+describe("template <-> schema seam (no LLM calls)", () => {
+  it("every TaskName has a non-empty template file", () => {
+    for (const name of TEMPLATES) {
+      expect(readTemplateFile(name).trim().length, `empty template: ${name}`).toBeGreaterThan(0);
+    }
+  });
+
+  // resume-extract: ResumeStoreSchema (src/server/resume/resume-store.ts) has
+  // no z.enum fields — every field is a string/array/object. No closed
+  // vocabulary to seam-test; the presence check above suffices.
+
+  // jd-extract: JdFactsSchema (src/server/score/jdFacts.ts) has no z.enum
+  // fields either — objective facts only, per the module's own comment. No
+  // closed vocabulary to seam-test; presence check suffices.
+
+  it("match-score.md tier prose lists exactly the frozen LegitimacyTier tokens", () => {
+    const tierLine = readTemplateFile("match-score").match(/tier: one of([^\n]*)/);
+    expect(tierLine).not.toBeNull();
+    const tokens = [...tierLine![1].matchAll(/"([a-z]+)"/g)].map((m) => m[1]);
+    expect(new Set(tokens)).toEqual(new Set(LegitimacyTier.options));
+  });
+
+  it("match-score.md verdict prose lists exactly the EvalScoresSchema verdict tokens", () => {
+    const verdictLine = readTemplateFile("match-score").match(/verdict of one of([\s\S]*?),/);
+    expect(verdictLine).not.toBeNull();
+    const tokens = [...verdictLine![1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+    expect(new Set(tokens)).toEqual(new Set(EvalScoresSchema.shape.verdict.options));
+  });
+
+  it("question-extract.md kind prose lists exactly the ApplicationQuestion.kind tokens", () => {
+    const kindGroup = readTemplateFile("question-extract").match(/kind \(([\s\S]*?)\)/);
+    expect(kindGroup).not.toBeNull();
+    const tokens = [...kindGroup![1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+    expect(new Set(tokens)).toEqual(new Set(ApplicationQuestion.shape.kind.options));
+  });
+
+  it("question-answer.md grounding-source prose lists exactly the ApplicationAnswer grounding source tokens", () => {
+    const sourceGroup = readTemplateFile("question-answer").match(/from \(([^)]*)\)/);
+    expect(sourceGroup).not.toBeNull();
+    const tokens = sourceGroup![1].split("|").map((s) => s.trim());
+    const sourceOptions = ApplicationAnswer.shape.grounding.element.shape.source.options;
+    expect(new Set(tokens)).toEqual(new Set(sourceOptions));
+  });
+
+  it("tailor.md operation prose lists exactly the DiffEntrySchema.op tokens", () => {
+    const opGroup = readTemplateFile("tailor").match(/operation\s*\(([\s\S]*?)\)/);
+    expect(opGroup).not.toBeNull();
+    const tokens = [...opGroup![1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+    expect(new Set(tokens)).toEqual(new Set(DiffEntrySchema.shape.op.options));
   });
 });
