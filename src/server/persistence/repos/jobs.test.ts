@@ -343,6 +343,34 @@ describe("jobsRepo", () => {
     expect(found?.score.jobId).toBe(job.id);
   });
 
+  it("updateDescription persists the description and returns the updated row", async () => {
+    const db = await createTestDb();
+    const repo = createJobsRepo(db);
+    const source = await insertSource(db);
+    const job = await repo.upsertByDedupeKey({
+      dedupeKey: "dk-update-description",
+      url: "https://example.com/update-description",
+      sourceId: source.id,
+      title: "Job Needing Description",
+      company: "Acme",
+      location: "Remote",
+      persona: "remote",
+      aliases: [],
+      raw: {},
+    });
+    expect(job.description).toBeNull();
+
+    const updated = await repo.updateDescription(job.id, "Full JD text.");
+    expect(updated.id).toBe(job.id);
+    expect(updated.description).toBe("Full JD text.");
+  });
+
+  it("updateDescription throws for an unknown job id (fail loud)", async () => {
+    const db = await createTestDb();
+    const repo = createJobsRepo(db);
+    await expect(repo.updateDescription(crypto.randomUUID(), "text")).rejects.toThrow(/no job/);
+  });
+
   it("existsById is true for an unscored job (unlike getById) and false for an unknown id", async () => {
     const db = await createTestDb();
     const repo = createJobsRepo(db);

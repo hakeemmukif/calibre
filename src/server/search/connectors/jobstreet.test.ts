@@ -112,4 +112,55 @@ describe("jobstreet connector", () => {
 
     expect(postings).toHaveLength(2);
   });
+
+  describe("fetchDetail", () => {
+    function posting(overrides: Partial<import("../connector").RawPosting> = {}): import("../connector").RawPosting {
+      return {
+        sourceId: "jobstreet",
+        url: "https://id.jobstreet.com/id/job/123456",
+        title: "Backend Engineer",
+        company: "Tech Corp",
+        ...overrides,
+      };
+    }
+
+    it("fetches the SSR job page and extracts text via htmlToText", async () => {
+      const html = "<html><body><h1>Backend Engineer</h1><p>Join our team.</p></body></html>";
+      const fetchMock = vi.fn().mockResolvedValue(new Response(html, { status: 200 }));
+      vi.stubGlobal("fetch", fetchMock);
+
+      const connector = createJobstreetConnector(source());
+      const detail = await connector.fetchDetail!(posting());
+
+      expect(detail).toEqual({ description: "Backend Engineer Join our team." });
+      expect(fetchMock).toHaveBeenCalledWith(
+        "https://id.jobstreet.com/id/job/123456",
+        expect.objectContaining({ headers: expect.objectContaining({ "user-agent": expect.any(String) }) }),
+      );
+    });
+
+    it("caps the extracted description at 40_000 chars", async () => {
+      const html = `<p>${"x".repeat(50_000)}</p>`;
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(html, { status: 200 })));
+
+      const connector = createJobstreetConnector(source());
+      const detail = await connector.fetchDetail!(posting());
+
+      expect(detail.description).toHaveLength(40_000);
+    });
+
+    it("throws when the detail page yields no text (fail loud, not a silent empty description)", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("<script>track()</script>", { status: 200 })));
+
+      const connector = createJobstreetConnector(source());
+      await expect(connector.fetchDetail!(posting())).rejects.toThrow(/yielded no text/);
+    });
+
+    it("propagates a non-2xx response as a thrown error", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("not found", { status: 404 })));
+
+      const connector = createJobstreetConnector(source());
+      await expect(connector.fetchDetail!(posting())).rejects.toThrow(/HTTP 404/);
+    });
+  });
 });

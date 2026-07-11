@@ -21,6 +21,7 @@ import { toSearchRun } from "./assemble-run";
 import type { RawPosting, SourceConnector } from "./connector";
 import { connectorForSource } from "./connectors";
 import { companySlugFor, dedupeKeyFor, resolveCanonicalCollision, roleTokensHash, secondaryKey } from "./dedupe";
+import { ensureDescription } from "./describe";
 import { resolveIsNewCutoff } from "./jobsFeed";
 import { deriveRoleTargets, roleFuzzyMatch } from "./roleMatch";
 
@@ -371,7 +372,11 @@ async function scoreTopCandidates(
     }
 
     try {
-      const scoreRow = await scoreJob({ job, resume, llm });
+      const jobToScore = await ensureDescription(job, source).catch((err) => {
+        console.error(`search run ${row.id}: detail fetch for job ${job.id} failed:`, err);
+        return job; // scoreJob will throw EmptyJobDescriptionError -> counted unscored
+      });
+      const scoreRow = await scoreJob({ job: jobToScore, resume, llm });
       spentToday += scoreRow.costUsd;
       scored += 1;
       if (scoreRow.verdict === "Apply" || scoreRow.verdict === "Consider") worth += 1;
@@ -380,9 +385,10 @@ async function scoreTopCandidates(
       handle.emit({ event: "job", data: assembleJob({ job, score: scoreRow, source }, { isNewCutoff }) });
     } catch (err) {
       if (err instanceof EmptyJobDescriptionError) {
-        // Expected, not a failure — a board connector without fetchDetail
-        // left `description` null. Recorded distinctly (stats.unscored)
-        // rather than folded into the generic tolerated-failure log below.
+        // Expected, not a failure — the connector has no fetchDetail, or its
+        // detail fetch failed (logged above, job unchanged), leaving
+        // `description` null. Recorded distinctly (stats.unscored) rather
+        // than folded into the generic tolerated-failure log below.
         unscored += 1;
       } else {
         // A single job's scoring failure (LLM error, malformed response) is

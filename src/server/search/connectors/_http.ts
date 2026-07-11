@@ -41,3 +41,25 @@ export async function fetchJson(url: string, opts: FetchJsonOptions = {}): Promi
     clearTimeout(timer);
   }
 }
+
+export async function fetchText(url: string, opts: FetchJsonOptions = {}): Promise<string> {
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, headers = {}, redirect = "follow", signal } = opts;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const combined = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      headers: { "user-agent": DEFAULT_USER_AGENT, ...headers },
+      redirect,
+      signal: combined,
+    });
+    const bodyText = await res.text();
+    if (!res.ok) {
+      throw new ConnectorHttpError(`HTTP ${res.status}${bodyText ? `: ${bodyText.slice(0, 300)}` : ""}`, res.status);
+    }
+    return bodyText;
+  } finally {
+    clearTimeout(timer);
+  }
+}

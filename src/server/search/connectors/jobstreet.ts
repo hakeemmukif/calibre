@@ -16,7 +16,8 @@
 // makes that non-fatal to the run, not anything special done here.
 import type { SourceRow } from "@/server/persistence/repos/sources";
 import type { RawPosting, SourceConnector } from "../connector";
-import { fetchJson } from "./_http";
+import { htmlToText } from "./_html";
+import { fetchJson, fetchText } from "./_http";
 
 const DEFAULT_API = "https://id.jobstreet.com/api/chalice-search/v4/search";
 const DEFAULT_SITE_KEY = "ID-Main";
@@ -128,6 +129,16 @@ export function createJobstreetConnector(source: SourceRow): SourceConnector {
         ctx.onProgress({ stage: "fetch", current: page, total: maxPages, label: `JobStreet page ${page} done` });
         if (items.length < pageSize) break;
       }
+    },
+    // The chalice-search v4 API carries no description (search.mjs precedent
+    // — description-bearing detail lives only on the SSR job page). Called
+    // by describe.ts's ensureDescription for the top-N scoring candidates
+    // only, never at discover-time fan-out scale.
+    async fetchDetail(p) {
+      const html = await fetchText(p.url, { signal: AbortSignal.timeout(10_000) });
+      const description = htmlToText(html).slice(0, 40_000);
+      if (!description) throw new Error(`JobStreet detail page yielded no text: ${p.url}`);
+      return { description };
     },
   };
 }
