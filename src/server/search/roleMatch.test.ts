@@ -19,8 +19,15 @@ describe("roleFuzzyMatch", () => {
     expect(roleFuzzyMatch(target(["Senior Data Engineer"]), posting("Data Engineer"))).toBe(true);
   });
 
-  it("does not match when overlap is only baseline vocabulary (software/engineer)", () => {
-    expect(roleFuzzyMatch(target(["Software Engineer"]), posting("Full Stack Software Engineer"))).toBe(false);
+  // Flipped by task-7b's all-baseline containment exception (deliberate
+  // deviation from the donor rule): "Software Engineer" tokenizes entirely to
+  // BASELINE_TOKENS, so under the donor's rule it could NEVER match anything
+  // — including a posting fully containing it. That is exactly the hole
+  // observed live; containment of an all-baseline title now matches. Baseline
+  // overlap WITHOUT full containment still never matches (see the
+  // "Backend Engineer, Payments Infrastructure" case below).
+  it("matches when an all-baseline title is fully contained in the posting (was a donor-rule dead end)", () => {
+    expect(roleFuzzyMatch(target(["Software Engineer"]), posting("Full Stack Software Engineer"))).toBe(true);
   });
 
   it("does not match sibling roles with < 2 shared tokens", () => {
@@ -66,6 +73,47 @@ describe("roleFuzzyMatch", () => {
 
     expect(roleFuzzyMatch(realisticTarget, posting("Data Engineer"))).toBe(true);
     expect(roleFuzzyMatch(realisticTarget, posting("Product Marketing Manager"))).toBe(false);
+  });
+});
+
+describe("roleFuzzyMatch — all-baseline full-title-containment exception", () => {
+  // Live evidence (task-7b): the résumé title "Full-Stack Engineer" tokenizes
+  // entirely to BASELINE_TOKENS (full/stack/engineer), so the discriminating-
+  // token rule can never fire from its own words and even Stripe's literal
+  // "Full Stack Engineer" posting was rejected. For ALL-BASELINE titles only,
+  // full containment of the (>=2-token) title in the posting is accepted;
+  // domain-flavored titles keep the donor's strict path.
+  it("matches an exact-title posting even though every token is baseline vocabulary", () => {
+    expect(roleFuzzyMatch(target(["Full-Stack Engineer"]), posting("Full Stack Engineer"))).toBe(true);
+  });
+
+  it("matches when the posting adds seniority/domain tokens around the contained title", () => {
+    expect(
+      roleFuzzyMatch(target(["Full-Stack Engineer"]), posting("Senior Full Stack Engineer (Remote) - Payments")),
+    ).toBe(true);
+  });
+
+  it("does not match when the posting title does not contain every résumé title token", () => {
+    expect(
+      roleFuzzyMatch(target(["Full-Stack Engineer"]), posting("Backend Engineer, Payments Infrastructure")),
+    ).toBe(false);
+  });
+
+  // Pins the regression the first (unscoped) containment attempt introduced:
+  // a NON-baseline title ("data" is discriminating) fully contained in a long
+  // unrelated posting must NOT match via containment — the all-baseline gate
+  // excludes it, leaving the donor's Jaccard guard to reject it.
+  it("does not extend containment to domain-flavored titles contained in long unrelated postings", () => {
+    expect(
+      roleFuzzyMatch(
+        target(["Data Engineer"]),
+        posting("Data Engineer, Kubernetes Platform Infrastructure Reliability And Observability Systems"),
+      ),
+    ).toBe(false);
+  });
+
+  it("does not match via containment for a single-token résumé title (>=2 guard)", () => {
+    expect(roleFuzzyMatch(target(["Engineer"]), posting("Engineer"))).toBe(false);
   });
 });
 

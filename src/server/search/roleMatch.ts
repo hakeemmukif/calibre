@@ -76,6 +76,20 @@ function titleMatchesPosting(
 
   const titleTokenSet = new Set(titleTokens);
   const titleOverlap = titleTokens.filter((w) => postingSet.has(w));
+
+  // Exact-role containment, scoped to ALL-BASELINE résumé titles: a title like
+  // "Full-Stack Engineer" tokenizes entirely to BASELINE_TOKENS, so the
+  // discriminating-token rule can never fire from its own words and even a
+  // posting titled literally "Full Stack Engineer" is rejected (observed live:
+  // Stripe's exact posting rejected for this résumé). For such titles only,
+  // full containment of the (>=2-token) title in the posting is accepted,
+  // shortcutting the discriminating and Jaccard rules. Domain-flavored titles
+  // keep the donor's strict path — the existing negative tests pin that.
+  // Deliberate deviation from the donor rule, scoped to all-baseline
+  // containment only.
+  const allBaseline = titleTokens.every((w) => BASELINE_TOKENS.has(w));
+  if (allBaseline && titleTokens.length >= 2 && titleOverlap.length === titleTokens.length) return true;
+
   const keywordOverlap = [...keywordTokens].filter((w) => !titleTokenSet.has(w) && postingSet.has(w));
   const overlap = [...titleOverlap, ...keywordOverlap];
   if (overlap.length < 2) return false;
