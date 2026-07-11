@@ -64,4 +64,37 @@ describe("evaluateJob", () => {
 
     await expect(evaluateJob(job.id)).rejects.toThrow(EmptyJobDescriptionError);
   });
+
+  it("logs the detail-fetch failure and still throws EmptyJobDescriptionError when the connector's fetchDetail rejects", async () => {
+    // Real jobstreet connector (not the fixture double, which has no
+    // fetchDetail) so ensureDescription actually calls fetchDetail and
+    // rejects — exercising evaluate.ts's .catch(), not describe.ts's
+    // short-circuit for a connector with no fetchDetail at all.
+    const source = await insertSource(state.testDb, { id: "jobstreet", kind: "board", persona: "local", config: {} });
+    const job = await insertJob(state.testDb, source.id, {
+      sourceId: source.id,
+      url: "https://id.jobstreet.com/id/job/2",
+      persona: "local",
+      description: null,
+    });
+    await insertResume(state.testDb, { isActive: true });
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("ECONNRESET")));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    // No CALIBER_TEST_DOUBLES here (it would also swap in the no-fetchDetail
+    // fixture connector) — the LLM is never reached since scoreJob throws on
+    // the null description first, but evaluateJob resolves `llm` eagerly, so
+    // an unused stub is passed in directly instead of calling getLlm().
+    const llm = { complete: vi.fn() };
+
+    try {
+      await expect(evaluateJob(job.id, { llm })).rejects.toThrow(EmptyJobDescriptionError);
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining(`evaluateJob ${job.id}: detail fetch failed:`),
+        expect.any(Error),
+      );
+    } finally {
+      errorSpy.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
 });

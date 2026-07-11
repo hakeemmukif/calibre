@@ -23,7 +23,10 @@ export async function evaluateJob(jobId: string, deps: { llm?: LlmClient } = {})
   if (!found) throw new UnknownJobError(jobId);
   const resume = await resumesRepo.getActive();
   if (!resume) throw new NoActiveResumeError();
-  const job = await ensureDescription(found.job, found.source).catch(() => found.job);
+  const job = await ensureDescription(found.job, found.source).catch((err) => {
+    console.error(`evaluateJob ${jobId}: detail fetch failed:`, err);
+    return found.job;
+  });
   const llm = deps.llm ?? getLlm();
   const score = await scoreJob({ job, resume, llm });
   const isNewCutoff = await resolveIsNewCutoff(found.job.persona);
