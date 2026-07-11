@@ -1,3 +1,5 @@
+import { redirect } from 'next/navigation';
+
 export default function Home() {
-  return <main style={{ padding: 24 }}>Caliber — backend up. Storybook is the gallery.</main>;
+  redirect('/feed');
 }

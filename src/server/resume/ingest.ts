@@ -42,9 +42,12 @@ function rowToResumeView(row: ResumeRow): Resume {
 export async function ingestResume(input: IngestResumeInput, deps: IngestResumeDeps = {}): Promise<Resume> {
   const rawText = await extractText(input);
 
-  const llm = deps.llm ?? getLlm();
+  // getLlm() is inside the try so a client-construction failure (e.g. a
+  // missing OPENROUTER_API_KEY) is mapped to ParseFailedError → 502 like any
+  // other LLM failure, instead of propagating as an unmapped bare 500.
   let structured: ResumeStore;
   try {
+    const llm = deps.llm ?? getLlm();
     const result = await llm.complete({
       task: "resume-extract",
       messages: renderTemplate("resume-extract", { rawText }),

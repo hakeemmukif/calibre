@@ -15,12 +15,19 @@ const DOCX_FIXTURE = join(process.cwd(), "src/server/resume/__fixtures__/tiny.do
 const state = vi.hoisted(() => ({
   testDb: undefined as unknown as TestDb,
   llm: undefined as unknown as LlmClient,
+  llmError: undefined as Error | undefined,
 }));
 
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
 vi.mock("@/lib/llm/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/llm/client")>();
-  return { ...actual, getLlm: () => state.llm };
+  return {
+    ...actual,
+    getLlm: () => {
+      if (state.llmError) throw state.llmError;
+      return state.llm;
+    },
+  };
 });
 
 const { GET, POST } = await import("./route");
@@ -69,6 +76,7 @@ describe("/api/resume", () => {
 
   beforeEach(() => {
     state.llm = makeMockLlm({ "resume-extract": structuredFixture() });
+    state.llmError = undefined;
   });
 
   afterEach(async () => {
@@ -81,6 +89,16 @@ describe("/api/resume", () => {
     const res = await GET();
     expect(res.status).toBe(404);
     expect((await res.json()).error.code).toBe("NOT_FOUND");
+  });
+
+  it("maps an LLM-client construction failure (e.g. missing OPENROUTER_API_KEY) to a 502 PARSE_FAILED envelope, not a bare 500", async () => {
+    state.llmError = new Error("OPENROUTER_API_KEY is not set");
+    const res = await POST(jsonRequest({ text: "a".repeat(120) }));
+    expect(res.status).toBe(502);
+    const body = await res.json();
+    expect(body.error.code).toBe("PARSE_FAILED");
+    // must be a real ErrorEnvelope body, never a zero-length response
+    expect(body.error.message).toBeTruthy();
   });
 
   it("POST {text} paste happy path persists and returns 200 Resume", async () => {

@@ -28,16 +28,31 @@ interface ParseableSchema<T> {
 // boundary, instead of silently handing the UI a malformed object. A
 // non-2xx response is parsed as `ErrorEnvelope` and re-thrown as `ApiError`
 // so callers can surface `error.message` (and branch on `error.code`).
+//
+// The body is read as text and JSON-parsed defensively: an error response
+// that ISN'T a JSON `ErrorEnvelope` — an empty-body bare 500, an HTML error
+// page, a proxy timeout — must still surface as a clean `ApiError` carrying
+// the status, never as a raw `SyntaxError: Unexpected end of JSON input`
+// leaking to the UI (which is what an unconditional `res.json()` produced).
 export async function requestJson<T>(
   input: string,
   init: RequestInit | undefined,
   schema: ParseableSchema<T>,
 ): Promise<T> {
   const res = await fetch(input, init);
-  const body: unknown = await res.json();
+  const raw = await res.text();
+  let body: unknown;
+  try {
+    body = raw.length > 0 ? JSON.parse(raw) : undefined;
+  } catch {
+    body = undefined;
+  }
   if (!res.ok) {
-    const envelope = ErrorEnvelope.parse(body);
-    throw new ApiError(res.status, envelope.error.code, envelope.error.message, envelope.error.details);
+    const envelope = ErrorEnvelope.safeParse(body);
+    if (envelope.success) {
+      throw new ApiError(res.status, envelope.data.error.code, envelope.data.error.message, envelope.data.error.details);
+    }
+    throw new ApiError(res.status, "INTERNAL", `Request failed with status ${res.status}.`);
   }
   return schema.parse(body);
 }

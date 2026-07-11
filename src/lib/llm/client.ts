@@ -42,6 +42,12 @@ function buildClient(transport: OpenAI): LlmClient {
       // hence the cast.
       const jsonSchema = z.toJSONSchema(responseSchema) as Record<string, unknown>;
 
+      // NOTE: `strict: false`, not true. OpenAI's structured-output strict
+      // mode requires every property to appear in `required` (no optional
+      // fields) — but our response schemas use `.optional()` throughout, so
+      // strict mode 400s ("'required' ... Missing '<field>'"). The schema
+      // still guides generation; `responseSchema.parse(parsed)` below is the
+      // real enforcement, so any deviation fails loud there.
       const completion = await transport.chat.completions.create(
         {
           model,
@@ -50,7 +56,7 @@ function buildClient(transport: OpenAI): LlmClient {
           temperature: config.temperature,
           response_format: {
             type: "json_schema",
-            json_schema: { name: task, schema: jsonSchema, strict: true },
+            json_schema: { name: task, schema: jsonSchema, strict: false },
           },
         },
         { signal },
