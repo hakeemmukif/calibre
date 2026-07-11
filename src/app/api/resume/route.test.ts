@@ -160,6 +160,26 @@ describe("/api/resume", () => {
     expect((await GET()).status).toBe(404);
   });
 
+  it("corrupt PDF bytes (valid mime, invalid content) returns 502 PARSE_FAILED and persists no row", async () => {
+    const bytes = new TextEncoder().encode("not a real pdf at all, just garbage bytes that are not valid PDF structure");
+    const res = await POST(fileRequest(bytes, "application/pdf", "resume.pdf"));
+    expect(res.status).toBe(502);
+    expect((await res.json()).error.code).toBe("PARSE_FAILED");
+
+    expect((await GET()).status).toBe(404);
+  });
+
+  it("corrupt DOCX bytes (valid mime, invalid content) returns 502 PARSE_FAILED and persists no row", async () => {
+    const bytes = new TextEncoder().encode("not a real docx at all, just garbage bytes that are not a valid zip/docx structure");
+    const res = await POST(
+      fileRequest(bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "resume.docx"),
+    );
+    expect(res.status).toBe(502);
+    expect((await res.json()).error.code).toBe("PARSE_FAILED");
+
+    expect((await GET()).status).toBe(404);
+  });
+
   it("underivable location/headline returns 502 PARSE_FAILED and persists no row", async () => {
     state.llm = makeMockLlm({
       "resume-extract": structuredFixture({ contact: [], experience: [] }),

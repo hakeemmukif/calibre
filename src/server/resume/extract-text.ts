@@ -2,6 +2,7 @@
 // PDF/DOCX dispatch by mime; donor rejects .docx, we add it via mammoth.
 import mammoth from "mammoth";
 import { extractPdfText } from "@/lib/pdf-text";
+import { ParseFailedError } from "./derive-view";
 
 export class UnsupportedMimeError extends Error {
   constructor(mime: string) {
@@ -25,8 +26,15 @@ export async function extractText(input: ExtractTextInput): Promise<string> {
   const { bytes, mime } = input.file;
   if (mime === PDF_MIME) return extractPdfText(bytes);
   if (mime === DOCX_MIME) {
-    const { value } = await mammoth.extractRawText({ buffer: bytes });
-    return value;
+    try {
+      const { value } = await mammoth.extractRawText({ buffer: bytes });
+      return value;
+    } catch (cause) {
+      throw new ParseFailedError(
+        "Could not read this DOCX — the file may be corrupt or truncated. Please re-export and re-upload, or paste the résumé text instead.",
+        { cause },
+      );
+    }
   }
   throw new UnsupportedMimeError(mime);
 }

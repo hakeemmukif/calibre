@@ -6,9 +6,12 @@ import { Resume } from "@/types";
 import type { ResumeStore } from "./resume-store";
 
 export class ParseFailedError extends Error {
-  constructor(message: string) {
+  readonly cause?: unknown;
+
+  constructor(message: string, options?: { cause?: unknown }) {
     super(message);
     this.name = "ParseFailedError";
+    this.cause = options?.cause;
   }
 }
 

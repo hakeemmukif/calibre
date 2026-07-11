@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { PdfParseError } from "@/lib/pdf-text";
+import { ParseFailedError } from "./derive-view";
 import { extractText, UnsupportedMimeError } from "./extract-text";
 
 const FIXTURES = join(__dirname, "__fixtures__");
@@ -40,5 +42,19 @@ describe("extractText", () => {
     await expect(extractTextFresh({ file: { bytes, mime: "application/pdf" } })).rejects.toThrow(PdfParseErrorFresh);
     vi.doUnmock("unpdf");
     vi.resetModules();
+  });
+
+  it("maps corrupt/truncated PDF bytes (valid mime, invalid content) to PdfParseError", async () => {
+    const bytes = Buffer.from("not a real pdf at all, just garbage bytes that are not valid PDF structure");
+    await expect(extractText({ file: { bytes, mime: "application/pdf" } })).rejects.toThrow(PdfParseError);
+  });
+
+  it("maps corrupt/truncated DOCX bytes (valid mime, invalid content) to ParseFailedError", async () => {
+    const bytes = Buffer.from("not a real docx at all, just garbage bytes that are not a valid zip/docx structure");
+    await expect(
+      extractText({
+        file: { bytes, mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" },
+      }),
+    ).rejects.toThrow(ParseFailedError);
   });
 });
