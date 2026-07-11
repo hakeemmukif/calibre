@@ -15,6 +15,7 @@ import { NextRequest } from "next/server";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { waitFor } from "@/app/api/__test-utils__/poll";
 import { makeMockLlm } from "@/lib/llm/mock";
+import { JD_FACTS, MATCH_SCORE, QUESTION_ANSWER, QUESTION_EXTRACT, RESUME_STORE, TAILOR_RESULT } from "@/lib/llm/scripted-fixtures";
 import { insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
 import {
   applicationAnswers,
@@ -78,54 +79,6 @@ function stubConnector(source: SourceRow): SourceConnector {
   };
 }
 vi.mock("@/server/search/connectors", () => ({ connectorForSource: (source: SourceRow) => stubConnector(source) }));
-
-const RESUME_STORE = {
-  name: "Jane Doe",
-  contact: [
-    { label: "email", value: "jane@example.com" },
-    { label: "location", value: "Kuala Lumpur, Malaysia" },
-  ],
-  summary: "Backend engineer with six years of experience building payments systems.",
-  experience: [
-    { company: "Acme Co", title: "Senior Backend Engineer", dates: "2022–Present", bullets: ["Led migration to Kubernetes"] },
-  ],
-  education: [],
-  skills: [{ label: "Domain", items: ["Payments", "TypeScript"] }],
-  extras: [],
-};
-
-const JD_FACTS = {
-  title: "Senior Backend Engineer, Payments",
-  mustHaves: ["Node.js", "Postgres"],
-  niceToHaves: ["Kafka"],
-  responsibilities: ["Own the payments ledger service"],
-  redFlags: [],
-};
-
-const MATCH_SCORE = {
-  score: 4.2,
-  verdict: "Apply" as const,
-  why: "Strong overlap with recent backend/payments experience.",
-  breakdown: [{ label: "Skills match", value: 85, display: "85%", tone: "good" as const }],
-  fit: [{ k: "Stack", v: "Node.js, Postgres" }],
-  gaps: [],
-  reasons: { for: ["Payments experience"], against: [] },
-  legitimacy: { tier: "clear" as const, summary: "Looks like a normal listing.", signals: [], corroborated: false },
-  lowConfidence: false,
-};
-
-const TAILOR_RESULT = {
-  resume: { ...RESUME_STORE, summary: "Backend engineer specializing in payments infrastructure." },
-  diff: [
-    {
-      section: "summary",
-      op: "modify" as const,
-      before: RESUME_STORE.summary,
-      after: "Backend engineer specializing in payments infrastructure.",
-      reason: "Ties the summary to the payments domain named in the posting.",
-    },
-  ],
-};
 
 // --- fakeFetch: dispatches straight into the imported route handlers, so
 // features/*/client.ts's real `fetch(...)` calls exercise the real routes
@@ -248,24 +201,13 @@ describe("F1–F6 spine (route-level, mocked externals)", () => {
 
     // --- F4: extract questions, tier 3 paste (features/apply/client) ---
     llm.scripted.tailor = TAILOR_RESULT;
-    llm.scripted["question-extract"] = {
-      questions: [{ id: "q1", prompt: "Why do you want to work here?", kind: "textarea", required: true }],
-    };
+    llm.scripted["question-extract"] = QUESTION_EXTRACT;
     const extracted = await extractQuestions({ pastedForm: "Why do you want to work here? ____" });
     expect(extracted.sourceUrl).toBeNull();
     expect(extracted.questions).toHaveLength(1);
 
     // --- F4: draft answers ---
-    llm.scripted["question-answer"] = {
-      answers: [
-        {
-          questionId: "q1",
-          prompt: "Why do you want to work here?",
-          answer: "Because of the payments-scale challenge.",
-          grounding: [{ source: "summary", quote: RESUME_STORE.summary }],
-        },
-      ],
-    };
+    llm.scripted["question-answer"] = QUESTION_ANSWER;
     const drafted = await draftAnswers({ jobId: job.id, questions: extracted.questions });
     expect(drafted.answers[0].grounding).toHaveLength(1);
 
