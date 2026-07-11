@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, ilike, inArray, or, sql } from "drizzle-orm";
 import { getDb } from "../db";
-import { jobs, jobScores } from "../schema";
+import { jobs, jobScores, type JobAlias } from "../schema";
 import type { Db } from "./db";
 
 export type NewJob = typeof jobs.$inferInsert;
@@ -58,18 +58,36 @@ function latestJobScores(db: Db) {
     .as("latest_job_scores");
 }
 
+// {sourceId,url}-deduped union — a re-sighting from a source already present
+// among the aliases refreshes nothing (idempotent); a new source's alias is
+// added. Never drops a previously-recorded alias (task-B5-brief.md alias-
+// merge note: `upsertByDedupeKey` used to REPLACE aliases wholesale, wiping
+// cross-source aliases on re-sighting).
+function mergeAliases(existing: JobAlias[], incoming: JobAlias[]): JobAlias[] {
+  const merged = new Map<string, JobAlias>();
+  for (const alias of [...existing, ...incoming]) merged.set(`${alias.sourceId}::${alias.url}`, alias);
+  return [...merged.values()];
+}
+
 export function createJobsRepo(db: Db) {
   return {
-    // ON CONFLICT (dedupeKey): refresh lastSeenAt/aliases, keep firstSeenAt
-    // (untouched — Postgres retains the existing value for any column absent
-    // from the update `set`).
+    // ON CONFLICT (dedupeKey): refresh lastSeenAt/aliases (merged, not
+    // replaced), keep firstSeenAt (untouched — Postgres retains the existing
+    // value for any column absent from the update `set`).
     async upsertByDedupeKey(row: NewJob): Promise<JobRow> {
+      const [existing] = await db
+        .select({ aliases: jobs.aliases })
+        .from(jobs)
+        .where(eq(jobs.dedupeKey, row.dedupeKey))
+        .limit(1);
+      const aliases = mergeAliases(existing?.aliases ?? [], row.aliases ?? []);
+
       const [upserted] = await db
         .insert(jobs)
-        .values(row)
+        .values({ ...row, aliases })
         .onConflictDoUpdate({
           target: jobs.dedupeKey,
-          set: { lastSeenAt: sql`now()`, aliases: row.aliases },
+          set: { lastSeenAt: sql`now()`, aliases },
         })
         .returning();
       return upserted;

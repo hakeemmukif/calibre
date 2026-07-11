@@ -32,6 +32,17 @@ export function createSearchRunsRepo(db: Db) {
       const [updated] = await db.update(searchRuns).set({ stats }).where(eq(searchRuns.id, id)).returning();
       return updated ?? null;
     },
+    // system-architecture.md §6 decision 2: "A restart kills a run (status
+    // running → mark stale on boot)" — there is no distinct 'stale' wire/DB
+    // status, so staleness is represented as `failed` with an explanatory
+    // `error`. Called once by server/runs/registry.ts on process start.
+    async markAllRunningAsFailed(errorMessage: string): Promise<SearchRunRow[]> {
+      return db
+        .update(searchRuns)
+        .set({ status: "failed", error: errorMessage, finishedAt: new Date() })
+        .where(eq(searchRuns.status, "running"))
+        .returning();
+    },
   };
 }
 
@@ -40,4 +51,5 @@ export const searchRunsRepo: ReturnType<typeof createSearchRunsRepo> = {
   getById: (id) => createSearchRunsRepo(getDb()).getById(id),
   updateStatus: (id, status, patch) => createSearchRunsRepo(getDb()).updateStatus(id, status, patch),
   updateStats: (id, stats) => createSearchRunsRepo(getDb()).updateStats(id, stats),
+  markAllRunningAsFailed: (errorMessage) => createSearchRunsRepo(getDb()).markAllRunningAsFailed(errorMessage),
 };

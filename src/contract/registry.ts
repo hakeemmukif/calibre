@@ -41,6 +41,7 @@ import {
   TailoredResume,
   ErrorEnvelope,
   SummaryStripStats,
+  SseEvent,
 } from "@/types";
 
 const entitySchemas: Record<string, z.ZodType> = {
@@ -61,6 +62,7 @@ const entitySchemas: Record<string, z.ZodType> = {
   TailoredResume,
   ErrorEnvelope,
   SummaryStripStats,
+  SseEvent,
 };
 
 for (const [name, schema] of Object.entries(entitySchemas)) {
@@ -122,6 +124,49 @@ registry.registerPath({
   responses: {
     200: { description: "Current résumé", content: { "application/json": { schema: Resume } } },
     404: { description: "No résumé uploaded yet", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/search",
+  summary: "Start a dual search run (global ATS + MY boards) — F2 discovery",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            persona: Persona,
+            sources: z.array(z.string()).min(1).optional().describe("Omitted = persona's full configured set"),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    202: { description: "Run queued", content: { "application/json": { schema: SearchRun } } },
+    409: {
+      description: "A run is already active for this persona, or no résumé exists",
+      content: { "application/json": { schema: ErrorEnvelope } },
+    },
+    422: { description: "Invalid body (e.g. an explicit empty sources[])", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/search/{id}",
+  summary: "Run status — JSON snapshot by default; SSE via Accept: text/event-stream",
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: "JSON snapshot, or an SSE stream of progress/done/error (never job — discovery only, B6 scores)",
+      content: {
+        "application/json": { schema: SearchRun },
+        "text/event-stream": { schema: SseEvent },
+      },
+    },
+    404: { description: "Unknown run id", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
 

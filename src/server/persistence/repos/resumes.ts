@@ -26,6 +26,10 @@ export function createResumesRepo(db: Db) {
       const [row] = await db.select().from(resumes).where(eq(resumes.isActive, true)).limit(1);
       return row ?? null;
     },
+    async getById(id: string): Promise<ResumeRow | null> {
+      const [row] = await db.select().from(resumes).where(eq(resumes.id, id)).limit(1);
+      return row ?? null;
+    },
   };
 }
 
@@ -35,4 +39,5 @@ export function createResumesRepo(db: Db) {
 export const resumesRepo: ReturnType<typeof createResumesRepo> = {
   insertReplacingActive: (row) => createResumesRepo(getDb()).insertReplacingActive(row),
   getActive: () => createResumesRepo(getDb()).getActive(),
+  getById: (id) => createResumesRepo(getDb()).getById(id),
 };

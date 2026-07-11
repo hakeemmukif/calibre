@@ -58,4 +58,28 @@ describe("resumesRepo", () => {
     const aAfter = rows.find((r) => r.id === a.id);
     expect(aAfter?.isActive).toBe(false);
   });
+
+  it("getById fetches a non-active résumé by id, and returns null for an unknown id", async () => {
+    const db = await createTestDb();
+    const repo = createResumesRepo(db);
+
+    const a = await repo.insertReplacingActive({
+      rawText: "resume A",
+      structured: { name: "A", contact: [], summary: "s", experience: [], education: [], skills: [], extras: [] },
+      sourceKind: "paste",
+      isActive: true,
+    });
+    await repo.insertReplacingActive({
+      rawText: "resume B",
+      structured: { name: "B", contact: [], summary: "s", experience: [], education: [], skills: [], extras: [] },
+      sourceKind: "paste",
+      isActive: true,
+    });
+
+    const found = await repo.getById(a.id);
+    expect(found?.rawText).toBe("resume A");
+    expect(found?.isActive).toBe(false);
+
+    expect(await repo.getById("00000000-0000-0000-0000-000000000000")).toBeNull();
+  });
 });

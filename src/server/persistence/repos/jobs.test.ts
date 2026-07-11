@@ -73,6 +73,60 @@ describe("jobsRepo", () => {
     expect(second.aliases).toEqual([{ sourceId: "jobstreet", url: "https://jobstreet.com/2" }]);
   });
 
+  it("upsertByDedupeKey merges aliases across re-sightings instead of replacing them (regression)", async () => {
+    const db = await createTestDb();
+    const repo = createJobsRepo(db);
+    const source = await insertSource(db);
+
+    const first = await repo.upsertByDedupeKey({
+      dedupeKey: "dk-alias-merge",
+      url: "https://example.com/3",
+      sourceId: source.id,
+      title: "Backend Engineer",
+      company: "Acme",
+      location: "Remote",
+      persona: "remote",
+      aliases: [{ sourceId: "jobstreet", url: "https://jobstreet.com/3" }],
+      raw: {},
+    });
+    expect(first.aliases).toEqual([{ sourceId: "jobstreet", url: "https://jobstreet.com/3" }]);
+
+    // Re-sighting from a run that only found a different alias this time —
+    // the jobstreet alias from the first sighting must be preserved, not wiped.
+    const second = await repo.upsertByDedupeKey({
+      dedupeKey: "dk-alias-merge",
+      url: "https://example.com/3",
+      sourceId: source.id,
+      title: "Backend Engineer",
+      company: "Acme",
+      location: "Remote",
+      persona: "remote",
+      aliases: [{ sourceId: "hiredly", url: "https://hiredly.com/3" }],
+      raw: {},
+    });
+    expect(second.aliases).toEqual(
+      expect.arrayContaining([
+        { sourceId: "jobstreet", url: "https://jobstreet.com/3" },
+        { sourceId: "hiredly", url: "https://hiredly.com/3" },
+      ]),
+    );
+    expect(second.aliases).toHaveLength(2);
+
+    // Re-sighting the exact same alias again does not duplicate it.
+    const third = await repo.upsertByDedupeKey({
+      dedupeKey: "dk-alias-merge",
+      url: "https://example.com/3",
+      sourceId: source.id,
+      title: "Backend Engineer",
+      company: "Acme",
+      location: "Remote",
+      persona: "remote",
+      aliases: [{ sourceId: "hiredly", url: "https://hiredly.com/3" }],
+      raw: {},
+    });
+    expect(third.aliases).toHaveLength(2);
+  });
+
   it("listScored filters by tier + minScore and pages with a cursor", async () => {
     const db = await createTestDb();
     const repo = createJobsRepo(db);

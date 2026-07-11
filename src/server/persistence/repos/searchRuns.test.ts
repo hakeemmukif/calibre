@@ -36,4 +36,24 @@ describe("searchRunsRepo", () => {
     const fetched = await repo.getById(inserted.id);
     expect(fetched?.id).toBe(inserted.id);
   });
+
+  it("markAllRunningAsFailed flips only 'running' rows to 'failed' with an error and finishedAt", async () => {
+    const db = await createTestDb();
+    const repo = createSearchRunsRepo(db);
+    const resume = await insertResume(db);
+
+    const base = { resumeId: resume.id, personas: ["remote" as const], stats: { scanned: 0, matched: 0, scored: 0, ghosts: 0, perSource: [] } };
+    const running = await repo.insert({ ...base, status: "running" });
+    const queued = await repo.insert({ ...base, status: "queued" });
+    const completed = await repo.insert({ ...base, status: "completed" });
+
+    const flipped = await repo.markAllRunningAsFailed("stale: process restarted while running");
+    expect(flipped.map((r) => r.id)).toEqual([running.id]);
+
+    expect((await repo.getById(running.id))?.status).toBe("failed");
+    expect((await repo.getById(running.id))?.error).toBe("stale: process restarted while running");
+    expect((await repo.getById(running.id))?.finishedAt).not.toBeNull();
+    expect((await repo.getById(queued.id))?.status).toBe("queued");
+    expect((await repo.getById(completed.id))?.status).toBe("completed");
+  });
 });

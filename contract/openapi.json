@@ -668,6 +668,89 @@
         ],
         "type": "object"
       },
+      "SseEvent": {
+        "oneOf": [
+          {
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/Progress"
+              },
+              "event": {
+                "enum": [
+                  "progress"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "event",
+              "data"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/Job"
+              },
+              "event": {
+                "enum": [
+                  "job"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "event",
+              "data"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "data": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/SearchRun"
+                  },
+                  {
+                    "$ref": "#/components/schemas/TailoredResume"
+                  }
+                ]
+              },
+              "event": {
+                "enum": [
+                  "done"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "event",
+              "data"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/ErrorEnvelope"
+              },
+              "event": {
+                "enum": [
+                  "error"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "event",
+              "data"
+            ],
+            "type": "object"
+          }
+        ]
+      },
       "SummaryStripStats": {
         "properties": {
           "flagged": {
@@ -1000,6 +1083,110 @@
           }
         },
         "summary": "Upload (PDF/DOCX) or paste a résumé — F1 ingest"
+      }
+    },
+    "/api/search": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "persona": {
+                    "$ref": "#/components/schemas/Persona"
+                  },
+                  "sources": {
+                    "description": "Omitted = persona's full configured set",
+                    "items": {
+                      "type": "string"
+                    },
+                    "minItems": 1,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "persona"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchRun"
+                }
+              }
+            },
+            "description": "Run queued"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "A run is already active for this persona, or no résumé exists"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Invalid body (e.g. an explicit empty sources[])"
+          }
+        },
+        "summary": "Start a dual search run (global ATS + MY boards) — F2 discovery"
+      }
+    },
+    "/api/search/{id}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchRun"
+                }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/SseEvent"
+                }
+              }
+            },
+            "description": "JSON snapshot, or an SSE stream of progress/done/error (never job — discovery only, B6 scores)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unknown run id"
+          }
+        },
+        "summary": "Run status — JSON snapshot by default; SSE via Accept: text/event-stream"
       }
     }
   },

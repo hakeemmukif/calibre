@@ -19,7 +19,7 @@ import type { ResumeStore } from "../resume/resume-store";
 
 export type { ResumeStore };
 
-type JobAlias = { sourceId: string; url: string };
+export type JobAlias = { sourceId: string; url: string };
 
 type BreakdownEntry = { label: string; value: number; display?: string; tone?: string };
 type FitEntry = { k: string; v: string };
