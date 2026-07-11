@@ -17,7 +17,8 @@
     "db:seed": "tsx src/server/persistence/seed.ts",
     "db:seed:test": "tsx src/server/persistence/seed-test.ts",
     "contract": "tsx src/contract/generate.ts",
-    "contract:check": "tsx src/contract/generate.ts && git diff --exit-code contract/openapi.json"
+    "contract:check": "tsx src/contract/generate.ts && git diff --exit-code contract/openapi.json",
+    "check": "npm run typecheck && vitest run && npm run contract:check && npm run build"
   },
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^8.5.0",
