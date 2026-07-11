@@ -115,4 +115,10 @@ describe("POST /api/tailor", () => {
     expect(res.status).toBe(422);
     expect((await res.json()).error.code).toBe("VALIDATION_ERROR");
   });
+
+  it("non-uuid jobId -> 422 VALIDATION_ERROR, never a 500", async () => {
+    const res = await POST(jsonRequest({ jobId: "not-a-uuid" }));
+    expect(res.status).toBe(422);
+    expect((await res.json()).error.code).toBe("VALIDATION_ERROR");
+  });
 });

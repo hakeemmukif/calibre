@@ -84,6 +84,14 @@ describe("POST /api/apply/answers", () => {
     expect((await res.json()).error.code).toBe("VALIDATION_ERROR");
   });
 
+  it("non-uuid jobId -> 422 VALIDATION_ERROR, never a 500", async () => {
+    const res = await POST(
+      jsonRequest({ jobId: "not-a-uuid", questions: [{ id: "q1", prompt: "Why us?", kind: "text", required: true }] }),
+    );
+    expect(res.status).toBe(422);
+    expect((await res.json()).error.code).toBe("VALIDATION_ERROR");
+  });
+
   it("LLM failure -> 502 UPSTREAM_LLM_ERROR", async () => {
     const source = await insertSource(state.testDb);
     const job = await insertJob(state.testDb, source.id);

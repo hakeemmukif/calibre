@@ -3,10 +3,11 @@
 // (api-contract.md §3 "POST /api/tailor").
 import { NextRequest, NextResponse } from "next/server";
 import { z, ZodError } from "zod";
+import { UuidParam } from "@/server/http/params";
 import { NoActiveResumeError, UnknownJobError, startTailor } from "@/server/tailor";
 import type { ErrorEnvelope } from "@/types";
 
-const RequestBody = z.object({ jobId: z.string().min(1) });
+const RequestBody = z.object({ jobId: UuidParam });
 
 function errorResponse(status: number, code: ErrorEnvelope["error"]["code"], message: string, details?: unknown) {
   const body: ErrorEnvelope = { error: { code, message, ...(details !== undefined ? { details } : {}) } };

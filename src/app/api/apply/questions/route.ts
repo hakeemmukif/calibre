@@ -5,11 +5,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z, ZodError } from "zod";
 import { ExtractionFailedError, UnknownJobError, extractQuestions } from "@/server/apply-assistant/extract-questions";
+import { UuidParam } from "@/server/http/params";
 import type { ErrorEnvelope } from "@/types";
 
 const RequestBody = z
   .object({
-    jobId: z.string().min(1).optional(),
+    jobId: UuidParam.optional(),
     url: z.string().min(1).optional(),
     pastedForm: z.string().min(1).optional(),
   })

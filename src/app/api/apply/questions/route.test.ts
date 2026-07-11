@@ -69,6 +69,12 @@ describe("POST /api/apply/questions", () => {
     expect((await res.json()).error.code).toBe("NOT_FOUND");
   });
 
+  it("non-uuid jobId (exactly-one provided) -> 422 VALIDATION_ERROR, never a 500", async () => {
+    const res = await POST(jsonRequest({ jobId: "abc" }));
+    expect(res.status).toBe(422);
+    expect((await res.json()).error.code).toBe("VALIDATION_ERROR");
+  });
+
   it("no questions found across both tiers -> 502 EXTRACTION_FAILED (never [])", async () => {
     domParse.fn.mockResolvedValue(null);
     const res = await POST(jsonRequest({ url: "https://example.com/careers/apply" }));

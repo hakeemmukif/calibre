@@ -104,4 +104,11 @@ describe("GET /api/jobs", () => {
     expect(res.status).toBe(422);
     expect((await res.json()).error.code).toBe("VALIDATION_ERROR");
   });
+
+  it("a cursor with a non-uuid id returns 422 VALIDATION_ERROR, never a 500", async () => {
+    const cursor = Buffer.from(JSON.stringify({ id: "not-a-uuid" })).toString("base64url");
+    const res = await GET(req(`?cursor=${cursor}`));
+    expect(res.status).toBe(422);
+    expect((await res.json()).error.code).toBe("VALIDATION_ERROR");
+  });
 });

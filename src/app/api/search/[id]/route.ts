@@ -3,6 +3,7 @@
 // `progress`/`done`/`error`, never `job` (B6 adds job scoring/events).
 import { NextRequest, NextResponse } from "next/server";
 import { get as getRunHandle } from "@/server/runs/registry";
+import { isUuid } from "@/server/http/params";
 import { searchRunsRepo } from "@/server/persistence/repos/searchRuns";
 import { toSearchRun } from "@/server/search/assemble-run";
 import type { ErrorEnvelope } from "@/types";
@@ -18,6 +19,9 @@ function sseLine(eventName: string, data: unknown, eventId: number): string {
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (!isUuid(id)) {
+    return errorResponse(404, "NOT_FOUND", `No search run with id "${id}".`);
+  }
   const row = await searchRunsRepo.getById(id);
   if (!row) {
     return errorResponse(404, "NOT_FOUND", `No search run with id "${id}".`);

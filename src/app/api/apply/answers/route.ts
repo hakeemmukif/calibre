@@ -4,10 +4,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z, ZodError } from "zod";
 import { NoActiveResumeError, UnknownJobError, UpstreamLlmError, draftAnswers } from "@/server/apply-assistant/answer";
+import { UuidParam } from "@/server/http/params";
 import { ApplicationQuestion, type ErrorEnvelope } from "@/types";
 
 const RequestBody = z.object({
-  jobId: z.string().min(1),
+  jobId: UuidParam,
   questions: z.array(ApplicationQuestion).min(1),
 });
 

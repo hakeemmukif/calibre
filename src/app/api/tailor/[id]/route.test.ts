@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { readAllSseEvents } from "@/app/api/__test-utils__/sse";
 import { makeMockLlm } from "@/lib/llm/mock";
 import { insertJob, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
 import { jobs, resumes, sources, tailoredResumes } from "@/server/persistence/schema";
@@ -18,36 +19,6 @@ vi.mock("@/lib/llm/client", async (importOriginal) => {
 const { POST } = await import("../route");
 const { GET } = await import("./route");
 const { __resetForTests } = await import("@/server/runs/registry");
-
-async function readAllSseEvents(res: Response): Promise<{ id: number; event: string; data: unknown }[]> {
-  const reader = res.body!.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  const events: { id: number; event: string; data: unknown }[] = [];
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-
-    let sep;
-    while ((sep = buffer.indexOf("\n\n")) !== -1) {
-      const chunk = buffer.slice(0, sep);
-      buffer = buffer.slice(sep + 2);
-      const idLine = chunk.split("\n").find((l) => l.startsWith("id: "));
-      const eventLine = chunk.split("\n").find((l) => l.startsWith("event: "));
-      const dataLine = chunk.split("\n").find((l) => l.startsWith("data: "));
-      if (idLine && eventLine && dataLine) {
-        events.push({
-          id: Number(idLine.slice("id: ".length)),
-          event: eventLine.slice("event: ".length),
-          data: JSON.parse(dataLine.slice("data: ".length)),
-        });
-      }
-    }
-  }
-  return events;
-}
 
 function getRequest(id: string, headers: Record<string, string> = {}): NextRequest {
   return new NextRequest(`http://localhost/api/tailor/${id}`, { headers });

@@ -60,6 +60,12 @@ describe("GET /api/search/:id", () => {
     expect((await res.json()).error.code).toBe("NOT_FOUND");
   });
 
+  it("returns 404 NOT_FOUND for a malformed (non-uuid) id, never a 500", async () => {
+    const res = await GET(getRequest("not-a-uuid"), { params: Promise.resolve({ id: "not-a-uuid" }) });
+    expect(res.status).toBe(404);
+    expect((await res.json()).error.code).toBe("NOT_FOUND");
+  });
+
   it("returns a 200 JSON snapshot by default (no Accept header)", async () => {
     await insertResume(state.testDb, { isActive: true });
     await insertSource(state.testDb, { id: "greenhouse", kind: "ats", persona: "remote" });
