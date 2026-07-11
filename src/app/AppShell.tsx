@@ -22,11 +22,12 @@ const ITEMS: NavItem[] = [
 ];
 
 // Wired tabs. To light up a hidden tab later: add its id here + a routeFor entry.
-const ENABLED = new Set(["matches", "applied", "resume"]);
+const ENABLED = new Set(["matches", "applied", "resume", "sources"]);
 const routeFor: Record<string, string> = {
   matches: "/feed",
   applied: "/tracker",
   resume: "/resume",
+  sources: "/sources",
 };
 
 // Route -> active nav id. /jobs/* are drill-downs from Matches, so keep Matches lit.
@@ -34,6 +35,7 @@ function activeIdFor(pathname: string): string | undefined {
   if (pathname === "/feed" || pathname.startsWith("/jobs")) return "matches";
   if (pathname.startsWith("/tracker")) return "applied";
   if (pathname.startsWith("/resume")) return "resume";
+  if (pathname.startsWith("/sources")) return "sources";
   return undefined;
 }
 

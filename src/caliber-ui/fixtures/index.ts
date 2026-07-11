@@ -10,6 +10,7 @@ import {
   ApplicationQuestion,
   ApplicationAnswers,
   TailoredResume,
+  Source,
 } from "../../types";
 import { legitimacyTone } from "../lib/legitimacy";
 
@@ -426,3 +427,25 @@ export const tailored: TailoredResume = TailoredResume.parse({
     },
   ],
 });
+
+// ---------------------------------------------------------------------------
+// Sources — the Sources management page's 13 real rows (ids/names mirror
+// server/persistence/seed.ts's sourceSeeds, config field dropped — that's
+// server-only connector wiring, not part of the `Source` contract shape).
+// ---------------------------------------------------------------------------
+
+export const sources: Source[] = Source.array().parse([
+  { id: "gh-stripe", name: "Stripe", kind: "ats", persona: "remote", enabled: true },
+  { id: "gh-gitlab", name: "GitLab", kind: "ats", persona: "remote", enabled: true },
+  { id: "ashby-ramp", name: "Ramp", kind: "ats", persona: "remote", enabled: true },
+  { id: "ashby-plaid", name: "Plaid", kind: "ats", persona: "remote", enabled: true },
+  { id: "ashby-airwallex", name: "Airwallex", kind: "ats", persona: "remote", enabled: true },
+  { id: "ashby-deel", name: "Deel", kind: "ats", persona: "remote", enabled: true },
+  { id: "gh-remote", name: "Remote", kind: "ats", persona: "remote", enabled: true },
+  { id: "lever-toptal", name: "Toptal", kind: "ats", persona: "remote", enabled: true },
+  { id: "ashby-elevenlabs", name: "ElevenLabs", kind: "ats", persona: "remote", enabled: true },
+  { id: "ashby-perplexity", name: "Perplexity", kind: "ats", persona: "remote", enabled: true },
+  { id: "ashby-zapier", name: "Zapier", kind: "ats", persona: "remote", enabled: true },
+  { id: "ashby-supabase", name: "Supabase", kind: "ats", persona: "remote", enabled: true },
+  { id: "jobstreet", name: "JobStreet Malaysia", kind: "board", persona: "local", enabled: true },
+]);

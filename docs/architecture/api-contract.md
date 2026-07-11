@@ -203,4 +203,4 @@ export const SseEvent = z.discriminatedUnion('event', [
 - **Docs**: `contract/openapi.json` served through a Scalar page at `/api/docs`.
 - **Typed client**: internally none generated — one Next.js codebase, so `features/*` fetch wrappers take/return `z.infer` types and `.parse` responses in dev/test (catching drift at runtime). OpenAPI exists for docs and future external codegen.
 
-Deferred (out of this contract): sources CRUD, cover letters, interviews, insights, notifications — same run/entity patterns when their screens are wired (Phases C–D).
+Sources are real (`GET /api/sources` → `{ items: Source[] }`, `PATCH /api/sources/:id` `{enabled}` → `Source`; `/sources` page). Deferred (out of this contract): cover letters, interviews, insights, notifications — same run/entity patterns when their screens are wired (Phases C–D).

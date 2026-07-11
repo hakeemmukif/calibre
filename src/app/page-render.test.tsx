@@ -50,4 +50,9 @@ describe("app page render smoke", () => {
     const html = await renders(() => import("./tracker/page"));
     expect(html).toContain("Application tracker");
   });
+
+  it("/sources renders its initial (loading) state without throwing", async () => {
+    const html = await renders(() => import("./sources/page"));
+    expect(html).toContain("Sources");
+  });
 });
