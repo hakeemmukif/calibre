@@ -155,4 +155,10 @@ describe("GET /api/applications", () => {
     expect(res.status).toBe(422);
     expect((await res.json()).error.code).toBe("VALIDATION_ERROR");
   });
+
+  it("a malformed cursor returns 422 VALIDATION_ERROR, never a 500", async () => {
+    const res = await GET(getRequest("?cursor=@@bad@@"));
+    expect(res.status).toBe(422);
+    expect((await res.json()).error.code).toBe("VALIDATION_ERROR");
+  });
 });

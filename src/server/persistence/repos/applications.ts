@@ -1,6 +1,7 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { getDb } from "../db";
 import { applications, jobs, jobScores } from "../schema";
+import { decodeCursorId, encodeCursorId } from "./cursor";
 import type { Db } from "./db";
 
 export type NewApplication = typeof applications.$inferInsert;
@@ -40,21 +41,6 @@ export type AppPatch = Pick<
 >;
 
 const DEFAULT_LIMIT = 25;
-
-// id-correlated keyset: the comparison tuple is fetched fresh from the DB
-// (full microsecond precision) rather than round-tripped through a JS Date,
-// which only carries millisecond precision and would silently drop rows
-// sharing a millisecond with the cursor row.
-type Cursor = { id: string };
-
-function encodeCursor(row: AppRow): string {
-  const c: Cursor = { id: row.id };
-  return Buffer.from(JSON.stringify(c)).toString("base64url");
-}
-
-function decodeCursor(cursor: string): Cursor {
-  return JSON.parse(Buffer.from(cursor, "base64url").toString("utf-8"));
-}
 
 // A job may carry multiple job_scores rows (résumé replacement / policy bump
 // — unique key is (jobId, resumeId, policyVersion)). Joins must pick exactly
@@ -100,7 +86,7 @@ export function createApplicationsRepo(db: Db) {
       if (q.stage !== undefined) conditions.push(eq(applications.stage, q.stage));
       if (q.statusTone) conditions.push(eq(applications.statusTone, q.statusTone));
       if (q.cursor) {
-        const c = decodeCursor(q.cursor);
+        const c = decodeCursorId(q.cursor);
         conditions.push(
           sql`(${applications.appliedAt}, ${applications.id}) < (SELECT ${applications.appliedAt}, ${applications.id} FROM ${applications} WHERE ${applications.id} = ${c.id})`,
         );
@@ -134,7 +120,7 @@ export function createApplicationsRepo(db: Db) {
         meta: metaOf(r.location, r.salaryRaw),
         score: r.score,
       }));
-      const nextCursor = hasMore ? encodeCursor(page[page.length - 1].application) : null;
+      const nextCursor = hasMore ? encodeCursorId(page[page.length - 1].application.id) : null;
       return { items, nextCursor };
     },
 

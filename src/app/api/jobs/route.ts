@@ -3,6 +3,7 @@
 // server/search/jobsFeed.ts (api-contract.md §3 "GET /api/jobs").
 import { NextRequest, NextResponse } from "next/server";
 import { z, ZodError } from "zod";
+import { InvalidCursorError } from "@/server/persistence/repos/cursor";
 import { listJobsFeed } from "@/server/search/jobsFeed";
 import { LegitimacyTier, Persona, type ErrorEnvelope } from "@/types";
 
@@ -58,6 +59,9 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     if (err instanceof ZodError) {
       return errorResponse(422, "VALIDATION_ERROR", "Invalid jobs query.", err.issues);
+    }
+    if (err instanceof InvalidCursorError) {
+      return errorResponse(422, "VALIDATION_ERROR", err.message);
     }
     throw err;
   }

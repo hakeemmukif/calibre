@@ -1,6 +1,7 @@
 import { and, desc, eq, gt, gte, ilike, inArray, or, sql } from "drizzle-orm";
 import { getDb } from "../db";
 import { jobs, jobScores, sources, type JobAlias } from "../schema";
+import { decodeCursorId, encodeCursorId } from "./cursor";
 import type { Db } from "./db";
 
 export type NewJob = typeof jobs.$inferInsert;
@@ -33,21 +34,6 @@ export type JobsQuery = {
 };
 
 const DEFAULT_LIMIT = 25;
-
-// id-correlated keyset: the comparison tuple is fetched fresh from the DB
-// (full microsecond precision) rather than round-tripped through a JS Date,
-// which only carries millisecond precision and would silently drop rows
-// sharing a millisecond with the cursor row.
-type Cursor = { id: string };
-
-function encodeCursor(row: JobRow): string {
-  const c: Cursor = { id: row.id };
-  return Buffer.from(JSON.stringify(c)).toString("base64url");
-}
-
-function decodeCursor(cursor: string): Cursor {
-  return JSON.parse(Buffer.from(cursor, "base64url").toString("utf-8"));
-}
 
 // A job may carry multiple job_scores rows (résumé replacement / policy bump
 // — unique key is (jobId, resumeId, policyVersion)). Joins must pick exactly
@@ -126,7 +112,7 @@ export function createJobsRepo(db: Db) {
       const conditions = buildFilterConditions(q);
 
       if (q.cursor) {
-        const c = decodeCursor(q.cursor);
+        const c = decodeCursorId(q.cursor);
         conditions.push(
           sql`(${jobs.firstSeenAt}, ${jobs.id}) < (SELECT ${jobs.firstSeenAt}, ${jobs.id} FROM ${jobs} WHERE ${jobs.id} = ${c.id})`,
         );
@@ -146,7 +132,7 @@ export function createJobsRepo(db: Db) {
 
       const hasMore = rows.length > limit;
       const items = hasMore ? rows.slice(0, limit) : rows;
-      const nextCursor = hasMore ? encodeCursor(items[items.length - 1].job) : null;
+      const nextCursor = hasMore ? encodeCursorId(items[items.length - 1].job.id) : null;
       return { items, nextCursor };
     },
 

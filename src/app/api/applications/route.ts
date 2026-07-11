@@ -3,6 +3,7 @@
 // "POST /api/applications", "GET /api/applications").
 import { NextRequest, NextResponse } from "next/server";
 import { z, ZodError } from "zod";
+import { InvalidCursorError } from "@/server/persistence/repos/cursor";
 import {
   ApplicationConflictError,
   JobNotScoredError,
@@ -94,6 +95,9 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     if (err instanceof ZodError) {
       return errorResponse(422, "VALIDATION_ERROR", "Invalid applications query.", err.issues);
+    }
+    if (err instanceof InvalidCursorError) {
+      return errorResponse(422, "VALIDATION_ERROR", err.message);
     }
     throw err;
   }

@@ -98,4 +98,10 @@ describe("GET /api/jobs", () => {
     const res = await GET(req("?tier=not-a-tier"));
     expect(res.status).toBe(422);
   });
+
+  it("a malformed cursor returns 422 VALIDATION_ERROR, never a 500", async () => {
+    const res = await GET(req("?cursor=%%%not-base64-json%%%"));
+    expect(res.status).toBe(422);
+    expect((await res.json()).error.code).toBe("VALIDATION_ERROR");
+  });
 });
