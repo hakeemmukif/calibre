@@ -7,7 +7,15 @@ import { expect, test } from "@playwright/test";
 // actually yields a posting for), so this never disturbs other specs'
 // remote-persona bootstraps.
 test("sources: persona groups render; first remote source toggle persists across reload", async ({ page }) => {
-  await page.goto("/sources");
+  // Enter via the sidebar, not a direct goto — this is the one test in the
+  // repo exercising AppShell.tsx's real nav wiring (SidebarNav onSelect ->
+  // routeFor["sources"] -> router.push("/sources")). Scoped to the nav
+  // landmark (SidebarNav renders a <nav>) so the click can't ever match the
+  // /sources page header's own "Sources" text.
+  await page.goto("/feed");
+  await page.getByRole("navigation").getByRole("button", { name: "Sources" }).click();
+  await expect(page).toHaveURL(/\/sources$/);
+  await expect(page.locator("header").getByText("Sources")).toBeVisible();
 
   await expect(page.getByText("Remote · global")).toBeVisible();
   await expect(page.getByText("Malaysia · local")).toBeVisible();
