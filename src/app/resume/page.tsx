@@ -7,15 +7,18 @@
 // POST /api/search calls (remote + local) — never a "both" persona on the
 // frozen contract.
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { ResumeUpload, type ResumeUploadStatus } from "@/caliber-ui/compositions/Resume/ResumeUpload";
 import { ResumeView } from "@/caliber-ui/compositions/Resume/ResumeView";
 import { Button } from "@/caliber-ui/components/Button";
 import { Icon } from "@/caliber-ui/components/Icon";
 import { getResume, uploadResume } from "@/features/resume/client";
 import { startSearch } from "@/features/search/client";
+import { writeScanHandoff, type ScanHandoff } from "@/features/search/scanHandoff";
 import type { Resume } from "@/types";
 
 export default function ResumePage() {
+  const router = useRouter();
   const [resume, setResume] = React.useState<Resume | null>(null);
   const [loaded, setLoaded] = React.useState(false);
   const [status, setStatus] = React.useState<ResumeUploadStatus>("idle");
@@ -25,14 +28,22 @@ export default function ResumePage() {
   async function startSearches() {
     setSearchError(undefined);
     const results = await Promise.allSettled([startSearch({ persona: "remote" }), startSearch({ persona: "local" })]);
-    const failed = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
-    if (failed.length === 0) return;
-    const reason = failed[0].reason instanceof Error ? failed[0].reason.message : String(failed[0].reason);
-    setSearchError(
-      failed.length === results.length
-        ? `Search failed to start — retry. (${reason})`
-        : `One of the two searches failed to start — retry. (${reason})`,
-    );
+
+    // Both failed → stay on the page and surface a retry. If at least one
+    // started, hand its run id to /feed (which attaches its ScanProgress
+    // overlay to the live run) and navigate — that's the resume→feed flow.
+    const handoff: ScanHandoff = {};
+    if (results[0].status === "fulfilled") handoff.remote = results[0].value.id;
+    if (results[1].status === "fulfilled") handoff.local = results[1].value.id;
+
+    if (Object.keys(handoff).length === 0) {
+      const reason = results[0].status === "rejected" && results[0].reason instanceof Error ? results[0].reason.message : "unknown error";
+      setSearchError(`Search failed to start — retry. (${reason})`);
+      return;
+    }
+
+    writeScanHandoff(handoff);
+    router.push("/feed");
   }
 
   React.useEffect(() => {

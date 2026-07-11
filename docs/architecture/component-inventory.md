@@ -32,6 +32,7 @@ Tier→tone mapping lives in exactly one place (`legitimacyTone(tier)`); compone
 | **FilterChips** | Real feed filters (§11.8) | `{ active: FeedFilter; counts: Record<FeedFilter, number>; onChange(f): void }` | Chip row | each filter active / empty-count disabled |
 | **JobRow** | The A·Signal-Pill row — hero unit | `{ job: Job; onOpen(): void; onSave(): void; onDismiss(): void }` | Card (hover lift) → ScoreBadge · title + Tag legitimacy + NewBadge · meta/why · IconButtons | 5 legitimacy tiers × isNew; saved; dismissing; ghost (muted) |
 | **JobFeed** (`FeedStream`) | Live scored feed (F2) | `{ jobs: Job[]; filter: FeedFilter; onFilterChange(f): void; stats: SummaryStripStats; loading: boolean; error?: string; onRowAction(id, action): void }` | SummaryStrip, FilterChips, JobRow[], "new since last visit" divider | loading skeleton / empty / empty-after-filter / error+retry / populated / all-flagged |
+| **ScanProgress** | Market-scan overlay (F2) — *additive, spec §7*; renders the search-run SSE stream (`sources`→`fetch`→`score`→`legitimacy`) as four labelled stages. Prop shape is presentational (self-contained, not a contract entity), driven by `useScanRun` | `{ status: "running"\|"done"\|"error"; stages: {stage; label; state; current?; total?; detail?}[]; stats?: {scanned; worth; ghosts}; error?; onClose?() }` | Card overlay, progress bar, per-stage glyphs (check/spinner/pending) | running / done (honest scanned·worth·ghost summary + "View your matches") / error |
 | **JobDetail** | Full posting view (F3/F4/F6 launcher) | `{ job: Job; applied?: Application; onApply(): void; onTailor(): void; onAnswerQuestions(): void; onMarkApplied(): Promise<void> }` | Card, Tabs (Fit·Legitimacy·Breakdown), FitBar[], Tag, Button (Apply=primary w/ external-link icon), AppliedButton | loading / populated / already-applied / scam-tier (Apply demoted, warning banner) |
 | **AppliedButton** | F5 mark-applied | `{ applied: boolean; appliedAgo?: string; onMarkApplied(): Promise<void> }` | Button ↔ Chip | idle / confirming / applied ("Applied · 2d ago", disabled) / error-retry |
 | **ResumeUpload** | F1 ingest | `{ onFile(f: File): void; status: 'idle'\|'uploading'\|'parsing'\|'error'\|'done'; progress?; error? }` | Card (dashed dropzone), Icon, Button | idle / dragover / uploading / parsing / parse-error (retry + build) / done |
@@ -101,7 +102,7 @@ Tokens/            Colors · Typography · Radius&Space · Legitimacy tones (tie
 Primitives/        13 stories, one per primitive; every variant as Controls args
 Compositions/
   Shell/           PersonaToggle · UrlEvalBar · NotificationBell · AppShellHeader
-  Feed/            NewBadge · SummaryStrip · FilterChips · JobRow · JobFeed
+  Feed/            NewBadge · SummaryStrip · FilterChips · JobRow · JobFeed · ScanProgress
   Eval/            EvalResultCard
   Resume/          ResumeUpload · ResumeView
   Apply/           AppliedButton · AnswerCard · GroundingChips · QuestionListEditor · ApplyQuestionsAssistant

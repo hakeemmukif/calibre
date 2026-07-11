@@ -43,9 +43,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       // the stream — so both close and the subscribe callback's enqueue
       // must no-op once either one has run.
       let closed = false;
+      let heartbeat: ReturnType<typeof setInterval> | undefined;
       const close = () => {
         if (closed) return;
         closed = true;
+        if (heartbeat) clearInterval(heartbeat);
         controller.close();
       };
 
@@ -78,6 +80,14 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
           close();
         }
       });
+
+      // A single scoring call can leave the stream silent for many seconds;
+      // idle proxies kill quiet connections. A comment line (`:` prefix) keeps
+      // it warm and is invisible to the EventSource client — no contract change.
+      heartbeat = setInterval(() => {
+        if (closed) return;
+        controller.enqueue(encoder.encode(": keep-alive\n\n"));
+      }, 15_000);
 
       request.signal.addEventListener("abort", () => {
         unsubscribe();

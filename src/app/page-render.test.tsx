@@ -28,7 +28,7 @@ describe("app page render smoke", () => {
 
   it("/feed renders its initial (loading) state without throwing", async () => {
     const html = await renders(() => import("./feed/page"));
-    expect(html).toContain("Caliber");
+    expect(html).toContain("Remote · global");
   });
 
   it("/jobs/[id] renders its initial (loading) state without throwing", async () => {
