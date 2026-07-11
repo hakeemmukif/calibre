@@ -161,6 +161,15 @@ export const tailoredResumes = pgTable("tailored_resumes", {
   pdfPath: text("pdf_path"),
   status: text("status", { enum: ["queued", "running", "completed", "failed"] }).notNull(), // reconciliation 2
   finalizedAt: timestamp("finalized_at"), // reconciliation 2 (new column, gates GET .../pdf)
+  // task-B8 review fix (Finding 2): the accepted index set from the LAST
+  // POST .../finalize call. `structured` above is immutable once completed —
+  // it never gets overwritten with the accepted-only merge — so re-finalize
+  // just updates this column + finalizedAt, and the merged view is
+  // recomputed fresh from (base résumé + structured + acceptedIndices) on
+  // every read (server/tailor/assemble.ts, renderTailorPdf). Null until the
+  // first finalize; DB-internal, never on the wire (`TailoredResume` shape
+  // unchanged).
+  acceptedIndices: jsonb("accepted_indices").$type<number[]>(),
   // B8: frozen `TailoredResume.model` (src/types) is a required string, even on
   // the queued/202 draft — populated from config/models.yml's static "tailor"
   // task routing at insert time, then overwritten with the LLM call's actual

@@ -13,6 +13,12 @@ change entry must name the résumé section, the operation
 ("add" | "remove" | "modify"), the before/after text where applicable, and
 a one-line reason tied to the job facts or a gap.
 
+Emit EXACTLY ONE change entry per résumé section — never two entries naming
+the same section. If you want to make several edits within one section
+(e.g. multiple bullets in `experience`), consolidate them into that one
+section's single entry: fold every edit into its `before`/`after` text (and
+summarize the combined reasoning in `reason`).
+
 --- user:jd-facts ---
 Job facts:
 {{jdFacts}}

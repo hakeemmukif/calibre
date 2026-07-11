@@ -26,14 +26,14 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
   const acceptsSse = (request.headers.get("accept") ?? "").includes("text/event-stream");
   if (!acceptsSse) {
-    return NextResponse.json(toTailoredResume(row), { status: 200 });
+    return NextResponse.json(await toTailoredResume(row), { status: 200 });
   }
 
   const handle = getRunHandle(id);
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream<Uint8Array>({
-    start(controller) {
+    async start(controller) {
       let closed = false;
       const close = () => {
         if (closed) return;
@@ -46,7 +46,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
           const eventName = row.status === "completed" ? "done" : "error";
           const data =
             row.status === "completed"
-              ? toTailoredResume(row)
+              ? await toTailoredResume(row)
               : ({ error: { code: "CONFLICT", message: `Tailor run ${id} failed.` } } satisfies ErrorEnvelope);
           controller.enqueue(encoder.encode(sseLine(eventName, data, 1)));
         } else {

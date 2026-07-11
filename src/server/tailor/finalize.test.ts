@@ -96,9 +96,49 @@ describe("finalizeTailor", () => {
 
     const row = await tailoredResumesRepo.getById(draft.id);
     expect(row?.finalizedAt).not.toBeNull();
-    expect(row?.structured?.summary).toBe(TAILORED_STORE.summary);
-    expect(row?.structured?.skills).toEqual(BASE_STORE.skills);
-    expect(row?.structured?.extras).toEqual(BASE_STORE.extras);
+    expect(row?.acceptedIndices).toEqual([0]);
+    // task-B8 review fix (Finding 2): `structured` is immutable — finalize
+    // must NOT overwrite it with the accepted-only merge, or a later
+    // re-finalize with a different accepted set would have no way to
+    // recover the rejected sections.
+    expect(row?.structured).toEqual(TAILORED_STORE);
+  });
+
+  it("re-finalize with a different accepted set is non-destructive (Finding 2): the second finalize correctly reflects the newly-accepted section, and the previously-accepted one is now absent", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id);
+    const resume = await insertResume(state.testDb, { isActive: true, structured: BASE_STORE });
+
+    const draft = await tailoredResumesRepo.insert({
+      jobId: job.id,
+      baseResumeId: resume.id,
+      diff: DIFF,
+      status: "queued",
+      model: "openai/gpt-4.1",
+    });
+    await tailoredResumesRepo.complete(draft.id, {
+      structured: TAILORED_STORE,
+      diff: DIFF,
+      model: "mock",
+      costUsd: 0.03,
+      completedAt: new Date(),
+    });
+
+    // First finalize: accept only the summary rewrite (index 0).
+    const first = await finalizeTailor(draft.id, [0]);
+    expect(first.resume?.summary).toBe(TAILORED_STORE.summary);
+    expect(first.resume?.skills).toEqual(["TypeScript"]); // base skills — not accepted this round
+
+    // Re-finalize: the user changes their mind — accept skills (index 1)
+    // instead, reject summary this time. If `structured` had been destroyed
+    // by the first finalize, skills' tailored value would be unrecoverable.
+    const second = await finalizeTailor(draft.id, [1]);
+    expect(second.resume?.summary).toBe(BASE_STORE.summary); // summary reverted — no longer accepted
+    expect(second.resume?.skills).toEqual(["TypeScript", "Go"]); // skills' tailored change recovered
+
+    const row = await tailoredResumesRepo.getById(draft.id);
+    expect(row?.acceptedIndices).toEqual([1]);
+    expect(row?.structured).toEqual(TAILORED_STORE); // still immutable
   });
 
   it("accepting every index yields the fully tailored resume view", async () => {

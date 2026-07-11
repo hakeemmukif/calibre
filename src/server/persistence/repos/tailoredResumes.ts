@@ -40,12 +40,15 @@ export function createTailoredResumesRepo(db: Db) {
         .returning();
       return updated ?? null;
     },
-    // B8 finalizeTailor: overwrites `structured` with the accepted-only merged
-    // ResumeStore (so the PDF route renders exactly what was finalized) and
-    // sets `finalizedAt`. Status stays 'completed'.
+    // task-B8 review pass, Finding 2: finalize persists the accepted index
+    // set + `finalizedAt` only — `structured` is never overwritten, so a
+    // second finalize with a different accepted set always has the full
+    // tailored draft to recompute from (server/tailor/merge.ts's
+    // applyAcceptedDiff, called fresh on every read). Status stays
+    // 'completed'.
     async finalize(
       id: string,
-      patch: { structured: TailoredResumeRow["structured"]; finalizedAt: Date },
+      patch: { acceptedIndices: number[]; finalizedAt: Date },
     ): Promise<TailoredResumeRow | null> {
       const [updated] = await db.update(tailoredResumes).set(patch).where(eq(tailoredResumes.id, id)).returning();
       return updated ?? null;

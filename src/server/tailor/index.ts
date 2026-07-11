@@ -15,10 +15,10 @@ import { jobsRepo } from "@/server/persistence/repos/jobs";
 import { resumesRepo, type ResumeRow } from "@/server/persistence/repos/resumes";
 import { tailoredResumesRepo, type TailoredResumeRow } from "@/server/persistence/repos/tailoredResumes";
 import { create, type RunHandle } from "@/server/runs/registry";
-import type { ResumeStore } from "@/server/resume/resume-store";
 import { ResumeStoreSchema } from "@/server/resume/resume-store";
 import { TailoredResume } from "@/types";
 import { toTailoredResume } from "./assemble";
+import { applyAcceptedDiff, DiffEntrySchema } from "./merge";
 
 export class UnknownJobError extends Error {
   constructor(jobId: string) {
@@ -50,46 +50,40 @@ export class RunNotReadyError extends Error {
   }
 }
 
-export class InvalidDiffIndexError extends Error {
-  constructor(index: number, diffLength: number) {
-    super(`acceptedIndices contains ${index}, out of range for a diff[] of length ${diffLength}.`);
-    this.name = "InvalidDiffIndexError";
-  }
-}
-
-export class UnknownDiffSectionError extends Error {
-  constructor(section: string) {
-    super(`diff entry names section "${section}", which is not a résumé top-level field the merge understands.`);
-    this.name = "UnknownDiffSectionError";
-  }
-}
-
-// Frozen TailoredResume.diff shape (src/types), reused verbatim so this
-// schema can never drift from the wire contract.
-const DiffEntrySchema = TailoredResume.shape.diff.element;
-export type DiffEntry = z.infer<typeof DiffEntrySchema>;
+// Re-exported so route handlers (e.g. app/api/tailor/[id]/finalize/route.ts)
+// can keep importing these from "@/server/tailor" (this module's barrel).
+export { InvalidDiffIndexError, UnknownDiffSectionError } from "./merge";
 
 // The `tailor` template's response_format schema — a tailored ResumeStore +
 // the changes list. Escalate (don't invent op values) if this can't express
 // what the template actually returns.
-export const TailorResultSchema = z.object({
-  resume: ResumeStoreSchema,
-  diff: z.array(DiffEntrySchema),
-});
+//
+// task-B8 review pass, Finding 1: a model response with two diff entries
+// naming the SAME section is rejected here (fail loud) rather than merged —
+// applyAcceptedDiff's `merged[section] = tailored[section]` copies the
+// WHOLE tailored section for an accepted index, so two same-section entries
+// (accept one, reject the other) would leak the rejected entry's content
+// into the merge. config/templates/tailor.md instructs the model to emit
+// exactly one entry per section.
+export const TailorResultSchema = z
+  .object({
+    resume: ResumeStoreSchema,
+    diff: z.array(DiffEntrySchema),
+  })
+  .superRefine((value, ctx) => {
+    const seen = new Set<string>();
+    for (const entry of value.diff) {
+      if (seen.has(entry.section)) {
+        ctx.addIssue({
+          code: "custom",
+          message: `diff[] has more than one entry for section "${entry.section}" — exactly one entry per section is required (config/templates/tailor.md).`,
+          path: ["diff"],
+        });
+      }
+      seen.add(entry.section);
+    }
+  });
 export type TailorResult = z.infer<typeof TailorResultSchema>;
-
-// Only top-level ResumeStore fields the accepted-only merge (finalizeTailor)
-// knows how to apply per diff entry — a `section` outside this set fails
-// loud rather than silently no-op'ing (constraints: fail loud, no fallback).
-const MERGEABLE_SECTIONS = new Set<keyof ResumeStore>([
-  "name",
-  "contact",
-  "summary",
-  "experience",
-  "education",
-  "skills",
-  "extras",
-]);
 
 export interface StartTailorInput {
   jobId: string;
@@ -185,34 +179,17 @@ async function runTailorJob(
   });
   if (!completed) throw new Error(`tailored_resumes row ${row.id} vanished before completion could be recorded`);
 
-  handle.emit({ event: "done", data: toTailoredResume(completed) });
+  handle.emit({ event: "done", data: await toTailoredResume(completed) });
 }
 
-// Accepted-only merge (task-B8-brief.md §"Behaviour"): start from the base
-// (untailored) résumé, then for each accepted diff index overlay that whole
-// top-level section from the tailored store. `before`/`after` on a diff
-// entry are review-UI text, not the merge mechanism — the merge always takes
-// the tailored store's full value for an accepted section, the base store's
-// for everything else (including rejected/unmentioned sections).
-function applyAcceptedDiff(
-  base: ResumeStore,
-  tailored: ResumeStore,
-  diff: DiffEntry[],
-  acceptedIndices: number[],
-): ResumeStore {
-  const merged = structuredClone(base);
-  for (const index of acceptedIndices) {
-    const entry = diff[index];
-    if (!entry) throw new InvalidDiffIndexError(index, diff.length);
-    if (!MERGEABLE_SECTIONS.has(entry.section as keyof ResumeStore)) {
-      throw new UnknownDiffSectionError(entry.section);
-    }
-    const key = entry.section as keyof ResumeStore;
-    (merged as Record<string, unknown>)[key] = tailored[key];
-  }
-  return merged;
-}
-
+// task-B8 review pass, Finding 2: `structured` is immutable once completed —
+// finalize never overwrites it. It only validates the accepted set against
+// this run's diff[] (applyAcceptedDiff throws on a bad index/section) and
+// persists the selection; the merged view itself is recomputed fresh from
+// (base résumé + structured + acceptedIndices) on every read
+// (assemble.ts's toTailoredResume, renderTailorPdf below) — so re-finalize
+// with a different accepted set is always correct (api-contract.md §3
+// "GET .../pdf renders whatever this route LAST finalized").
 export async function finalizeTailor(id: string, acceptedIndices: number[]): Promise<TailoredResume> {
   const row = await tailoredResumesRepo.getById(id);
   if (!row) throw new UnknownTailorIdError(id);
@@ -225,9 +202,9 @@ export async function finalizeTailor(id: string, acceptedIndices: number[]): Pro
     throw new Error(`tailored_resumes ${id}: base résumé ${row.baseResumeId} no longer exists`);
   }
 
-  const merged = applyAcceptedDiff(baseResumeRow.structured, row.structured, row.diff, acceptedIndices);
+  applyAcceptedDiff(baseResumeRow.structured, row.structured, row.diff, acceptedIndices);
 
-  const updated = await tailoredResumesRepo.finalize(id, { structured: merged, finalizedAt: new Date() });
+  const updated = await tailoredResumesRepo.finalize(id, { acceptedIndices, finalizedAt: new Date() });
   if (!updated) throw new Error(`tailored_resumes ${id} vanished during finalize`);
   return toTailoredResume(updated);
 }
@@ -238,7 +215,16 @@ export async function renderTailorPdf(id: string): Promise<Buffer> {
   if (!row.finalizedAt || row.status !== "completed" || !row.structured) {
     throw new RunNotReadyError(`Tailor run ${id} has not been finalized yet.`);
   }
+  if (!row.acceptedIndices) {
+    throw new Error(`tailored_resumes ${id}: finalizedAt is set but acceptedIndices is null`);
+  }
 
-  const html = renderCvHtml(row.structured);
+  const baseResumeRow = await resumesRepo.getById(row.baseResumeId);
+  if (!baseResumeRow) {
+    throw new Error(`tailored_resumes ${id}: base résumé ${row.baseResumeId} no longer exists`);
+  }
+
+  const merged = applyAcceptedDiff(baseResumeRow.structured, row.structured, row.diff, row.acceptedIndices);
+  const html = renderCvHtml(merged);
   return htmlToPdf(html);
 }

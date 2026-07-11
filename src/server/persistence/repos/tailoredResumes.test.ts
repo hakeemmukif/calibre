@@ -59,9 +59,14 @@ describe("tailoredResumesRepo", () => {
     expect(completed?.completedAt).not.toBeNull();
 
     const finalizedAt = new Date();
-    const finalized = await repo.finalize(inserted.id, { structured: resume.structured, finalizedAt });
+    const finalized = await repo.finalize(inserted.id, { acceptedIndices: [0], finalizedAt });
     expect(finalized?.finalizedAt).not.toBeNull();
     expect(finalized?.status).toBe("completed");
+    expect(finalized?.acceptedIndices).toEqual([0]);
+    // task-B8 review fix (Finding 2): finalize must NOT overwrite `structured`
+    // — it stays the immutable tailored draft so a later re-finalize with a
+    // different accepted set can still recompute from it.
+    expect(finalized?.structured).toEqual(resume.structured);
 
     const other = await repo.insert({ jobId: job.id, baseResumeId: resume.id, diff: [], status: "running", model: "openai/gpt-4.1" });
     const failed = await repo.markFailed(other.id);

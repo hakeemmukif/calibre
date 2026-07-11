@@ -134,4 +134,59 @@ describe("GET /api/tailor/:id/pdf", () => {
     expect(renderedHtml).toBe(expectedHtml);
     expect(renderedHtml).not.toContain("Speaks English and Malay");
   });
+
+  it("re-finalize with a different accepted set (Finding 2, non-destructive): the pdf renders whatever finalize LAST accepted", async () => {
+    const { tailoredResumesRepo } = await import("@/server/persistence/repos/tailoredResumes");
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id);
+    const resume = await insertResume(state.testDb, { isActive: true, structured: BASE_STORE });
+    const draft = await tailoredResumesRepo.insert({
+      jobId: job.id,
+      baseResumeId: resume.id,
+      diff: DIFF,
+      status: "queued",
+      model: "openai/gpt-4.1",
+    });
+    await tailoredResumesRepo.complete(draft.id, {
+      structured: TAILORED_STORE,
+      diff: DIFF,
+      model: "mock",
+      costUsd: 0.01,
+      completedAt: new Date(),
+    });
+
+    // First finalize accepts the summary rewrite (index 0).
+    await postFinalize(
+      new NextRequest(`http://localhost/api/tailor/${draft.id}/finalize`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ acceptedIndices: [0] }),
+      }),
+      { params: Promise.resolve({ id: draft.id }) },
+    );
+
+    // Re-finalize: the user changes their mind — accept the extras addition
+    // (index 1) instead, reject the summary rewrite this time.
+    const refinalizeRes = await postFinalize(
+      new NextRequest(`http://localhost/api/tailor/${draft.id}/finalize`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ acceptedIndices: [1] }),
+      }),
+      { params: Promise.resolve({ id: draft.id }) },
+    );
+    expect(refinalizeRes.status).toBe(200);
+
+    const res = await GET(getPdfRequest(draft.id), { params: Promise.resolve({ id: draft.id }) });
+    expect(res.status).toBe(200);
+
+    expect(pdf.htmlToPdf).toHaveBeenCalledTimes(1);
+    const renderedHtml = pdf.htmlToPdf.mock.calls[0][0] as string;
+    // Reflects the LAST finalize: extras accepted, summary reverted to base
+    // (proving `structured` wasn't destroyed by the first finalize).
+    const expectedHtml = renderCvHtml({ ...BASE_STORE, extras: TAILORED_STORE.extras });
+    expect(renderedHtml).toBe(expectedHtml);
+    expect(renderedHtml).toContain("Speaks English and Malay");
+    expect(renderedHtml).not.toContain(TAILORED_STORE.summary);
+  });
 });

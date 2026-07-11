@@ -114,4 +114,27 @@ describe("startTailor", () => {
     expect(progressStages).toEqual(["analyze", "rewrite", "render"]);
     expect(events[events.length - 1].event).toBe("done");
   });
+
+  // task-B8 review pass, Finding 1: two diff entries naming the same section
+  // must be rejected (fail loud) — otherwise finalizeTailor's
+  // `merged[section] = tailored[section]` would leak whichever entry was
+  // REJECTED into the merge, since it can't tell which entry's content is
+  // "the" tailored section.
+  it("fails the run loudly (not a silent merge) when the model emits two diff entries for the same section", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id);
+    await insertResume(state.testDb, { isActive: true });
+
+    const duplicateSectionDiff = [
+      { section: "experience", op: "modify" as const, before: "old bullet A", after: "new bullet A", reason: "surface relevant work" },
+      { section: "experience", op: "modify" as const, before: "old bullet B", after: "new bullet B", reason: "surface more relevant work" },
+    ];
+    const llm = makeMockLlm({ tailor: { resume: TAILORED_STORE, diff: duplicateSectionDiff } });
+
+    const draft = await startTailor({ jobId: job.id }, { llm });
+    await waitForTerminal(draft.id);
+
+    const row = await tailoredResumesRepo.getById(draft.id);
+    expect(row?.status).toBe("failed");
+  });
 });
