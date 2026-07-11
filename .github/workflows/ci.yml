@@ -13,8 +13,6 @@ jobs:
       - run: npm run contract:check
       - run: npm run build
   e2e:
-    # Requires the deferred Playwright E2E build (test:e2e script + e2e/globalSetup.ts). Inert until that lands + a remote exists.
-    if: ${{ false }}
     needs: check
     runs-on: ubuntu-latest
     services:
@@ -38,8 +36,6 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ hashFiles('package-lock.json') }}
       - run: npx playwright install --with-deps chromium
-      - run: npm run db:migrate
-      - run: npm run db:seed:test
       - run: npm run test:e2e
       - uses: actions/upload-artifact@v4
         if: failure()
