@@ -20,6 +20,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   seedTestSources(getDb())
     .then((rows) => {
       console.log(`Seeded ${rows.length} test source(s)`);
+      // The postgres-js pool otherwise keeps the tsx process alive forever.
+      process.exit(0);
     })
     .catch((err) => {
       console.error(err);
