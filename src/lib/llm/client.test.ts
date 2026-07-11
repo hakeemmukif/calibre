@@ -82,21 +82,27 @@ describe("getLlm", () => {
     expect(result.costUsd).toBeCloseTo(0.03 + 0.15, 10);
   });
 
-  it("modelOverride overrides the task's base model in the outgoing request and result", async () => {
+  it("modelOverride overrides the task's base model in the outgoing request", async () => {
     process.env.OPENROUTER_API_KEY = "test-key";
     mocks.create.mockResolvedValue(reply({ ok: true }));
     const llm = getLlm();
 
-    const result = await llm.complete({
-      task: "match-score",
-      modelOverride: "openai/gpt-oss-120b",
-      messages: [],
-      responseSchema: schema,
-    });
+    // The override id is deliberately NOT in the prices table: every task's
+    // base model is openai/gpt-oss-120b, so overriding to that same id could
+    // not prove the override reached the transport. Instead assert the
+    // transport was called with the override AND that fail-loud pricing
+    // rejects the unpriced model afterwards.
+    await expect(
+      llm.complete({
+        task: "match-score",
+        modelOverride: "test/override-model",
+        messages: [],
+        responseSchema: schema,
+      }),
+    ).rejects.toThrow('No price entry for model "test/override-model"');
 
     const callArgs = mocks.create.mock.calls[0][0];
-    expect(callArgs.model).toBe("openai/gpt-oss-120b");
-    expect(result.model).toBe("openai/gpt-oss-120b");
+    expect(callArgs.model).toBe("test/override-model");
   });
 });
 
