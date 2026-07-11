@@ -44,4 +44,10 @@ describe("GET /api/jobs/:id", () => {
     expect(res.status).toBe(404);
     expect((await res.json()).error.code).toBe("NOT_FOUND");
   });
+
+  it("returns 404 NOT_FOUND for a malformed (non-uuid) id, never a 500", async () => {
+    const res = await GET(req(), { params: Promise.resolve({ id: "not-a-uuid" }) });
+    expect(res.status).toBe(404);
+    expect((await res.json()).error.code).toBe("NOT_FOUND");
+  });
 });

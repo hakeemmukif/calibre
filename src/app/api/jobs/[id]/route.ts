@@ -3,6 +3,7 @@
 // fit/legitimacy/breakdown.
 import { NextRequest, NextResponse } from "next/server";
 import { assembleJob } from "@/features/feed/assemble";
+import { isUuid } from "@/server/http/params";
 import { jobsRepo } from "@/server/persistence/repos/jobs";
 import { resolveIsNewCutoff } from "@/server/search/jobsFeed";
 import type { ErrorEnvelope } from "@/types";
@@ -14,6 +15,9 @@ function errorResponse(status: number, code: ErrorEnvelope["error"]["code"], mes
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (!isUuid(id)) {
+    return errorResponse(404, "NOT_FOUND", `No job with id "${id}".`);
+  }
   const joined = await jobsRepo.getById(id);
   if (!joined) {
     return errorResponse(404, "NOT_FOUND", `No job with id "${id}".`);
