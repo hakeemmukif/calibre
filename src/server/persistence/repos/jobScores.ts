@@ -1,4 +1,4 @@
-import { eq, gte, sql } from "drizzle-orm";
+import { desc, eq, gte, sql } from "drizzle-orm";
 import { getDb } from "../db";
 import { jobScores } from "../schema";
 import type { Db } from "./db";
@@ -40,6 +40,19 @@ export function createJobScoresRepo(db: Db) {
       const [row] = await db.select().from(jobScores).where(eq(jobScores.id, id)).limit(1);
       return row ?? null;
     },
+    // B7 apply-assistant: draftAnswers grounds better when a job has already
+    // been scored (JdFacts). A job can carry multiple job_scores rows (résumé
+    // replacement / policy bump) — this picks the most recent one by
+    // created_at, regardless of resumeId (v1 holds exactly one active résumé).
+    async getLatestByJobId(jobId: string): Promise<JobScoreRow | null> {
+      const [row] = await db
+        .select()
+        .from(jobScores)
+        .where(eq(jobScores.jobId, jobId))
+        .orderBy(desc(jobScores.createdAt))
+        .limit(1);
+      return row ?? null;
+    },
     // system-architecture.md §6 decision 8 "daily cap env var" — server/search/run.ts
     // sums today's spend across ALL runs before scoring another job this run.
     async sumCostUsdSince(cutoff: Date): Promise<number> {
@@ -56,4 +69,5 @@ export const jobScoresRepo: ReturnType<typeof createJobScoresRepo> = {
   upsertByJobResumePolicy: (row) => createJobScoresRepo(getDb()).upsertByJobResumePolicy(row),
   getById: (id) => createJobScoresRepo(getDb()).getById(id),
   sumCostUsdSince: (cutoff) => createJobScoresRepo(getDb()).sumCostUsdSince(cutoff),
+  getLatestByJobId: (jobId) => createJobScoresRepo(getDb()).getLatestByJobId(jobId),
 };

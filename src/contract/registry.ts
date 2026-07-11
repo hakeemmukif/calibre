@@ -211,6 +211,83 @@ registry.registerPath({
   },
 });
 
+registry.registerPath({
+  method: "post",
+  path: "/api/apply/questions",
+  summary: "Extract application questions from a posting — F4 tier 1/2/3 (B7)",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            jobId: z.string().optional(),
+            url: z.string().optional(),
+            pastedForm: z.string().optional(),
+          }).describe("Exactly one of jobId, url, or pastedForm must be provided"),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Extracted questions + the posting URL they came from (null for the paste tier)",
+      content: {
+        "application/json": {
+          schema: z.object({ questions: z.array(ApplicationQuestion), sourceUrl: z.string().nullable() }),
+        },
+      },
+    },
+    404: { description: "Unknown job id", content: { "application/json": { schema: ErrorEnvelope } } },
+    422: { description: "Zero or more than one of jobId/url/pastedForm provided", content: { "application/json": { schema: ErrorEnvelope } } },
+    502: {
+      description: "No structured ATS API matched and DOM parsing found no form — never returns [] as a guess",
+      content: { "application/json": { schema: ErrorEnvelope } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/apply/answers",
+  summary: "Draft résumé-grounded answers for extracted questions — F4 (B7)",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({ jobId: z.string(), questions: z.array(ApplicationQuestion).min(1) }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: "Persisted, résumé-grounded answer set", content: { "application/json": { schema: ApplicationAnswers } } },
+    409: { description: "No résumé exists to ground answers against", content: { "application/json": { schema: ErrorEnvelope } } },
+    422: { description: "Invalid body (e.g. empty questions[])", content: { "application/json": { schema: ErrorEnvelope } } },
+    502: { description: "LLM drafting failed", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/apply/answers/{id}",
+  summary: "Edit a persisted answer set (user edits or per-question regenerate) — F4 (B7)",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({ answers: z.array(ApplicationAnswer).min(1) }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: "The replaced answer set", content: { "application/json": { schema: ApplicationAnswers } } },
+    404: { description: "Unknown answers id", content: { "application/json": { schema: ErrorEnvelope } } },
+    422: { description: "Empty patch (answers[] with zero entries)", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
 type SchemaDefinition = { type: "schema"; schema: z.ZodType };
 
 // Exported so generate.ts can assert every frozen entity actually landed in

@@ -102,4 +102,39 @@ describe("jobScoresRepo", () => {
     const none = await repo.sumCostUsdSince(new Date("2999-01-01T00:00:00.000Z"));
     expect(none).toBe(0);
   });
+
+  it("getLatestByJobId returns the most recently created row for a job, or null", async () => {
+    const db = await createTestDb();
+    const repo = createJobScoresRepo(db);
+    const source = await insertSource(db);
+    const resume = await insertResume(db);
+    const job = await insertJob(db, source.id);
+
+    expect(await repo.getLatestByJobId(job.id)).toBeNull();
+
+    const base = {
+      jobId: job.id,
+      resumeId: resume.id,
+      verdict: "Apply" as const,
+      why: "x",
+      legitimacy: { tier: "clear" as const, tone: "good" as const, summary: "x", signals: [] },
+      liveness: "active" as const,
+      breakdown: [],
+      reasons: { for: [], against: [] },
+      fit: [],
+      gaps: [],
+      jdFacts: { title: "Backend Engineer" },
+      model: "m1",
+      escalated: false,
+      costUsd: 0.01,
+      score: 4,
+    };
+
+    await repo.upsertByJobResumePolicy({ ...base, policyVersion: "v1" });
+    const latest = await repo.upsertByJobResumePolicy({ ...base, policyVersion: "v2", score: 4.5 });
+
+    const found = await repo.getLatestByJobId(job.id);
+    expect(found?.id).toBe(latest.id);
+    expect(found?.jdFacts).toEqual({ title: "Backend Engineer" });
+  });
 });
