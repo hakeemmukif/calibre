@@ -80,6 +80,16 @@ export default function FeedPage() {
     // "save"/"dismiss": no backend route in api-contract.md v1 — deferred.
   }
 
+  // Dismissing while the run is still "running"/"starting": unsubscribe
+  // (the run keeps going server-side) and refetch now, so the feed shows
+  // whatever has already been scored instead of only the SSE-streamed
+  // preview jobs. `done`/`error` dismissal stays plain `scan.reset` — `done`
+  // already refetched via `onDone` above.
+  function handleDismissRunning() {
+    scan.reset();
+    void load();
+  }
+
   const scanActive = scan.state.status !== "idle";
   // "starting" has no visual of its own — show the running view until the
   // first progress event lands. Narrows to exactly what ScanProgress accepts.
@@ -137,7 +147,7 @@ export default function FeedPage() {
               stages={scan.state.stages}
               stats={scan.state.stats}
               error={scan.state.error}
-              onClose={scan.reset}
+              onClose={overlayStatus === "running" ? handleDismissRunning : scan.reset}
             />
           </div>
         </div>

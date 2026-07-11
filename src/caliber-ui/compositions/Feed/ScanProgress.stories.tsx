@@ -20,7 +20,7 @@ const runningStages: ScanProgressStageRow[] = [
 const doneStages: ScanProgressStageRow[] = runningStages.map((s) => ({ ...s, state: "done", detail: undefined }));
 
 export const Running: Story = {
-  args: { status: "running", stages: runningStages },
+  args: { status: "running", stages: runningStages, onClose: () => console.log("continue in background") },
 };
 
 export const Done: Story = {

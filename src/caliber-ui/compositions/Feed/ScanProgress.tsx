@@ -103,6 +103,12 @@ export function ScanProgress({ status, stages, stats, error, onClose }: ScanProg
         })}
       </div>
 
+      {status === "running" && onClose && (
+        <Button variant="ghost" fullWidth onClick={onClose} style={{ marginTop: 14 }}>
+          Continue in background
+        </Button>
+      )}
+
       {status === "done" && stats && (
         <>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 18, font: "var(--type-body)", color: "var(--text-body)", fontVariantNumeric: "tabular-nums" }}>

@@ -20,7 +20,7 @@ const runningStages: ScanProgressStageRow[] = [
 const doneStages: ScanProgressStageRow[] = runningStages.map((s) => ({ ...s, state: 'done', detail: undefined }));
 
 describe('ScanProgress running state', () => {
-  it('renders all four passed stage labels and no summary/close button', () => {
+  it('renders all four passed stage labels and no summary/view-matches button', () => {
     render(<ScanProgress status="running" stages={runningStages} />);
 
     expect(screen.getByText('Discovering postings')).toBeInTheDocument();
@@ -36,6 +36,21 @@ describe('ScanProgress running state', () => {
     render(<ScanProgress status="running" stages={runningStages} />);
 
     expect(screen.getByText('4/30 scored')).toBeInTheDocument();
+  });
+
+  it('renders a "Continue in background" dismiss affordance and calls onClose', () => {
+    const onClose = vi.fn();
+    render(<ScanProgress status="running" stages={runningStages} onClose={onClose} />);
+
+    const dismiss = screen.getByRole('button', { name: /continue in background/i });
+    fireEvent.click(dismiss);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders no dismiss affordance when onClose is not passed', () => {
+    render(<ScanProgress status="running" stages={runningStages} />);
+
+    expect(screen.queryByRole('button', { name: /continue in background/i })).not.toBeInTheDocument();
   });
 });
 
