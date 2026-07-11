@@ -1,10 +1,12 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { readAllSseEvents } from "@/app/api/__test-utils__/sse";
 import { insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
 import type { SourceRow } from "@/server/persistence/repos/sources";
 import { jobs, resumes, searchRuns, sources } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import type { RawPosting, SourceConnector } from "@/server/search/connector";
+import { ErrorEnvelope } from "@/types";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb, hang: false }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
@@ -31,36 +33,6 @@ vi.mock("@/server/search/connectors", () => ({ connectorForSource: (source: Sour
 const { POST } = await import("../route");
 const { GET } = await import("./route");
 const { __resetForTests, get: getRunHandle } = await import("@/server/runs/registry");
-
-async function readAllSseEvents(res: Response): Promise<{ id: number; event: string; data: unknown }[]> {
-  const reader = res.body!.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  const events: { id: number; event: string; data: unknown }[] = [];
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-
-    let sep;
-    while ((sep = buffer.indexOf("\n\n")) !== -1) {
-      const chunk = buffer.slice(0, sep);
-      buffer = buffer.slice(sep + 2);
-      const idLine = chunk.split("\n").find((l) => l.startsWith("id: "));
-      const eventLine = chunk.split("\n").find((l) => l.startsWith("event: "));
-      const dataLine = chunk.split("\n").find((l) => l.startsWith("data: "));
-      if (idLine && eventLine && dataLine) {
-        events.push({
-          id: Number(idLine.slice("id: ".length)),
-          event: eventLine.slice("event: ".length),
-          data: JSON.parse(dataLine.slice("data: ".length)),
-        });
-      }
-    }
-  }
-  return events;
-}
 
 function getRequest(id: string, headers: Record<string, string> = {}): NextRequest {
   return new NextRequest(`http://localhost/api/search/${id}`, { headers });
@@ -168,5 +140,27 @@ describe("GET /api/search/:id", () => {
     const events = await readAllSseEvents(res);
     expect(events).toHaveLength(1);
     expect(events[0].event).toBe("done");
+  });
+
+  it("a failed run streams a terminal error event with an INTERNAL ErrorEnvelope", async () => {
+    const resume = await insertResume(state.testDb, { isActive: true });
+    const repo = (await import("@/server/persistence/repos/searchRuns")).createSearchRunsRepo(state.testDb);
+    const failedRun = await repo.insert({
+      resumeId: resume.id,
+      personas: ["remote"],
+      status: "failed",
+      stats: { scanned: 0, matched: 0, scored: 0, worth: 0, ghosts: 0, perSource: [], unscored: 0, capStopped: false },
+      error: "Simulated crash.",
+      finishedAt: new Date(),
+    });
+
+    const res = await GET(getRequest(failedRun.id, { accept: "text/event-stream" }), {
+      params: Promise.resolve({ id: failedRun.id }),
+    });
+    const events = await readAllSseEvents(res);
+    const last = events[events.length - 1];
+    expect(last.event).toBe("error");
+    const parsed = ErrorEnvelope.parse(last.data);
+    expect(parsed.error.code).toBe("INTERNAL");
   });
 });

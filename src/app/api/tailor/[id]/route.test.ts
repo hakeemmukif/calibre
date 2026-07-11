@@ -4,6 +4,7 @@ import { makeMockLlm } from "@/lib/llm/mock";
 import { insertJob, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
 import { jobs, resumes, sources, tailoredResumes } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
+import { ErrorEnvelope } from "@/types";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
@@ -189,5 +190,29 @@ describe("GET /api/tailor/:id", () => {
     const events = await readAllSseEvents(res);
     expect(events).toHaveLength(1);
     expect(events[0].event).toBe("done");
+  });
+
+  it("a failed run streams a terminal error event with an INTERNAL ErrorEnvelope", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id);
+    const resume = await insertResume(state.testDb, { isActive: true });
+    const { createTailoredResumesRepo } = await import("@/server/persistence/repos/tailoredResumes");
+    const repo = createTailoredResumesRepo(state.testDb);
+    const failedRun = await repo.insert({
+      jobId: job.id,
+      baseResumeId: resume.id,
+      diff: [],
+      status: "failed",
+      model: "test-model",
+    });
+
+    const res = await GET(getRequest(failedRun.id, { accept: "text/event-stream" }), {
+      params: Promise.resolve({ id: failedRun.id }),
+    });
+    const events = await readAllSseEvents(res);
+    const last = events[events.length - 1];
+    expect(last.event).toBe("error");
+    const parsed = ErrorEnvelope.parse(last.data);
+    expect(parsed.error.code).toBe("INTERNAL");
   });
 });

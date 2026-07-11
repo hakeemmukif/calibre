@@ -124,7 +124,7 @@ async function failRun(id: string, handle: RunHandle, err: unknown): Promise<voi
   } catch (persistErr) {
     console.error(`tailor run ${id}: failed to persist 'failed' status after crash:`, persistErr);
   }
-  handle.emit({ event: "error", data: { error: { code: "CONFLICT", message } } });
+  handle.emit({ event: "error", data: { error: { code: "INTERNAL", message } } });
 }
 
 async function runTailorJob(

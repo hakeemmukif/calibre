@@ -13,6 +13,7 @@
 // pdf.
 import { NextRequest } from "next/server";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { waitFor } from "@/app/api/__test-utils__/poll";
 import { makeMockLlm } from "@/lib/llm/mock";
 import { insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
 import {
@@ -179,16 +180,6 @@ const { getJobs, getJob } = await import("@/features/feed/client");
 const { extractQuestions, draftAnswers, patchAnswers } = await import("@/features/apply/client");
 const { markApplied, listApplications, patchApplication } = await import("@/features/applied/client");
 const { startTailor, getTailor, finalizeTailor, tailorPdfUrl } = await import("@/features/tailor/client");
-
-async function waitFor<T>(fn: () => Promise<T>, isDone: (v: T) => boolean, timeoutMs = 5000): Promise<T> {
-  const deadline = Date.now() + timeoutMs;
-  while (true) {
-    const value = await fn();
-    if (isDone(value)) return value;
-    if (Date.now() > deadline) throw new Error("waitFor: timed out");
-    await new Promise((r) => setTimeout(r, 10));
-  }
-}
 
 describe("F1–F6 spine (route-level, mocked externals)", () => {
   beforeAll(async () => {

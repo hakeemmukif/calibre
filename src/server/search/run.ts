@@ -141,7 +141,7 @@ async function failRun(runId: string, persona: Persona, handle: RunHandle, err: 
     console.error(`search run ${runId}: failed to persist 'failed' status after crash:`, persistErr);
   }
 
-  const envelope: ErrorEnvelope = { error: { code: "CONFLICT", message } };
+  const envelope: ErrorEnvelope = { error: { code: "INTERNAL", message } };
   handle.emit({ event: "error", data: envelope });
   release(runId, persona);
 }
