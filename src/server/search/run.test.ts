@@ -15,8 +15,8 @@ async function findJobByDedupeKey(db: TestDb, dedupeKey: string) {
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
 
-const { startSearch, ActiveRunConflictError, NoActiveResumeError } = await import("./run");
-const { __resetForTests } = await import("@/server/runs/registry");
+const { startSearch, ActiveRunConflictError, NoActiveResumeError, UnknownSourceIdsError } = await import("./run");
+const { __resetForTests, get: getRunHandle, getActiveRunForPersona } = await import("@/server/runs/registry");
 
 type StubBehavior = RawPosting[] | { fail: Error } | "hang-until-aborted";
 
@@ -147,6 +147,55 @@ describe("startSearch", () => {
     state.testDb = await createTestDb(); // fresh, résumé-less DB
     await expect(startSearch({ persona: "remote" })).rejects.toThrow(NoActiveResumeError);
     state.testDb = originalDb;
+  });
+
+  it("throws UnknownSourceIdsError naming the unknown ids when sources includes an id outside the persona's enabled set", async () => {
+    await insertResume(state.testDb, { ...resumeFixture, isActive: true });
+    await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
+
+    let caught: unknown;
+    try {
+      await startSearch({ persona: "remote", sources: ["src-good", "typo-id"] });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(UnknownSourceIdsError);
+    expect((caught as InstanceType<typeof UnknownSourceIdsError>).unknownIds).toEqual(["typo-id"]);
+  });
+
+  it("run-failure path: an unattributable runFanOut crash marks the row 'failed' and emits a terminal 'error' SSE event (not left stuck 'running')", async () => {
+    const runsRepo = createSearchRunsRepo(state.testDb);
+    // Malformed `structured` (missing `contact`/`experience`) simulates a
+    // corrupted DB row — deriveRoleTargets throws synchronously inside
+    // runFanOut, outside the per-connector try/catch that tolerates
+    // connector-level failures, exercising the "last-resort net" path.
+    await insertResume(state.testDb, {
+      ...resumeFixture,
+      structured: { name: "Jane Doe" } as unknown as typeof resumeFixture.structured,
+      isActive: true,
+    });
+    await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
+
+    const runPromise = startSearch(
+      { persona: "remote" },
+      { connectorForSource: (source) => stubConnector(source, []) },
+    );
+    // Subscribe via the synchronously-reserved persona slot (finding 4's
+    // fix) before awaiting — guarantees we're listening before the crash,
+    // which only happens after an internal DB await resolves.
+    const reservedId = getActiveRunForPersona("remote")!;
+    const handle = getRunHandle(reservedId)!;
+    const events: string[] = [];
+    handle.subscribe((event) => events.push(event.event));
+
+    const run = await runPromise;
+    expect(run.id).toBe(reservedId);
+
+    const finalRow = await waitForTerminal(runsRepo, run.id);
+    expect(finalRow.status).toBe("failed");
+    expect(finalRow.error).toBeTruthy();
+    expect(events).toContain("error");
+    expect(getActiveRunForPersona("remote")).toBeUndefined();
   });
 
   it("throws ActiveRunConflictError with the running run's id when a run is already active for that persona", async () => {

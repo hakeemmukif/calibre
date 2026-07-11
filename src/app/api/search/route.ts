@@ -3,7 +3,7 @@
 // (api-contract.md §3 "POST /api/search").
 import { NextRequest, NextResponse } from "next/server";
 import { z, ZodError } from "zod";
-import { ActiveRunConflictError, NoActiveResumeError, startSearch } from "@/server/search/run";
+import { ActiveRunConflictError, NoActiveResumeError, UnknownSourceIdsError, startSearch } from "@/server/search/run";
 import { Persona, type ErrorEnvelope } from "@/types";
 
 const RequestBody = z.object({
@@ -31,6 +31,9 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     if (err instanceof ZodError) {
       return errorResponse(422, "VALIDATION_ERROR", "Invalid search request.", err.issues);
+    }
+    if (err instanceof UnknownSourceIdsError) {
+      return errorResponse(422, "VALIDATION_ERROR", err.message, { unknownSourceIds: err.unknownIds });
     }
     if (err instanceof NoActiveResumeError) {
       return errorResponse(409, "CONFLICT", err.message);

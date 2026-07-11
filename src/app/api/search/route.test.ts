@@ -73,6 +73,17 @@ describe("POST /api/search", () => {
     expect((await res.json()).error.code).toBe("VALIDATION_ERROR");
   });
 
+  it("sources naming an unknown/disabled source id returns 422 VALIDATION_ERROR with details.unknownSourceIds", async () => {
+    await insertResume(state.testDb, { isActive: true });
+    await insertSource(state.testDb, { id: "greenhouse", kind: "ats", persona: "remote" });
+
+    const res = await POST(jsonRequest({ persona: "remote", sources: ["greenhouse", "typo-id"] }));
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.error.code).toBe("VALIDATION_ERROR");
+    expect(body.error.details.unknownSourceIds).toEqual(["typo-id"]);
+  });
+
   it("no résumé returns 409 CONFLICT", async () => {
     await insertSource(state.testDb, { id: "greenhouse", kind: "ats", persona: "remote" });
     const res = await POST(jsonRequest({ persona: "remote" }));

@@ -1,10 +1,16 @@
 // Clean TS port of career-ops/role-matcher.mjs `roleFuzzyMatch` (system-
 // architecture.md §2 `server/score` row + §3: "role-matcher.mjs roleFuzzyMatch
-// ... ported to TS"). Donor matches two title STRINGS pairwise; here the
+// ... ported to TS"). The donor matches two title STRINGS pairwise; here the
 // left-hand side is a `RoleTarget` (titles[] + keywords[] derived from the
-// résumé), so the rule is generalized to token-SET vs token-SET while keeping
-// the exact thresholds: ≥2 shared tokens, ≥1 non-baseline shared token,
-// Jaccard ≥ 0.6.
+// résumé), so the rule is applied PER TITLE — `target.titles.some(title =>
+// ...)` — each comparison is between that single title's token set and the
+// posting's token set, keeping the exact thresholds (≥2 shared tokens, ≥1
+// non-baseline shared token, Jaccard ≥ 0.6). Skill keywords widen the
+// shared/non-baseline count (a keyword token that also appears in the
+// posting counts toward both) but never enter the Jaccard union — pooling
+// every title + every keyword into one token set (the previous approach)
+// made the pool 20-50 tokens wide for a realistic résumé, which crushed the
+// Jaccard ratio for every posting and neutered discovery entirely.
 import type { ResumeRow } from "@/server/persistence/repos/resumes";
 import type { RawPosting, RoleTarget } from "./connector";
 
@@ -50,32 +56,45 @@ export function roleTokens(text: string): string[] {
     .filter((w) => (w.length > 3 || SHORT_SPECIALTY.has(w)) && !ROLE_STOPWORDS.has(w));
 }
 
-function targetTokenSet(target: RoleTarget): Set<string> {
-  const tokens = new Set<string>();
-  for (const title of target.titles) for (const tok of roleTokens(title)) tokens.add(tok);
-  for (const keyword of target.keywords) for (const tok of roleTokens(keyword)) tokens.add(tok);
-  return tokens;
-}
-
 /**
  * ≥2 shared tokens, ≥1 non-baseline shared token, Jaccard ≥ 0.6 — donor's
- * rule (role-matcher.mjs `roleFuzzyMatch`), applied between the résumé-
- * derived target's token pool (titles + keywords) and the posting's title.
+ * rule (role-matcher.mjs `roleFuzzyMatch`), applied pairwise between ONE
+ * title's token set and the posting's title token set. `keywordTokens` (the
+ * résumé's skills) can add to the shared/non-baseline overlap count — a
+ * keyword token only ever contributes when it's already present in
+ * `postingSet`, so it never grows the Jaccard union beyond `titleTokens ∪
+ * postingTokens`.
  */
-export function roleFuzzyMatch(target: RoleTarget, posting: RawPosting): boolean {
-  const targetTokens = [...targetTokenSet(target)];
-  const postingTokens = [...new Set(roleTokens(posting.title))];
-  if (targetTokens.length === 0 || postingTokens.length === 0) return false;
+function titleMatchesPosting(
+  title: string,
+  keywordTokens: Set<string>,
+  postingTokens: string[],
+  postingSet: Set<string>,
+): boolean {
+  const titleTokens = [...new Set(roleTokens(title))];
+  if (titleTokens.length === 0) return false;
 
-  const postingSet = new Set(postingTokens);
-  const overlap = targetTokens.filter((w) => postingSet.has(w));
+  const titleTokenSet = new Set(titleTokens);
+  const titleOverlap = titleTokens.filter((w) => postingSet.has(w));
+  const keywordOverlap = [...keywordTokens].filter((w) => !titleTokenSet.has(w) && postingSet.has(w));
+  const overlap = [...titleOverlap, ...keywordOverlap];
   if (overlap.length < 2) return false;
 
   const discriminating = overlap.filter((w) => !BASELINE_TOKENS.has(w));
   if (discriminating.length === 0) return false;
 
-  const union = new Set([...targetTokens, ...postingTokens]).size;
+  const union = new Set([...titleTokens, ...postingTokens]).size;
   return overlap.length / union >= 0.6;
+}
+
+export function roleFuzzyMatch(target: RoleTarget, posting: RawPosting): boolean {
+  const postingTokens = [...new Set(roleTokens(posting.title))];
+  if (postingTokens.length === 0) return false;
+
+  const postingSet = new Set(postingTokens);
+  const keywordTokens = new Set(target.keywords.flatMap((keyword) => roleTokens(keyword)));
+
+  return target.titles.some((title) => titleMatchesPosting(title, keywordTokens, postingTokens, postingSet));
 }
 
 function dedupePreserveOrder(items: string[]): string[] {

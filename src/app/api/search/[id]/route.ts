@@ -33,6 +33,18 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
+      // Guards against a double `controller.close()` (which throws): the
+      // terminal-event path and the abort-listener path can both fire —
+      // e.g. the client disconnects just after `done`/`error` already closed
+      // the stream — so both close and the subscribe callback's enqueue
+      // must no-op once either one has run.
+      let closed = false;
+      const close = () => {
+        if (closed) return;
+        closed = true;
+        controller.close();
+      };
+
       // No live handle for this run (process restarted since it was
       // created, or it already completed and was evicted) — synthesize a
       // single terminal event from the persisted row instead of hanging.
@@ -45,21 +57,22 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
           };
           controller.enqueue(encoder.encode(sseLine("error", envelope, 1)));
         }
-        controller.close();
+        close();
         return;
       }
 
       const unsubscribe = handle.subscribe((event, eventId) => {
+        if (closed) return;
         controller.enqueue(encoder.encode(sseLine(event.event, event.data, eventId)));
         if (event.event === "done" || event.event === "error") {
           unsubscribe();
-          controller.close();
+          close();
         }
       });
 
       request.signal.addEventListener("abort", () => {
         unsubscribe();
-        controller.close();
+        close();
       });
     },
   });

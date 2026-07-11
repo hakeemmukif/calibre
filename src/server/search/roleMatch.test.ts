@@ -46,6 +46,27 @@ describe("roleFuzzyMatch", () => {
     expect(roleFuzzyMatch(target([""]), posting("Backend Engineer"))).toBe(false);
     expect(roleFuzzyMatch(target(["Backend Engineer"]), posting(""))).toBe(false);
   });
+
+  // RED against the pre-fix all-pooled implementation: pooling all 4 titles'
+  // + all 15 keywords' tokens into one ~19-token set makes the Jaccard
+  // denominator huge for every posting (overlap 2 / union ~19 ≈ 0.1), so a
+  // "Data Engineer" posting — a near-exact match of one of the résumé's own
+  // titles — was rejected. GREEN after the pairwise fix: matched per-title
+  // against "Senior Data Engineer" (title tokens {data, engineer} vs posting
+  // tokens {data, engineer} → Jaccard 1.0), independent of the other titles/
+  // keywords in the pool.
+  it("realistic multi-role, multi-skill résumé matches a relevant posting and rejects an unrelated one", () => {
+    const realisticTarget = target(
+      ["Senior Data Engineer", "Backend Engineer", "Data Platform Engineer", "Analytics Engineer"],
+      [
+        "Python", "SQL", "Kubernetes", "Docker", "AWS", "Airflow", "Spark", "Kafka",
+        "Terraform", "dbt", "Snowflake", "Postgres", "Redis", "GraphQL", "TypeScript",
+      ],
+    );
+
+    expect(roleFuzzyMatch(realisticTarget, posting("Data Engineer"))).toBe(true);
+    expect(roleFuzzyMatch(realisticTarget, posting("Product Marketing Manager"))).toBe(false);
+  });
 });
 
 describe("roleTokens", () => {

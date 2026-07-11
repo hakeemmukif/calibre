@@ -8,8 +8,8 @@ import { jobsRepo } from "@/server/persistence/repos/jobs";
 import { resumesRepo, type ResumeRow } from "@/server/persistence/repos/resumes";
 import { searchRunsRepo, type SearchRunRow } from "@/server/persistence/repos/searchRuns";
 import { sourcesRepo, type SourceRow } from "@/server/persistence/repos/sources";
-import { create, getActiveRunForPersona, release, type RunHandle } from "@/server/runs/registry";
-import type { Persona, SearchRun } from "@/types";
+import { create, release, getActiveRunForPersona, type RunHandle } from "@/server/runs/registry";
+import type { ErrorEnvelope, Persona, SearchRun } from "@/types";
 import { toSearchRun } from "./assemble-run";
 import type { RawPosting, SourceConnector } from "./connector";
 import { connectorForSource } from "./connectors";
@@ -32,6 +32,15 @@ export class ActiveRunConflictError extends Error {
   }
 }
 
+export class UnknownSourceIdsError extends Error {
+  readonly unknownIds: string[];
+  constructor(unknownIds: string[]) {
+    super(`Unknown or disabled source id(s) for this persona: ${unknownIds.join(", ")}`);
+    this.name = "UnknownSourceIdsError";
+    this.unknownIds = unknownIds;
+  }
+}
+
 const DEFAULT_CONCURRENCY = 8;
 const DEFAULT_CONNECTOR_TIMEOUT_MS = 15_000;
 const DEFAULT_HARD_RUN_TIMEOUT_MS = 2 * 60 * 1000;
@@ -50,42 +59,76 @@ export interface StartSearchDeps {
 }
 
 export async function startSearch(input: StartSearchInput, deps: StartSearchDeps = {}): Promise<SearchRun> {
-  // Checked first and re-checked has no await between check and registry
-  // registration below in the common (résumé-exists) path — see report for
-  // the residual race window this doesn't fully close.
   const activeRunId = getActiveRunForPersona(input.persona);
   if (activeRunId) throw new ActiveRunConflictError(activeRunId);
 
-  const resumeRow = input.resumeId ? await resumesRepo.getById(input.resumeId) : await resumesRepo.getActive();
-  if (!resumeRow) throw new NoActiveResumeError();
+  // Reserve the persona slot synchronously, right after the check above and
+  // before any `await` — closes the double-submit window: the three awaited
+  // lookups below (résumé, sources, insert) used to sit between the check
+  // and slot registration, so two concurrent requests could both pass the
+  // check and both start a run. Released on any throw before the run row
+  // exists (below); the normal completion/failure paths release it too.
+  const runId = crypto.randomUUID();
+  const handle = create("search", runId, input.persona);
 
-  const enabledSources = await sourcesRepo.listEnabledByPersona(input.persona);
-  const scopedSources = input.sources ? enabledSources.filter((s) => input.sources!.includes(s.id)) : enabledSources;
+  try {
+    const resumeRow = input.resumeId ? await resumesRepo.getById(input.resumeId) : await resumesRepo.getActive();
+    if (!resumeRow) throw new NoActiveResumeError();
 
-  const row = await searchRunsRepo.insert({
-    resumeId: resumeRow.id,
-    personas: [input.persona],
-    status: "queued",
-    stats: {
-      scanned: 0,
-      matched: 0,
-      scored: 0,
-      ghosts: 0,
-      perSource: scopedSources.map((s) => ({ sourceId: s.id, found: 0, errors: 0 })),
-    },
-  });
+    const enabledSources = await sourcesRepo.listEnabledByPersona(input.persona);
+    let scopedSources = enabledSources;
+    if (input.sources) {
+      const enabledIds = new Set(enabledSources.map((s) => s.id));
+      const unknownIds = input.sources.filter((id) => !enabledIds.has(id));
+      if (unknownIds.length > 0) throw new UnknownSourceIdsError(unknownIds);
+      scopedSources = enabledSources.filter((s) => input.sources!.includes(s.id));
+    }
 
-  const handle = create("search", row.id, input.persona);
+    const row = await searchRunsRepo.insert({
+      id: runId,
+      resumeId: resumeRow.id,
+      personas: [input.persona],
+      status: "queued",
+      stats: {
+        scanned: 0,
+        matched: 0,
+        scored: 0,
+        ghosts: 0,
+        perSource: scopedSources.map((s) => ({ sourceId: s.id, found: 0, errors: 0 })),
+      },
+    });
 
-  void runFanOut(row, scopedSources, resumeRow, input.persona, handle, deps).catch((err) => {
-    // runFanOut catches every connector/DB error it can attribute to a
-    // source; this is a last-resort net so an unattributable throw can't
-    // produce an unhandled rejection or leave the run stuck in 'running'.
-    console.error(`search run ${row.id} crashed unexpectedly:`, err);
-    release(row.id, input.persona);
-  });
+    void runFanOut(row, scopedSources, resumeRow, input.persona, handle, deps).catch((err) => {
+      void failRun(row.id, input.persona, handle, err);
+    });
 
-  return toSearchRun(row);
+    return toSearchRun(row);
+  } catch (err) {
+    release(runId, input.persona);
+    throw err;
+  }
+}
+
+// Last-resort net: runFanOut catches every connector/DB error it can
+// attribute to a source into `stats.perSource` and keeps going. A throw that
+// escapes that (an unattributable DB error, or `toSearchRun`'s
+// `SearchRun.parse` failing on the final row) used to only be logged — the
+// row stayed 'running' forever (worse combined with a process restart,
+// since nothing else ever revisits it) and no live SSE subscriber ever saw a
+// terminal event. Mark the row 'failed' and emit a terminal 'error' event.
+async function failRun(runId: string, persona: Persona, handle: RunHandle, err: unknown): Promise<void> {
+  console.error(`search run ${runId} crashed unexpectedly:`, err);
+  const message = err instanceof Error ? err.message : String(err);
+
+  try {
+    await searchRunsRepo.updateStatus(runId, "failed", { error: message, finishedAt: new Date() });
+  } catch (persistErr) {
+    console.error(`search run ${runId}: failed to persist 'failed' status after crash:`, persistErr);
+  }
+
+  const envelope: ErrorEnvelope = { error: { code: "CONFLICT", message } };
+  handle.emit({ event: "error", data: envelope });
+  release(runId, persona);
 }
 
 async function runFanOut(
