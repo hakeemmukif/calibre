@@ -361,6 +361,92 @@ registry.registerPath({
   },
 });
 
+registry.registerPath({
+  method: "post",
+  path: "/api/applications",
+  summary: "Mark a job applied — persists a stage-0 tracker row — F5 (B9)",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            jobId: z.string(),
+            note: z.string().optional(),
+            tailoredResumeId: z.string().optional(),
+            answersId: z.string().optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Server sets appliedAt, stage:0, statusLabel/statusTone via features/applied/status-map.ts",
+      content: { "application/json": { schema: Application } },
+    },
+    404: { description: "Unknown job id", content: { "application/json": { schema: ErrorEnvelope } } },
+    409: {
+      description: "Duplicate jobId (details: { existingId }), or no active résumé to record",
+      content: { "application/json": { schema: ErrorEnvelope } },
+    },
+    422: { description: "Invalid body", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/applications",
+  summary: "List tracker rows — filterable, cursored — F5 (B9)",
+  request: {
+    query: z.object({
+      stage: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]).optional(),
+      statusTone: z.enum(["good", "verified", "neutral"]).optional(),
+      cursor: z.string().optional(),
+      limit: z.number().int().min(1).max(100).optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Page of tracker rows",
+      content: {
+        "application/json": {
+          schema: z.object({ items: z.array(Application), nextCursor: z.string().nullable() }),
+        },
+      },
+    },
+    422: { description: "Unknown query parameter or invalid value", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/applications/{id}",
+  summary: "Update stage / status / note / tailored flag — F5 (B9)",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            stage: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]).optional(),
+            statusLabel: z.string().optional(),
+            statusTone: z.enum(["good", "verified", "neutral"]).optional(),
+            note: z.string().optional(),
+            tailored: z.boolean().optional(),
+            tailoredResumeId: z.string().nullable().optional(),
+            answersId: z.string().nullable().optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: "The updated Application", content: { "application/json": { schema: Application } } },
+    404: { description: "Unknown application id", content: { "application/json": { schema: ErrorEnvelope } } },
+    422: { description: "Empty patch (zero fields)", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
 type SchemaDefinition = { type: "schema"; schema: z.ZodType };
 
 // Exported so generate.ts can assert every frozen entity actually landed in

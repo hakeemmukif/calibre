@@ -956,6 +956,303 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/applications": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "stage",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    0
+                  ],
+                  "type": "number"
+                },
+                {
+                  "enum": [
+                    1
+                  ],
+                  "type": "number"
+                },
+                {
+                  "enum": [
+                    2
+                  ],
+                  "type": "number"
+                },
+                {
+                  "enum": [
+                    3
+                  ],
+                  "type": "number"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "statusTone",
+            "required": false,
+            "schema": {
+              "enum": [
+                "good",
+                "verified",
+                "neutral"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "items": {
+                      "items": {
+                        "$ref": "#/components/schemas/Application"
+                      },
+                      "type": "array"
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "nextCursor"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Page of tracker rows"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unknown query parameter or invalid value"
+          }
+        },
+        "summary": "List tracker rows — filterable, cursored — F5 (B9)"
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "answersId": {
+                    "type": "string"
+                  },
+                  "jobId": {
+                    "type": "string"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "tailoredResumeId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "jobId"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Application"
+                }
+              }
+            },
+            "description": "Server sets appliedAt, stage:0, statusLabel/statusTone via features/applied/status-map.ts"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unknown job id"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Duplicate jobId (details: { existingId }), or no active résumé to record"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Invalid body"
+          }
+        },
+        "summary": "Mark a job applied — persists a stage-0 tracker row — F5 (B9)"
+      }
+    },
+    "/api/applications/{id}": {
+      "patch": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "answersId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "stage": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          0
+                        ],
+                        "type": "number"
+                      },
+                      {
+                        "enum": [
+                          1
+                        ],
+                        "type": "number"
+                      },
+                      {
+                        "enum": [
+                          2
+                        ],
+                        "type": "number"
+                      },
+                      {
+                        "enum": [
+                          3
+                        ],
+                        "type": "number"
+                      }
+                    ]
+                  },
+                  "statusLabel": {
+                    "type": "string"
+                  },
+                  "statusTone": {
+                    "enum": [
+                      "good",
+                      "verified",
+                      "neutral"
+                    ],
+                    "type": "string"
+                  },
+                  "tailored": {
+                    "type": "boolean"
+                  },
+                  "tailoredResumeId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Application"
+                }
+              }
+            },
+            "description": "The updated Application"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unknown application id"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Empty patch (zero fields)"
+          }
+        },
+        "summary": "Update stage / status / note / tailored flag — F5 (B9)"
+      }
+    },
     "/api/apply/answers": {
       "post": {
         "requestBody": {
