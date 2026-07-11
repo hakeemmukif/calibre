@@ -10,6 +10,8 @@ data/uploads/
 .env
 .env.local
 coverage/
+test-results/
+playwright-report/
 
 # SDD subagent-driven-development scratch
 .superpowers/
