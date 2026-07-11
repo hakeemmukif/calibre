@@ -2,7 +2,9 @@
 // This is a leaf module: never import server/*, features/*, or UI here.
 import OpenAI from "openai";
 import { z } from "zod";
+import { makeMockLlm } from "./mock";
 import { modelFor, priceFor } from "./models";
+import { scriptedFixtures } from "./scripted-fixtures";
 
 export type TaskName =
   | "resume-extract"
@@ -78,7 +80,16 @@ function buildClient(transport: OpenAI): LlmClient {
   };
 }
 
+// Fail-loud: honored only on exact "1"; any other set value throws.
+export function testDoublesEnabled(): boolean {
+  const v = process.env.CALIBER_TEST_DOUBLES;
+  if (v === undefined || v === "") return false;
+  if (v !== "1") throw new Error(`CALIBER_TEST_DOUBLES set to unexpected value "${v}" (only "1" enables test doubles)`);
+  return true;
+}
+
 export function getLlm(): LlmClient {
+  if (testDoublesEnabled()) return makeMockLlm(scriptedFixtures);
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) throw new Error("OPENROUTER_API_KEY is not set");
   const transport = new OpenAI({ baseURL: "https://openrouter.ai/api/v1", apiKey });

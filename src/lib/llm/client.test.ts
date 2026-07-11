@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 const mocks = vi.hoisted(() => {
@@ -97,5 +97,26 @@ describe("getLlm", () => {
     const callArgs = mocks.create.mock.calls[0][0];
     expect(callArgs.model).toBe("openai/gpt-4o");
     expect(result.model).toBe("openai/gpt-4o");
+  });
+});
+
+describe("getLlm test-doubles seam", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("returns the scripted mock when CALIBER_TEST_DOUBLES=1 (no API key needed)", async () => {
+    vi.stubEnv("CALIBER_TEST_DOUBLES", "1");
+    vi.stubEnv("OPENROUTER_API_KEY", "");
+    const { getLlm } = await import("./client");
+    const client = getLlm();
+    const res = await client.complete({ task: "jd-extract", messages: [], responseSchema: z.any() });
+    expect(res.model).toBe("mock");
+  });
+
+  it("throws on an unexpected flag value (fail loud)", async () => {
+    vi.stubEnv("CALIBER_TEST_DOUBLES", "yes");
+    const { getLlm } = await import("./client");
+    expect(() => getLlm()).toThrow(/CALIBER_TEST_DOUBLES/);
   });
 });

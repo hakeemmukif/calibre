@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SourceRow } from "@/server/persistence/repos/sources";
 import { connectorForSource } from "./index";
 
@@ -23,5 +23,18 @@ describe("connectorForSource", () => {
 
   it("throws for an unregistered source id", () => {
     expect(() => connectorForSource(source("workday"))).toThrow(/workday/);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("returns the fixture connector when CALIBER_TEST_DOUBLES=1", async () => {
+    vi.stubEnv("CALIBER_TEST_DOUBLES", "1");
+    const { connectorForSource } = await import("./index");
+    const conn = connectorForSource({ id: "greenhouse", kind: "ats", persona: "remote", enabled: true, config: {}, name: "x" } as never);
+    const out = [];
+    for await (const p of conn.discover({ targets: [], since: new Date(0), signal: new AbortController().signal, onProgress: () => {} })) out.push(p);
+    expect(out[0]?.sourceId).toBe("greenhouse");
   });
 });
