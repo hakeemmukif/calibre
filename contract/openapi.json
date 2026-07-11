@@ -1488,12 +1488,20 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "mode": {
+                      "enum": [
+                        "real",
+                        "doubles"
+                      ],
+                      "type": "string"
+                    },
                     "ok": {
                       "type": "boolean"
                     }
                   },
                   "required": [
-                    "ok"
+                    "ok",
+                    "mode"
                   ],
                   "type": "object"
                 }
