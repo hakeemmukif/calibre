@@ -30,7 +30,11 @@ tasks:
     temperature: 0.3
   tailor:
     model: openai/gpt-oss-120b
-    maxTokens: 4000
+    # 10k, not 4k: the tailor task emits a FULL ResumeStore JSON + diff, and
+    # gpt-oss-120b spends part of the max_tokens budget on reasoning tokens —
+    # a live run at 4k truncated mid-JSON ("Unparseable JSON in completion",
+    # 2026-07-12). ~10k output ≈ $0.0015 at this model's pricing.
+    maxTokens: 10000
     temperature: 0.4
 
 prices:
