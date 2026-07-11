@@ -1,0 +1,34 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1783712700745,
+      "tag": "0000_slippery_the_captain",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1783745641272,
+      "tag": "0001_abnormal_blob",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783750268893,
+      "tag": "0002_oval_sunset_bain",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1783751550005,
+      "tag": "0003_sturdy_secret_warriors",
+      "breakpoints": true
+    }
+  ]
+}

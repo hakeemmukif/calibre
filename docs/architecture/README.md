@@ -30,6 +30,7 @@ Contract flows one way: **Zod schemas in `src/types` → OpenAPI (`contract/open
 - **[system-architecture.md](./system-architecture.md)** — data model (Drizzle tables), service boundaries, the source-connector abstraction, end-to-end flows, hard problems, upfront decisions.
 - **[api-contract.md](./api-contract.md)** — endpoint table, core Zod schemas, per-endpoint I/O, SSE shape, OpenAPI/client generation.
 - **[component-inventory.md](./component-inventory.md)** — MVP compositions + pages, the F4 question-assistant UX, F6 diff-review, the Storybook story tree.
+- **[runbook.md](./runbook.md)** — prerequisites to run the real (non-mocked) app: env vars, migrate/seed, model ids, Playwright install.
 
 ## Reconciliations & spec corrections (grounded in reading the donor)
 These override the earlier spec where noted:

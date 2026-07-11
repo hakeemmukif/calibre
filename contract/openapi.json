@@ -1,0 +1,2091 @@
+{
+  "components": {
+    "parameters": {},
+    "schemas": {
+      "Application": {
+        "properties": {
+          "answersId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "appliedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "company": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "jobId": {
+            "type": "string"
+          },
+          "meta": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "score": {
+            "maximum": 5,
+            "minimum": 0,
+            "type": "number"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "enum": [
+                  0
+                ],
+                "type": "number"
+              },
+              {
+                "enum": [
+                  1
+                ],
+                "type": "number"
+              },
+              {
+                "enum": [
+                  2
+                ],
+                "type": "number"
+              },
+              {
+                "enum": [
+                  3
+                ],
+                "type": "number"
+              }
+            ]
+          },
+          "statusLabel": {
+            "type": "string"
+          },
+          "statusTone": {
+            "enum": [
+              "good",
+              "verified",
+              "neutral"
+            ],
+            "type": "string"
+          },
+          "tailored": {
+            "type": "boolean"
+          },
+          "tailoredResumeId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "jobId",
+          "role",
+          "company",
+          "meta",
+          "appliedAt",
+          "score",
+          "stage",
+          "statusLabel",
+          "statusTone",
+          "tailored",
+          "note",
+          "tailoredResumeId",
+          "answersId"
+        ],
+        "type": "object"
+      },
+      "ApplicationAnswer": {
+        "properties": {
+          "answer": {
+            "type": "string"
+          },
+          "grounding": {
+            "items": {
+              "properties": {
+                "quote": {
+                  "type": "string"
+                },
+                "source": {
+                  "enum": [
+                    "experience",
+                    "skills",
+                    "summary",
+                    "headline"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "source",
+                "quote"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "questionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "questionId",
+          "prompt",
+          "answer",
+          "grounding"
+        ],
+        "type": "object"
+      },
+      "ApplicationAnswers": {
+        "properties": {
+          "answers": {
+            "items": {
+              "$ref": "#/components/schemas/ApplicationAnswer"
+            },
+            "type": "array"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "jobId": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "resumeId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "jobId",
+          "resumeId",
+          "answers",
+          "model",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "ApplicationQuestion": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "text",
+              "textarea",
+              "select",
+              "multiselect",
+              "boolean",
+              "file"
+            ],
+            "type": "string"
+          },
+          "maxLength": {
+            "type": "integer"
+          },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "prompt",
+          "kind",
+          "required"
+        ],
+        "type": "object"
+      },
+      "ErrorEnvelope": {
+        "properties": {
+          "error": {
+            "properties": {
+              "code": {
+                "enum": [
+                  "VALIDATION_ERROR",
+                  "NOT_FOUND",
+                  "CONFLICT",
+                  "RUN_NOT_READY",
+                  "PARSE_FAILED",
+                  "EXTRACTION_FAILED",
+                  "UPSTREAM_LLM_ERROR",
+                  "PAYLOAD_TOO_LARGE"
+                ],
+                "type": "string"
+              },
+              "details": {},
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "type": "object"
+      },
+      "Job": {
+        "properties": {
+          "applyUrl": {
+            "format": "uri",
+            "type": "string"
+          },
+          "breakdown": {
+            "items": {
+              "properties": {
+                "display": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "tone": {
+                  "$ref": "#/components/schemas/Tone"
+                },
+                "value": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "label",
+                "value"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "company": {
+            "type": "string"
+          },
+          "firstSeen": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "fit": {
+            "items": {
+              "properties": {
+                "k": {
+                  "type": "string"
+                },
+                "v": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "k",
+                "v"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "gaps": {
+            "items": {
+              "properties": {
+                "k": {
+                  "type": "string"
+                },
+                "tone": {
+                  "enum": [
+                    "warn",
+                    "ok"
+                  ],
+                  "type": "string"
+                },
+                "v": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tone",
+                "k",
+                "v"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "ghost": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "isNew": {
+            "type": "boolean"
+          },
+          "legitimacy": {
+            "$ref": "#/components/schemas/Legitimacy"
+          },
+          "meta": {
+            "type": "string"
+          },
+          "persona": {
+            "$ref": "#/components/schemas/Persona"
+          },
+          "role": {
+            "type": "string"
+          },
+          "score": {
+            "maximum": 5,
+            "minimum": 0,
+            "type": "number"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceRef"
+          },
+          "tags": {
+            "items": {
+              "properties": {
+                "label": {
+                  "type": "string"
+                },
+                "tone": {
+                  "$ref": "#/components/schemas/Tone"
+                }
+              },
+              "required": [
+                "tone",
+                "label"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "verdict": {
+            "type": "string"
+          },
+          "why": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "score",
+          "role",
+          "company",
+          "meta",
+          "verdict",
+          "why",
+          "tags",
+          "breakdown",
+          "fit",
+          "gaps",
+          "legitimacy",
+          "applyUrl",
+          "source",
+          "persona",
+          "firstSeen",
+          "isNew"
+        ],
+        "type": "object"
+      },
+      "Legitimacy": {
+        "properties": {
+          "confidence": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "tier": {
+            "$ref": "#/components/schemas/LegitimacyTier"
+          },
+          "tone": {
+            "$ref": "#/components/schemas/Tone"
+          }
+        },
+        "required": [
+          "tier",
+          "tone",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "LegitimacyTier": {
+        "enum": [
+          "verified",
+          "clear",
+          "suspicious",
+          "ghost",
+          "scam"
+        ],
+        "type": "string"
+      },
+      "Persona": {
+        "enum": [
+          "remote",
+          "local"
+        ],
+        "type": "string"
+      },
+      "Progress": {
+        "properties": {
+          "current": {
+            "type": "integer"
+          },
+          "label": {
+            "type": "string"
+          },
+          "stage": {
+            "type": "string"
+          },
+          "total": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "stage",
+          "current",
+          "total",
+          "label"
+        ],
+        "type": "object"
+      },
+      "Resume": {
+        "properties": {
+          "atsScore": {
+            "maximum": 100,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "experience": {
+            "items": {
+              "properties": {
+                "bullets": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "company": {
+                  "type": "string"
+                },
+                "dates": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "title",
+                "company",
+                "dates",
+                "bullets"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "headline": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "rawText": {
+            "type": "string"
+          },
+          "skills": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "atsScore",
+          "updatedAt",
+          "headline",
+          "location",
+          "summary",
+          "experience",
+          "skills",
+          "rawText"
+        ],
+        "type": "object"
+      },
+      "RunStatus": {
+        "enum": [
+          "queued",
+          "running",
+          "completed",
+          "failed"
+        ],
+        "type": "string"
+      },
+      "SearchRun": {
+        "properties": {
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "finishedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "persona": {
+            "$ref": "#/components/schemas/Persona"
+          },
+          "progress": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Progress"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
+          },
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "stats": {
+            "properties": {
+              "ghosts": {
+                "type": "integer"
+              },
+              "scanned": {
+                "type": "integer"
+              },
+              "worth": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "scanned",
+              "worth",
+              "ghosts"
+            ],
+            "type": "object"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RunStatus"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "persona",
+          "sources",
+          "progress",
+          "stats",
+          "startedAt",
+          "finishedAt",
+          "error"
+        ],
+        "type": "object"
+      },
+      "SourceRef": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "ats",
+              "board"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "persona": {
+            "$ref": "#/components/schemas/Persona"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "persona"
+        ],
+        "type": "object"
+      },
+      "SseEvent": {
+        "oneOf": [
+          {
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/Progress"
+              },
+              "event": {
+                "enum": [
+                  "progress"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "event",
+              "data"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/Job"
+              },
+              "event": {
+                "enum": [
+                  "job"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "event",
+              "data"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "data": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/SearchRun"
+                  },
+                  {
+                    "$ref": "#/components/schemas/TailoredResume"
+                  }
+                ]
+              },
+              "event": {
+                "enum": [
+                  "done"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "event",
+              "data"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/ErrorEnvelope"
+              },
+              "event": {
+                "enum": [
+                  "error"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "event",
+              "data"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "SummaryStripStats": {
+        "properties": {
+          "flagged": {
+            "type": "integer"
+          },
+          "ghosts": {
+            "type": "integer"
+          },
+          "scanned": {
+            "type": "integer"
+          },
+          "sinceLast": {
+            "type": "integer"
+          },
+          "worth": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scanned",
+          "worth",
+          "ghosts",
+          "flagged",
+          "sinceLast"
+        ],
+        "type": "object"
+      },
+      "TailoredResume": {
+        "properties": {
+          "completedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "diff": {
+            "items": {
+              "properties": {
+                "after": {
+                  "type": "string"
+                },
+                "before": {
+                  "type": "string"
+                },
+                "op": {
+                  "enum": [
+                    "add",
+                    "remove",
+                    "modify"
+                  ],
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "section": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "section",
+                "op",
+                "reason"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "jobId": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "progress": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Progress"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
+          },
+          "resume": {
+            "properties": {
+              "atsScore": {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "experience": {
+                "items": {
+                  "properties": {
+                    "bullets": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "company": {
+                      "type": "string"
+                    },
+                    "dates": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "title",
+                    "company",
+                    "dates",
+                    "bullets"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "headline": {
+                "type": "string"
+              },
+              "location": {
+                "type": "string"
+              },
+              "skills": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "summary": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "atsScore",
+              "updatedAt",
+              "headline",
+              "location",
+              "summary",
+              "experience",
+              "skills"
+            ],
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "resumeId": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RunStatus"
+          }
+        },
+        "required": [
+          "id",
+          "jobId",
+          "resumeId",
+          "status",
+          "progress",
+          "resume",
+          "diff",
+          "model",
+          "createdAt",
+          "completedAt"
+        ],
+        "type": "object"
+      },
+      "Tone": {
+        "enum": [
+          "verified",
+          "good",
+          "warn",
+          "ghost",
+          "danger"
+        ],
+        "type": "string"
+      }
+    }
+  },
+  "info": {
+    "description": "Auth: none in v1 (single-operator; network-layer protection only).",
+    "title": "Caliber API",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/applications": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "stage",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    0
+                  ],
+                  "type": "number"
+                },
+                {
+                  "enum": [
+                    1
+                  ],
+                  "type": "number"
+                },
+                {
+                  "enum": [
+                    2
+                  ],
+                  "type": "number"
+                },
+                {
+                  "enum": [
+                    3
+                  ],
+                  "type": "number"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "statusTone",
+            "required": false,
+            "schema": {
+              "enum": [
+                "good",
+                "verified",
+                "neutral"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "items": {
+                      "items": {
+                        "$ref": "#/components/schemas/Application"
+                      },
+                      "type": "array"
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "nextCursor"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Page of tracker rows"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unknown query parameter or invalid value"
+          }
+        },
+        "summary": "List tracker rows — filterable, cursored — F5 (B9)"
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "answersId": {
+                    "type": "string"
+                  },
+                  "jobId": {
+                    "type": "string"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "tailoredResumeId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "jobId"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Application"
+                }
+              }
+            },
+            "description": "Server sets appliedAt, stage:0, statusLabel/statusTone via features/applied/status-map.ts"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unknown job id"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Duplicate jobId (details: { existingId }), job exists but isn't scored yet, or no active résumé to record"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Invalid body"
+          }
+        },
+        "summary": "Mark a job applied — persists a stage-0 tracker row — F5 (B9)"
+      }
+    },
+    "/api/applications/{id}": {
+      "patch": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "answersId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "stage": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          0
+                        ],
+                        "type": "number"
+                      },
+                      {
+                        "enum": [
+                          1
+                        ],
+                        "type": "number"
+                      },
+                      {
+                        "enum": [
+                          2
+                        ],
+                        "type": "number"
+                      },
+                      {
+                        "enum": [
+                          3
+                        ],
+                        "type": "number"
+                      }
+                    ]
+                  },
+                  "statusLabel": {
+                    "type": "string"
+                  },
+                  "statusTone": {
+                    "enum": [
+                      "good",
+                      "verified",
+                      "neutral"
+                    ],
+                    "type": "string"
+                  },
+                  "tailored": {
+                    "type": "boolean"
+                  },
+                  "tailoredResumeId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Application"
+                }
+              }
+            },
+            "description": "The updated Application"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unknown application id"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Empty patch (zero fields)"
+          }
+        },
+        "summary": "Update stage / status / note / tailored flag — F5 (B9)"
+      }
+    },
+    "/api/apply/answers": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "jobId": {
+                    "type": "string"
+                  },
+                  "questions": {
+                    "items": {
+                      "$ref": "#/components/schemas/ApplicationQuestion"
+                    },
+                    "minItems": 1,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "jobId",
+                  "questions"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationAnswers"
+                }
+              }
+            },
+            "description": "Persisted, résumé-grounded answer set"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No résumé exists to ground answers against"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Invalid body (e.g. empty questions[])"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "LLM drafting failed"
+          }
+        },
+        "summary": "Draft résumé-grounded answers for extracted questions — F4 (B7)"
+      }
+    },
+    "/api/apply/answers/{id}": {
+      "patch": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "answers": {
+                    "items": {
+                      "$ref": "#/components/schemas/ApplicationAnswer"
+                    },
+                    "minItems": 1,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "answers"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationAnswers"
+                }
+              }
+            },
+            "description": "The replaced answer set"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unknown answers id"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Empty patch (answers[] with zero entries)"
+          }
+        },
+        "summary": "Edit a persisted answer set (user edits or per-question regenerate) — F4 (B7)"
+      }
+    },
+    "/api/apply/questions": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "description": "Exactly one of jobId, url, or pastedForm must be provided",
+                "properties": {
+                  "jobId": {
+                    "type": "string"
+                  },
+                  "pastedForm": {
+                    "type": "string"
+                  },
+                  "url": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "questions": {
+                      "items": {
+                        "$ref": "#/components/schemas/ApplicationQuestion"
+                      },
+                      "type": "array"
+                    },
+                    "sourceUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "questions",
+                    "sourceUrl"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Extracted questions + the posting URL they came from (null for the paste tier)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unknown job id"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Zero or more than one of jobId/url/pastedForm provided"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No structured ATS API matched and DOM parsing found no form — never returns [] as a guess"
+          }
+        },
+        "summary": "Extract application questions from a posting — F4 tier 1/2/3 (B7)"
+      }
+    },
+    "/api/health": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Service is healthy"
+          }
+        },
+        "summary": "Health check"
+      }
+    },
+    "/api/jobs": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "persona",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/Persona"
+            }
+          },
+          {
+            "description": "repeatable",
+            "in": "query",
+            "name": "tier",
+            "required": false,
+            "schema": {
+              "description": "repeatable",
+              "items": {
+                "$ref": "#/components/schemas/LegitimacyTier"
+              },
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "minScore",
+            "required": false,
+            "schema": {
+              "maximum": 5,
+              "minimum": 0,
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "isNew",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "remote",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "default 25",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "description": "default 25",
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "items": {
+                      "items": {
+                        "$ref": "#/components/schemas/Job"
+                      },
+                      "type": "array"
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "stats": {
+                      "$ref": "#/components/schemas/SummaryStripStats"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "nextCursor",
+                    "stats"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Page of scored jobs + hero stats computed server-side over the full scoped set"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unknown query parameter or invalid value"
+          }
+        },
+        "summary": "Scored feed — filterable, cursored — F2 (B6)"
+      }
+    },
+    "/api/jobs/{id}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            },
+            "description": "The frozen Job (no separate detail entity)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unknown job id"
+          }
+        },
+        "summary": "Single job incl. applyUrl — F2/F3 (B6)"
+      }
+    },
+    "/api/resume": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Resume"
+                }
+              }
+            },
+            "description": "Current résumé"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No résumé uploaded yet"
+          }
+        },
+        "summary": "Fetch the current résumé"
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "text": {
+                    "minLength": 100,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "type": "object"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "file": {
+                    "description": "PDF or DOCX file, ≤10MB",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Resume"
+                }
+              }
+            },
+            "description": "Parsed résumé"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "File exceeds the 10MB limit"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad mime type or too-short/missing text"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Extraction or LLM structuring failed — no résumé persisted"
+          }
+        },
+        "summary": "Upload (PDF/DOCX) or paste a résumé — F1 ingest"
+      }
+    },
+    "/api/search": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "persona": {
+                    "$ref": "#/components/schemas/Persona"
+                  },
+                  "sources": {
+                    "description": "Omitted = persona's full configured set",
+                    "items": {
+                      "type": "string"
+                    },
+                    "minItems": 1,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "persona"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchRun"
+                }
+              }
+            },
+            "description": "Run queued"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "A run is already active for this persona, or no résumé exists"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Invalid body (e.g. an explicit empty sources[])"
+          }
+        },
+        "summary": "Start a dual search run (global ATS + MY boards) — F2 discovery"
+      }
+    },
+    "/api/search/{id}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchRun"
+                }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/SseEvent"
+                }
+              }
+            },
+            "description": "JSON snapshot, or an SSE stream of progress/job/done/error (search scores top-N candidates and streams each as a `job` event — B6)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unknown run id"
+          }
+        },
+        "summary": "Run status — JSON snapshot by default; SSE via Accept: text/event-stream"
+      }
+    },
+    "/api/tailor": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "jobId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "jobId"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TailoredResume"
+                }
+              }
+            },
+            "description": "Tailor run queued"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unknown job id"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No résumé exists to tailor"
+          }
+        },
+        "summary": "Start tailoring the résumé to a job — F6 (B8)"
+      }
+    },
+    "/api/tailor/{id}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TailoredResume"
+                }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/SseEvent"
+                }
+              }
+            },
+            "description": "JSON snapshot, or an SSE stream of progress/done/error (stages analyze -> rewrite -> render -> done)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unknown tailor run id"
+          }
+        },
+        "summary": "Tailor status + result — JSON snapshot by default; SSE via Accept: text/event-stream — F6 (B8)"
+      }
+    },
+    "/api/tailor/{id}/finalize": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "acceptedIndices": {
+                    "items": {
+                      "type": "integer"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "acceptedIndices"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TailoredResume"
+                }
+              }
+            },
+            "description": "TailoredResume server-rendered with only the accepted diff entries applied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unknown tailor run id"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Run has not completed yet"
+          }
+        },
+        "summary": "Persist the accepted-only diff — renders an accepted-only résumé — F6 (B8)"
+      }
+    },
+    "/api/tailor/{id}/pdf": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "description": "Binary PDF bytes",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Binary PDF bytes"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unknown tailor run id"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Run has not been finalized yet (POST .../finalize not yet called, or status !== 'completed')"
+          }
+        },
+        "summary": "Rendered PDF of the finalized (accepted-only) résumé — F6 (B8)"
+      }
+    }
+  },
+  "webhooks": {}
+}

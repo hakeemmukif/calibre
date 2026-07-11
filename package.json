@@ -3,22 +3,46 @@
   "private": true,
   "version": "0.0.0",
   "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
     "storybook": "storybook dev -p 6006",
-    "build-storybook": "storybook build"
+    "build-storybook": "storybook build",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:seed": "tsx src/server/persistence/seed.ts",
+    "contract": "tsx src/contract/generate.ts"
   },
   "dependencies": {
+    "@asteasolutions/zod-to-openapi": "^8.5.0",
+    "drizzle-orm": "^0.45.2",
     "lucide-react": "^1.24.0",
+    "mammoth": "^1.12.0",
+    "next": "^15.5.20",
+    "openai": "^6.46.0",
+    "p-limit": "^3.1.0",
+    "playwright": "^1.61.1",
+    "postgres": "^3.4.9",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
+    "unpdf": "^1.6.2",
+    "yaml": "^2.9.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.4",
     "@storybook/react-vite": "^8.6.18",
+    "@types/node": "^22.10.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^4.7.0",
+    "drizzle-kit": "^0.31.10",
     "storybook": "^8.6.18",
+    "tsx": "^4.23.0",
     "typescript": "^5.6.3",
-    "vite": "^6.4.3"
+    "vite": "^6.4.3",
+    "vitest": "^2.1.9"
   }
 }

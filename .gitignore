@@ -3,9 +3,13 @@ storybook-static/
 dist/
 .next/
 out/
+*.tsbuildinfo
 *.log
 .DS_Store
 data/uploads/
 .env
 .env.local
 coverage/
+
+# SDD subagent-driven-development scratch
+.superpowers/

@@ -22,6 +22,7 @@ Schema-first: Zod schemas in `src/types` are the single source of truth; OpenAPI
 | F6 | GET | `/api/tailor/:id` | Tailor status + result; SSE via `Accept: text/event-stream` | sync / SSE |
 | F6 | POST | `/api/tailor/:id/finalize` | Persist the accepted-only diff (renders an accepted-only résumé) | sync |
 | F6 | GET | `/api/tailor/:id/pdf` | Rendered PDF of the finalized (accepted-only) résumé | sync, binary |
+| — | GET | `/api/health` | Liveness check, unauthenticated | sync |
 
 `GET /api/jobs/:id` returns the frozen `Job` entity verbatim — there is no separate detail/`MatchDetail` entity in MVP; `JobDetail`'s Fit/Legitimacy/Breakdown tabs are derived entirely from `Job.fit`/`Job.legitimacy`/`Job.breakdown`. An `archetype` field (e.g. "Global remote — APAC-friendly") was drafted during component design but is **deferred** — not part of `Job`, not returned by this route.
 
@@ -54,6 +55,11 @@ export const Job = z.object({                        // §5 frozen + §11.8 exte
   gaps: z.array(z.object({ tone: z.enum(['warn','ok']), k: z.string(), v: z.string() })),
   legitimacy: Legitimacy,
   applyUrl: z.string().url(),                        // F3: the canonical posting URL
+  // Assembly rule (features/feed/assemble.ts, B6): applyUrl = jobs.applyUrl ?? jobs.url —
+  // jobs.applyUrl is the nullable resolved-redirect (set on fetchDetail, F3 hard problem
+  // "Apply-URL capture"); jobs.url is the always-present canonical posting URL. This is a
+  // documented fallback, not a silent default: a job with no resolved redirect yet still
+  // gets a valid applyUrl from its own canonical listing URL.
   source: SourceRef, persona: Persona,
   firstSeen: z.string().datetime(), isNew: z.boolean(),
 });
@@ -157,7 +163,7 @@ Boundary rule everywhere: `Schema.parse(body)` at the route handler; `ZodError` 
 
 **PATCH /api/apply/answers/:id** — `{ answers: ApplicationAnswer[].min(1) }` (empty patch → 422). → `200 ApplicationAnswers` | `404`. Covers user edits and per-question regenerate/redraft after the initial `POST /api/apply/answers` — the assistant's Regenerate/edit actions persist through this route rather than mutating client-only state.
 
-**POST /api/applications** — `{ jobId, note?, tailoredResumeId?, answersId? }`. → `201 Application` (server sets `appliedAt`, `stage: 0`, `statusLabel/statusTone` via `features/applied/status-map.ts`). **Idempotency: unique on `jobId`** → duplicate `409 CONFLICT` with `details: { existingId }`.
+**POST /api/applications** — `{ jobId, note?, tailoredResumeId?, answersId? }`. → `201 Application` (server sets `appliedAt`, `stage: 0`, `statusLabel/statusTone` via `features/applied/status-map.ts`). **Idempotency: unique on `jobId`** → duplicate `409 CONFLICT` with `details: { existingId }`. `404` unknown job id; `409 CONFLICT` if the job exists but has no `job_scores` row yet (a job must be scored before it can be tracked — `Application.score` has no other source).
 
 **GET /api/applications** — query `stage?`, `statusTone?`, `cursor?`, `limit?`. → `200 { items: Application[], nextCursor }`.
 

@@ -1,0 +1,43 @@
+# Task -> model routing, read by src/lib/llm/models.ts. All calls go through
+# OpenRouter (see src/lib/llm/client.ts) — model ids below are OpenRouter
+# slugs. Tiers: resume-extract/jd-extract/match-score = cheapest viable
+# (match-score has an escalateTo for shouldEscalate re-runs, decided by
+# server/score, not this module); question-answer = mid; tailor = strong.
+#
+# Model ids are PLACEHOLDERS pending operator confirmation before any real
+# spend — see the TODO(operator) comments. Prices are approximate list
+# prices used for cost accounting; reconcile against the OpenRouter
+# dashboard before production use.
+
+tasks:
+  resume-extract:
+    model: openai/gpt-4o-mini # TODO(operator): confirm model id before real spend
+    maxTokens: 2000
+    temperature: 0.1
+  jd-extract:
+    model: openai/gpt-4o-mini # TODO(operator): confirm model id before real spend
+    maxTokens: 1500
+    temperature: 0.1
+  match-score:
+    model: openai/gpt-4o-mini # TODO(operator): confirm model id before real spend
+    escalateTo: openai/gpt-4o # TODO(operator): confirm model id before real spend
+    maxTokens: 2000
+    temperature: 0.2
+  question-extract:
+    model: openai/gpt-4o-mini # TODO(operator): confirm model id before real spend
+    maxTokens: 1500
+    temperature: 0.1
+  question-answer:
+    model: openai/gpt-4.1-mini # TODO(operator): confirm model id before real spend
+    maxTokens: 2000
+    temperature: 0.3
+  tailor:
+    model: openai/gpt-4.1 # TODO(operator): confirm model id before real spend
+    maxTokens: 4000
+    temperature: 0.4
+
+prices:
+  openai/gpt-4o-mini: { promptUsdPerMTok: 0.15, completionUsdPerMTok: 0.6 }
+  openai/gpt-4o: { promptUsdPerMTok: 2.5, completionUsdPerMTok: 10 }
+  openai/gpt-4.1-mini: { promptUsdPerMTok: 0.4, completionUsdPerMTok: 1.6 }
+  openai/gpt-4.1: { promptUsdPerMTok: 2, completionUsdPerMTok: 8 }

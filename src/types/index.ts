@@ -192,6 +192,18 @@ export const ErrorEnvelope = z.object({
 });
 export type ErrorEnvelope = z.infer<typeof ErrorEnvelope>;
 
+// SSE envelope for the two run endpoints (api-contract.md §4). Verbatim
+// discriminated union: `progress` streams as the run advances, `job` is
+// search-only (a scored job — not emitted by B5's discovery-only slice),
+// `done`/`error` are terminal (stream closes after either).
+export const SseEvent = z.discriminatedUnion("event", [
+  z.object({ event: z.literal("progress"), data: Progress }),
+  z.object({ event: z.literal("job"), data: Job }),
+  z.object({ event: z.literal("done"), data: z.union([SearchRun, TailoredResume]) }),
+  z.object({ event: z.literal("error"), data: ErrorEnvelope }),
+]);
+export type SseEvent = z.infer<typeof SseEvent>;
+
 // SummaryStripStats — the Feed hero stat row (§11.8): scanned/worth/ghosts
 // mirror SearchRun's scan stats, `flagged`/`sinceLast` are the two Feed-only
 // additions. `GET /api/jobs` returns this alongside the page of jobs so
