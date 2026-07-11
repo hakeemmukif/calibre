@@ -33,7 +33,9 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
     if (err instanceof EmptyJobDescriptionError) {
       return errorResponse(422, "EXTRACTION_FAILED", err.message);
     }
+    // Full detail goes to the log only — an unanticipated DB/driver/LLM
+    // message must never leak into the public API body.
     console.error(`POST /api/jobs/${id}/evaluate failed:`, err);
-    return errorResponse(500, "INTERNAL", err instanceof Error ? err.message : "Unexpected error.");
+    return errorResponse(500, "INTERNAL", "Internal error.");
   }
 }

@@ -10,6 +10,7 @@ vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
 vi.mock("@/server/score/liveness", () => ({ probeLivenessDeep: vi.fn().mockResolvedValue("active") }));
 
 const { POST } = await import("./route");
+const { probeLivenessDeep } = await import("@/server/score/liveness");
 
 function req(id: string): NextRequest {
   return new NextRequest(`http://localhost/api/jobs/${id}/evaluate`, { method: "POST" });
@@ -76,5 +77,24 @@ describe("POST /api/jobs/:id/evaluate", () => {
 
     const rows = await state.testDb.select().from(jobScores).where(eq(jobScores.jobId, job.id));
     expect(rows).toHaveLength(1);
+  });
+
+  it("an unexpected throw returns 500 INTERNAL with a generic message — the internal error text never reaches the body", async () => {
+    vi.stubEnv("CALIBER_TEST_DOUBLES", "1");
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id, { description: "Backend role at Acme." });
+    await insertResume(state.testDb, { isActive: true });
+
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(probeLivenessDeep).mockRejectedValueOnce(new Error("pg driver: connection reset (secret detail)"));
+
+    const res = await POST(req(job.id), { params: Promise.resolve({ id: job.id }) });
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error.code).toBe("INTERNAL");
+    expect(body.error.message).toBe("Internal error.");
+    expect(JSON.stringify(body)).not.toContain("secret detail");
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
   });
 });
