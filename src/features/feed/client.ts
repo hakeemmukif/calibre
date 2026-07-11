@@ -41,3 +41,7 @@ export async function getJobs(query: GetJobsQuery = {}): Promise<JobsFeedRespons
 export async function getJob(id: string): Promise<Job> {
   return requestJson(`/api/jobs/${id}`, undefined, Job);
 }
+
+export async function evaluateJob(id: string): Promise<Job> {
+  return requestJson(`/api/jobs/${id}/evaluate`, { method: "POST" }, Job);
+}

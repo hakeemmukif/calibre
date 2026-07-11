@@ -11,7 +11,7 @@ import { useParams, useRouter } from "next/navigation";
 import { JobDetail } from "@/caliber-ui/compositions/Detail/JobDetail";
 import { Button } from "@/caliber-ui/components/Button";
 import { Icon } from "@/caliber-ui/components/Icon";
-import { getJob } from "@/features/feed/client";
+import { evaluateJob, getJob } from "@/features/feed/client";
 import { listApplications, markApplied } from "@/features/applied/client";
 import type { Application, Job } from "@/types";
 
@@ -29,6 +29,7 @@ export default function JobDetailPage() {
   const [job, setJob] = React.useState<Job | null>(null);
   const [applied, setApplied] = React.useState<Application | undefined>();
   const [error, setError] = React.useState<string | undefined>();
+  const [evaluateStatus, setEvaluateStatus] = React.useState<"idle" | "evaluating" | "error">("idle");
 
   const load = React.useCallback(async () => {
     setError(undefined);
@@ -46,6 +47,18 @@ export default function JobDetailPage() {
   React.useEffect(() => {
     void load();
   }, [load]);
+
+  async function handleEvaluate() {
+    if (!job) return;
+    setEvaluateStatus("evaluating");
+    try {
+      const freshJob = await evaluateJob(job.id);
+      setJob(freshJob);
+      setEvaluateStatus("idle");
+    } catch {
+      setEvaluateStatus("error");
+    }
+  }
 
   if (error) {
     return (
@@ -84,6 +97,8 @@ export default function JobDetailPage() {
           onApply={() => openApplyUrl(job.applyUrl)}
           onTailor={() => router.push(`/jobs/${job.id}/tailor`)}
           onAnswerQuestions={() => router.push(`/jobs/${job.id}/questions`)}
+          onEvaluate={() => void handleEvaluate()}
+          evaluateStatus={evaluateStatus}
           onMarkApplied={async () => {
             const app = await markApplied({ jobId: job.id });
             setApplied(app);

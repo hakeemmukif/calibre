@@ -21,6 +21,10 @@ export interface JobDetailProps {
    * (a composed primitive of JobDetail per §1) has a real handler to call —
    * optional, additive, mirrors JobFeed's onRetry precedent. */
   onMarkApplied(): Promise<void>;
+  /** Optional, additive (Task 9) — mirrors the onMarkApplied precedent above.
+   * Renders a "Re-evaluate" action only when provided. */
+  onEvaluate?: () => void;
+  evaluateStatus?: "idle" | "evaluating" | "error";
 }
 
 // JobDetail — the full posting view (F3/F4/F6 launcher): Card + Tabs
@@ -30,7 +34,16 @@ export interface JobDetailProps {
 // no separate detail entity in MVP (api-contract.md §1); the Fit/
 // Legitimacy/Breakdown tabs read `job.fit`/`job.legitimacy`/`job.breakdown`
 // directly.
-export function JobDetail({ job, applied, onApply, onTailor, onAnswerQuestions, onMarkApplied }: JobDetailProps) {
+export function JobDetail({
+  job,
+  applied,
+  onApply,
+  onTailor,
+  onAnswerQuestions,
+  onMarkApplied,
+  onEvaluate,
+  evaluateStatus = "idle",
+}: JobDetailProps) {
   const [tab, setTab] = React.useState<"fit" | "legitimacy" | "breakdown">("fit");
   const isScam = job.legitimacy.tier === "scam";
 
@@ -140,6 +153,23 @@ export function JobDetail({ job, applied, onApply, onTailor, onAnswerQuestions, 
           {isScam ? "Open posting anyway" : "Apply"}
         </Button>
         <Button variant="soft-accent" iconLeft="sparkles" onClick={onTailor}>Tailor résumé</Button>
+        {onEvaluate && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Button
+              variant="secondary"
+              iconLeft={evaluateStatus === "evaluating" ? undefined : "refresh-cw"}
+              disabled={evaluateStatus === "evaluating"}
+              onClick={onEvaluate}
+            >
+              {evaluateStatus === "evaluating" ? "Re-evaluating…" : "Re-evaluate"}
+            </Button>
+            {evaluateStatus === "error" && (
+              <span style={{ font: "var(--type-caption)", color: "var(--danger-ink)" }}>
+                Couldn&apos;t re-evaluate — try again.
+              </span>
+            )}
+          </div>
+        )}
         <Button variant="secondary" iconLeft="file-text" onClick={onAnswerQuestions}>Answer questions</Button>
         <AppliedButton
           applied={!!applied}

@@ -38,6 +38,18 @@ export const AlreadyApplied: Story = {
   },
 };
 
+export const WithReEvaluate: Story = {
+  args: {
+    job: grab,
+    onApply: noop,
+    onTailor: noop,
+    onAnswerQuestions: noop,
+    onMarkApplied: noopAsync,
+    onEvaluate: noop,
+    evaluateStatus: "idle",
+  },
+};
+
 export const ScamTier: Story = {
   args: {
     job: scam,
