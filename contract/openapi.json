@@ -1,0 +1,903 @@
+{
+  "components": {
+    "parameters": {},
+    "schemas": {
+      "Application": {
+        "properties": {
+          "answersId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "appliedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "company": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "jobId": {
+            "type": "string"
+          },
+          "meta": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "score": {
+            "maximum": 5,
+            "minimum": 0,
+            "type": "number"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "enum": [
+                  0
+                ],
+                "type": "number"
+              },
+              {
+                "enum": [
+                  1
+                ],
+                "type": "number"
+              },
+              {
+                "enum": [
+                  2
+                ],
+                "type": "number"
+              },
+              {
+                "enum": [
+                  3
+                ],
+                "type": "number"
+              }
+            ]
+          },
+          "statusLabel": {
+            "type": "string"
+          },
+          "statusTone": {
+            "enum": [
+              "good",
+              "verified",
+              "neutral"
+            ],
+            "type": "string"
+          },
+          "tailored": {
+            "type": "boolean"
+          },
+          "tailoredResumeId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "jobId",
+          "role",
+          "company",
+          "meta",
+          "appliedAt",
+          "score",
+          "stage",
+          "statusLabel",
+          "statusTone",
+          "tailored",
+          "note",
+          "tailoredResumeId",
+          "answersId"
+        ],
+        "type": "object"
+      },
+      "ApplicationAnswer": {
+        "properties": {
+          "answer": {
+            "type": "string"
+          },
+          "grounding": {
+            "items": {
+              "properties": {
+                "quote": {
+                  "type": "string"
+                },
+                "source": {
+                  "enum": [
+                    "experience",
+                    "skills",
+                    "summary",
+                    "headline"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "source",
+                "quote"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "questionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "questionId",
+          "prompt",
+          "answer",
+          "grounding"
+        ],
+        "type": "object"
+      },
+      "ApplicationAnswers": {
+        "properties": {
+          "answers": {
+            "items": {
+              "$ref": "#/components/schemas/ApplicationAnswer"
+            },
+            "type": "array"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "jobId": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "resumeId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "jobId",
+          "resumeId",
+          "answers",
+          "model",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "ApplicationQuestion": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "text",
+              "textarea",
+              "select",
+              "multiselect",
+              "boolean",
+              "file"
+            ],
+            "type": "string"
+          },
+          "maxLength": {
+            "type": "integer"
+          },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "prompt",
+          "kind",
+          "required"
+        ],
+        "type": "object"
+      },
+      "ErrorEnvelope": {
+        "properties": {
+          "error": {
+            "properties": {
+              "code": {
+                "enum": [
+                  "VALIDATION_ERROR",
+                  "NOT_FOUND",
+                  "CONFLICT",
+                  "RUN_NOT_READY",
+                  "PARSE_FAILED",
+                  "EXTRACTION_FAILED",
+                  "UPSTREAM_LLM_ERROR",
+                  "PAYLOAD_TOO_LARGE"
+                ],
+                "type": "string"
+              },
+              "details": {},
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "type": "object"
+      },
+      "Job": {
+        "properties": {
+          "applyUrl": {
+            "format": "uri",
+            "type": "string"
+          },
+          "breakdown": {
+            "items": {
+              "properties": {
+                "display": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "tone": {
+                  "$ref": "#/components/schemas/Tone"
+                },
+                "value": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "label",
+                "value"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "company": {
+            "type": "string"
+          },
+          "firstSeen": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "fit": {
+            "items": {
+              "properties": {
+                "k": {
+                  "type": "string"
+                },
+                "v": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "k",
+                "v"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "gaps": {
+            "items": {
+              "properties": {
+                "k": {
+                  "type": "string"
+                },
+                "tone": {
+                  "enum": [
+                    "warn",
+                    "ok"
+                  ],
+                  "type": "string"
+                },
+                "v": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tone",
+                "k",
+                "v"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "ghost": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "isNew": {
+            "type": "boolean"
+          },
+          "legitimacy": {
+            "$ref": "#/components/schemas/Legitimacy"
+          },
+          "meta": {
+            "type": "string"
+          },
+          "persona": {
+            "$ref": "#/components/schemas/Persona"
+          },
+          "role": {
+            "type": "string"
+          },
+          "score": {
+            "maximum": 5,
+            "minimum": 0,
+            "type": "number"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceRef"
+          },
+          "tags": {
+            "items": {
+              "properties": {
+                "label": {
+                  "type": "string"
+                },
+                "tone": {
+                  "$ref": "#/components/schemas/Tone"
+                }
+              },
+              "required": [
+                "tone",
+                "label"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "verdict": {
+            "type": "string"
+          },
+          "why": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "score",
+          "role",
+          "company",
+          "meta",
+          "verdict",
+          "why",
+          "tags",
+          "breakdown",
+          "fit",
+          "gaps",
+          "legitimacy",
+          "applyUrl",
+          "source",
+          "persona",
+          "firstSeen",
+          "isNew"
+        ],
+        "type": "object"
+      },
+      "Legitimacy": {
+        "properties": {
+          "confidence": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "tier": {
+            "$ref": "#/components/schemas/LegitimacyTier"
+          },
+          "tone": {
+            "$ref": "#/components/schemas/Tone"
+          }
+        },
+        "required": [
+          "tier",
+          "tone",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "LegitimacyTier": {
+        "enum": [
+          "verified",
+          "clear",
+          "suspicious",
+          "ghost",
+          "scam"
+        ],
+        "type": "string"
+      },
+      "Persona": {
+        "enum": [
+          "remote",
+          "local"
+        ],
+        "type": "string"
+      },
+      "Progress": {
+        "properties": {
+          "current": {
+            "type": "integer"
+          },
+          "label": {
+            "type": "string"
+          },
+          "stage": {
+            "type": "string"
+          },
+          "total": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "stage",
+          "current",
+          "total",
+          "label"
+        ],
+        "type": "object"
+      },
+      "Resume": {
+        "properties": {
+          "atsScore": {
+            "maximum": 100,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "experience": {
+            "items": {
+              "properties": {
+                "bullets": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "company": {
+                  "type": "string"
+                },
+                "dates": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "title",
+                "company",
+                "dates",
+                "bullets"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "headline": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "rawText": {
+            "type": "string"
+          },
+          "skills": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "atsScore",
+          "updatedAt",
+          "headline",
+          "location",
+          "summary",
+          "experience",
+          "skills",
+          "rawText"
+        ],
+        "type": "object"
+      },
+      "RunStatus": {
+        "enum": [
+          "queued",
+          "running",
+          "completed",
+          "failed"
+        ],
+        "type": "string"
+      },
+      "SearchRun": {
+        "properties": {
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "finishedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "persona": {
+            "$ref": "#/components/schemas/Persona"
+          },
+          "progress": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Progress"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
+          },
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "stats": {
+            "properties": {
+              "ghosts": {
+                "type": "integer"
+              },
+              "scanned": {
+                "type": "integer"
+              },
+              "worth": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "scanned",
+              "worth",
+              "ghosts"
+            ],
+            "type": "object"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RunStatus"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "persona",
+          "sources",
+          "progress",
+          "stats",
+          "startedAt",
+          "finishedAt",
+          "error"
+        ],
+        "type": "object"
+      },
+      "SourceRef": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "ats",
+              "board"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "persona": {
+            "$ref": "#/components/schemas/Persona"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "persona"
+        ],
+        "type": "object"
+      },
+      "SummaryStripStats": {
+        "properties": {
+          "flagged": {
+            "type": "integer"
+          },
+          "ghosts": {
+            "type": "integer"
+          },
+          "scanned": {
+            "type": "integer"
+          },
+          "sinceLast": {
+            "type": "integer"
+          },
+          "worth": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scanned",
+          "worth",
+          "ghosts",
+          "flagged",
+          "sinceLast"
+        ],
+        "type": "object"
+      },
+      "TailoredResume": {
+        "properties": {
+          "completedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "diff": {
+            "items": {
+              "properties": {
+                "after": {
+                  "type": "string"
+                },
+                "before": {
+                  "type": "string"
+                },
+                "op": {
+                  "enum": [
+                    "add",
+                    "remove",
+                    "modify"
+                  ],
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "section": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "section",
+                "op",
+                "reason"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "jobId": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "progress": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Progress"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
+          },
+          "resume": {
+            "properties": {
+              "atsScore": {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "experience": {
+                "items": {
+                  "properties": {
+                    "bullets": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "company": {
+                      "type": "string"
+                    },
+                    "dates": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "title",
+                    "company",
+                    "dates",
+                    "bullets"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "headline": {
+                "type": "string"
+              },
+              "location": {
+                "type": "string"
+              },
+              "skills": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "summary": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "atsScore",
+              "updatedAt",
+              "headline",
+              "location",
+              "summary",
+              "experience",
+              "skills"
+            ],
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "resumeId": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RunStatus"
+          }
+        },
+        "required": [
+          "id",
+          "jobId",
+          "resumeId",
+          "status",
+          "progress",
+          "resume",
+          "diff",
+          "model",
+          "createdAt",
+          "completedAt"
+        ],
+        "type": "object"
+      },
+      "Tone": {
+        "enum": [
+          "verified",
+          "good",
+          "warn",
+          "ghost",
+          "danger"
+        ],
+        "type": "string"
+      }
+    }
+  },
+  "info": {
+    "description": "Auth: none in v1 (single-operator; network-layer protection only).",
+    "title": "Caliber API",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/health": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Service is healthy"
+          }
+        },
+        "summary": "Health check"
+      }
+    }
+  },
+  "webhooks": {}
+}

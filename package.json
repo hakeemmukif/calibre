@@ -12,9 +12,11 @@
     "build-storybook": "storybook build",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:seed": "tsx src/server/persistence/seed.ts"
+    "db:seed": "tsx src/server/persistence/seed.ts",
+    "contract": "tsx src/contract/generate.ts"
   },
   "dependencies": {
+    "@asteasolutions/zod-to-openapi": "^8.5.0",
     "drizzle-orm": "^0.45.2",
     "lucide-react": "^1.24.0",
     "next": "^15.5.20",
