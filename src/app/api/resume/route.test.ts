@@ -10,6 +10,7 @@ import type { ResumeStore } from "@/server/resume/resume-store";
 
 const UPLOADS_DIR = join(process.cwd(), "data", "uploads");
 const PDF_FIXTURE = join(process.cwd(), "src/server/resume/__fixtures__/tiny.pdf");
+const DOCX_FIXTURE = join(process.cwd(), "src/server/resume/__fixtures__/tiny.docx");
 
 const state = vi.hoisted(() => ({
   testDb: undefined as unknown as TestDb,
@@ -147,6 +148,23 @@ describe("/api/resume", () => {
     const { resumesRepo } = await import("@/server/persistence/repos/resumes");
     const row = await resumesRepo.getActive();
     expect(row?.sourceKind).toBe("pdf");
+    expect(row?.originalPath).toBeTruthy();
+    expect(readFileSync(row!.originalPath!)).toEqual(Buffer.from(bytes));
+  });
+
+  it("accepts a DOCX upload through the multipart route (mammoth path)", async () => {
+    const bytes = new Uint8Array(readFileSync(DOCX_FIXTURE));
+    const res = await POST(
+      fileRequest(bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "resume.docx"),
+    );
+    expect(res.status).toBe(200);
+    const resume = await res.json();
+    expect(resume.headline).toBe("Senior Backend Engineer");
+    expect(resume.rawText).toContain("Jane Doe resume docx fixture");
+
+    const { resumesRepo } = await import("@/server/persistence/repos/resumes");
+    const row = await resumesRepo.getActive();
+    expect(row?.sourceKind).toBe("docx");
     expect(row?.originalPath).toBeTruthy();
     expect(readFileSync(row!.originalPath!)).toEqual(Buffer.from(bytes));
   });
