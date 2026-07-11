@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z, ZodError } from "zod";
 import {
   ApplicationConflictError,
+  JobNotScoredError,
   NoActiveResumeError,
   UnknownJobError,
   listApplications,
@@ -61,6 +62,9 @@ export async function POST(request: NextRequest) {
     }
     if (err instanceof UnknownJobError) {
       return errorResponse(404, "NOT_FOUND", err.message);
+    }
+    if (err instanceof JobNotScoredError) {
+      return errorResponse(409, "CONFLICT", err.message);
     }
     if (err instanceof NoActiveResumeError) {
       return errorResponse(409, "CONFLICT", err.message);

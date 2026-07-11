@@ -28,6 +28,21 @@ export class NoActiveResumeError extends Error {
   }
 }
 
+// 409 CONFLICT (same family as NoActiveResumeError): the frozen `Application`
+// requires `score` (sourced from job_scores via the inner join in
+// applicationsRepo.getJoined/listJoined), so an existing-but-unscored job
+// can never produce a valid Application. Checked BEFORE insert — otherwise
+// the row commits, the post-insert getJoined re-read comes back null (inner
+// join drops it), and the row is left orphaned: invisible to GET
+// /api/applications yet blocking a retry with a 409 existingId the client
+// can never fetch (task-B9 fix-pass finding).
+export class JobNotScoredError extends Error {
+  constructor(jobId: string) {
+    super(`Job "${jobId}" must be scored before it can be tracked.`);
+    this.name = "JobNotScoredError";
+  }
+}
+
 // `Application.tailored` is not a stored column — it's derived from
 // `tailoredResumeId` (non-null = a tailored résumé is linked to this
 // application), so there's exactly one source of truth for the fact instead
@@ -60,6 +75,7 @@ export interface MarkAppliedInput {
 
 export async function markApplied(input: MarkAppliedInput): Promise<Application> {
   if (!(await jobsRepo.existsById(input.jobId))) throw new UnknownJobError(input.jobId);
+  if (!(await jobsRepo.getById(input.jobId))) throw new JobNotScoredError(input.jobId);
 
   const resumeRow = await resumesRepo.getActive();
   if (!resumeRow) throw new NoActiveResumeError();
@@ -78,7 +94,7 @@ export async function markApplied(input: MarkAppliedInput): Promise<Application>
   });
 
   const joined = await applicationsRepo.getJoined(inserted.id);
-  if (!joined) throw new Error(`applications row ${inserted.id} vanished (or unscored) right after insert`);
+  if (!joined) throw new Error(`applications row ${inserted.id} vanished right after insert`);
   return toApplication(joined);
 }
 

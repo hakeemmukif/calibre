@@ -386,7 +386,8 @@ registry.registerPath({
     },
     404: { description: "Unknown job id", content: { "application/json": { schema: ErrorEnvelope } } },
     409: {
-      description: "Duplicate jobId (details: { existingId }), or no active résumé to record",
+      description:
+        "Duplicate jobId (details: { existingId }), job exists but isn't scored yet, or no active résumé to record",
       content: { "application/json": { schema: ErrorEnvelope } },
     },
     422: { description: "Invalid body", content: { "application/json": { schema: ErrorEnvelope } } },

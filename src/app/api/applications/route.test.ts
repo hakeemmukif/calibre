@@ -59,6 +59,21 @@ describe("POST /api/applications", () => {
     expect((await res.json()).error.code).toBe("CONFLICT");
   });
 
+  it("existing but unscored job -> 409 CONFLICT, no orphaned row (not in GET)", async () => {
+    const source = await insertSource(state.testDb);
+    await insertResume(state.testDb, { isActive: true });
+    const job = await insertJob(state.testDb, source.id);
+    // deliberately no insertJobScore — job exists but is unscored
+
+    const res = await POST(jsonRequest({ jobId: job.id }));
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.code).toBe("CONFLICT");
+
+    const listRes = await GET(getRequest(""));
+    expect(listRes.status).toBe(200);
+    expect((await listRes.json()).items).toHaveLength(0);
+  });
+
   it("happy path -> 201 with a stage-0 Application", async () => {
     const { job } = await setupScoredJob();
 

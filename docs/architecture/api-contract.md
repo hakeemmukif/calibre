@@ -163,7 +163,7 @@ Boundary rule everywhere: `Schema.parse(body)` at the route handler; `ZodError` 
 
 **PATCH /api/apply/answers/:id** — `{ answers: ApplicationAnswer[].min(1) }` (empty patch → 422). → `200 ApplicationAnswers` | `404`. Covers user edits and per-question regenerate/redraft after the initial `POST /api/apply/answers` — the assistant's Regenerate/edit actions persist through this route rather than mutating client-only state.
 
-**POST /api/applications** — `{ jobId, note?, tailoredResumeId?, answersId? }`. → `201 Application` (server sets `appliedAt`, `stage: 0`, `statusLabel/statusTone` via `features/applied/status-map.ts`). **Idempotency: unique on `jobId`** → duplicate `409 CONFLICT` with `details: { existingId }`.
+**POST /api/applications** — `{ jobId, note?, tailoredResumeId?, answersId? }`. → `201 Application` (server sets `appliedAt`, `stage: 0`, `statusLabel/statusTone` via `features/applied/status-map.ts`). **Idempotency: unique on `jobId`** → duplicate `409 CONFLICT` with `details: { existingId }`. `404` unknown job id; `409 CONFLICT` if the job exists but has no `job_scores` row yet (a job must be scored before it can be tracked — `Application.score` has no other source).
 
 **GET /api/applications** — query `stage?`, `statusTone?`, `cursor?`, `limit?`. → `200 { items: Application[], nextCursor }`.
 

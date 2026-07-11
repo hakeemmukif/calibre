@@ -6,9 +6,8 @@ import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
 
-const { markApplied, listApplications, patchApplication, UnknownJobError, NoActiveResumeError } = await import(
-  "./index"
-);
+const { markApplied, listApplications, patchApplication, UnknownJobError, NoActiveResumeError, JobNotScoredError } =
+  await import("./index");
 const { ApplicationConflictError } = await import("@/server/persistence/repos/applications");
 const { createTailoredResumesRepo } = await import("@/server/persistence/repos/tailoredResumes");
 
@@ -77,6 +76,18 @@ describe("server/tracker", () => {
 
       const app = await markApplied({ jobId: job.id, tailoredResumeId: tailoredResume.id });
       expect(app.tailored).toBe(true);
+    });
+
+    it("existing but unscored job -> clean error, no orphaned application row", async () => {
+      const source = await insertSource(state.testDb);
+      await insertResume(state.testDb, { isActive: true });
+      const job = await insertJob(state.testDb, source.id);
+      // deliberately no insertJobScore — job exists but is unscored
+
+      await expect(markApplied({ jobId: job.id })).rejects.toThrow(JobNotScoredError);
+
+      const rows = await state.testDb.select().from(applications);
+      expect(rows).toHaveLength(0);
     });
 
     it("duplicate jobId -> ApplicationConflictError with existingId", async () => {

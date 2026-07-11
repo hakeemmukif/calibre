@@ -1122,7 +1122,7 @@
                 }
               }
             },
-            "description": "Duplicate jobId (details: { existingId }), or no active résumé to record"
+            "description": "Duplicate jobId (details: { existingId }), job exists but isn't scored yet, or no active résumé to record"
           },
           "422": {
             "content": {
