@@ -3,6 +3,7 @@
 // "GET /api/tailor/:id/pdf"). Real Chromium is never launched in tests —
 // they mock "@/lib/pdf" (see src/lib/pdf.ts's deferred base-image gate note).
 import { NextRequest, NextResponse } from "next/server";
+import { isUuid } from "@/server/http/params";
 import { RunNotReadyError, UnknownTailorIdError, renderTailorPdf } from "@/server/tailor";
 import type { ErrorEnvelope } from "@/types";
 
@@ -13,6 +14,9 @@ function errorResponse(status: number, code: ErrorEnvelope["error"]["code"], mes
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (!isUuid(id)) {
+    return errorResponse(404, "NOT_FOUND", `No tailor run with id "${id}".`);
+  }
 
   try {
     const pdf = await renderTailorPdf(id);

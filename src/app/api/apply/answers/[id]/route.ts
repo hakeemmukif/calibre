@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z, ZodError } from "zod";
 import { UnknownAnswersIdError, patchAnswers } from "@/server/apply-assistant/answer";
+import { isUuid } from "@/server/http/params";
 import { ApplicationAnswer, type ErrorEnvelope } from "@/types";
 
 const RequestBody = z.object({ answers: z.array(ApplicationAnswer).min(1) });
@@ -16,6 +17,9 @@ function errorResponse(status: number, code: ErrorEnvelope["error"]["code"], mes
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (!isUuid(id)) {
+    return errorResponse(404, "NOT_FOUND", `No answers with id "${id}".`);
+  }
 
   let json: unknown;
   try {

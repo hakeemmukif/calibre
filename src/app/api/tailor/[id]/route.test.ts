@@ -98,6 +98,13 @@ describe("GET /api/tailor/:id", () => {
     expect((await res.json()).error.code).toBe("NOT_FOUND");
   });
 
+  it("a malformed (non-uuid) id returns 404 NOT_FOUND, never a 500", async () => {
+    const id = "not-a-uuid";
+    const res = await GET(getRequest(id), { params: Promise.resolve({ id }) });
+    expect(res.status).toBe(404);
+    expect((await res.json()).error.code).toBe("NOT_FOUND");
+  });
+
   it("returns a 200 JSON snapshot by default", async () => {
     const source = await insertSource(state.testDb);
     const job = await insertJob(state.testDb, source.id);

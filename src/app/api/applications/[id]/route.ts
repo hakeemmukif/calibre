@@ -3,6 +3,7 @@
 // (api-contract.md §3 "PATCH /api/applications/:id").
 import { NextRequest, NextResponse } from "next/server";
 import { z, ZodError } from "zod";
+import { isUuid } from "@/server/http/params";
 import { patchApplication } from "@/server/tracker";
 import type { ErrorEnvelope } from "@/types";
 
@@ -28,6 +29,9 @@ function errorResponse(status: number, code: ErrorEnvelope["error"]["code"], mes
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (!isUuid(id)) {
+    return errorResponse(404, "NOT_FOUND", `No application with id "${id}".`);
+  }
 
   let json: unknown;
   try {

@@ -3,6 +3,7 @@
 // src/app/api/search/[id]/route.ts exactly; tailor never emits a `job` event
 // (search-only per the SseEvent comment in src/types).
 import { NextRequest, NextResponse } from "next/server";
+import { isUuid } from "@/server/http/params";
 import { get as getRunHandle } from "@/server/runs/registry";
 import { tailoredResumesRepo } from "@/server/persistence/repos/tailoredResumes";
 import { toTailoredResume } from "@/server/tailor/assemble";
@@ -19,6 +20,9 @@ function sseLine(eventName: string, data: unknown, eventId: number): string {
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (!isUuid(id)) {
+    return errorResponse(404, "NOT_FOUND", `No tailor run with id "${id}".`);
+  }
   const row = await tailoredResumesRepo.getById(id);
   if (!row) {
     return errorResponse(404, "NOT_FOUND", `No tailor run with id "${id}".`);

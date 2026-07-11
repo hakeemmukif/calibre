@@ -47,6 +47,12 @@ describe("PATCH /api/applications/:id", () => {
     expect((await res.json()).error.code).toBe("NOT_FOUND");
   });
 
+  it("a malformed (non-uuid) id returns 404 NOT_FOUND, never a 500", async () => {
+    const res = await PATCH(jsonRequest({ note: "x" }), params("not-a-uuid"));
+    expect(res.status).toBe(404);
+    expect((await res.json()).error.code).toBe("NOT_FOUND");
+  });
+
   it("happy path: stage move re-folds status -> 200", async () => {
     const source = await insertSource(state.testDb);
     const resume = await insertResume(state.testDb, { isActive: true });

@@ -54,6 +54,13 @@ describe("POST /api/tailor/:id/finalize", () => {
     expect((await res.json()).error.code).toBe("NOT_FOUND");
   });
 
+  it("a malformed (non-uuid) id returns 404 NOT_FOUND, never a 500", async () => {
+    const id = "not-a-uuid";
+    const res = await POST(postRequest(id, { acceptedIndices: [] }), { params: Promise.resolve({ id }) });
+    expect(res.status).toBe(404);
+    expect((await res.json()).error.code).toBe("NOT_FOUND");
+  });
+
   it("409 RUN_NOT_READY before completion", async () => {
     const { tailoredResumesRepo } = await import("@/server/persistence/repos/tailoredResumes");
     const source = await insertSource(state.testDb);

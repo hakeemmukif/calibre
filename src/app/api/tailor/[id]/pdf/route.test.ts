@@ -64,6 +64,13 @@ describe("GET /api/tailor/:id/pdf", () => {
     expect((await res.json()).error.code).toBe("NOT_FOUND");
   });
 
+  it("a malformed (non-uuid) id returns 404 NOT_FOUND, never a 500", async () => {
+    const id = "not-a-uuid";
+    const res = await GET(getPdfRequest(id), { params: Promise.resolve({ id }) });
+    expect(res.status).toBe(404);
+    expect((await res.json()).error.code).toBe("NOT_FOUND");
+  });
+
   it("409 RUN_NOT_READY before finalize (even once the tailor run has completed)", async () => {
     const { tailoredResumesRepo } = await import("@/server/persistence/repos/tailoredResumes");
     const source = await insertSource(state.testDb);

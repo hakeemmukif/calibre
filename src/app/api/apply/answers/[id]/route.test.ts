@@ -49,6 +49,15 @@ describe("PATCH /api/apply/answers/:id", () => {
     expect((await res.json()).error.code).toBe("NOT_FOUND");
   });
 
+  it("a malformed (non-uuid) id returns 404 NOT_FOUND, never a 500", async () => {
+    const res = await PATCH(
+      jsonRequest({ answers: [{ questionId: "q1", prompt: "x", answer: "y", grounding: [] }] }),
+      params("not-a-uuid"),
+    );
+    expect(res.status).toBe(404);
+    expect((await res.json()).error.code).toBe("NOT_FOUND");
+  });
+
   it("happy path -> 200 with the replaced answer set", async () => {
     const source = await insertSource(state.testDb);
     const job = await insertJob(state.testDb, source.id);
