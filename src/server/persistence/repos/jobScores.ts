@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, gte, sql } from "drizzle-orm";
 import { getDb } from "../db";
 import { jobScores } from "../schema";
 import type { Db } from "./db";
@@ -20,6 +20,7 @@ export function createJobScoresRepo(db: Db) {
           set: {
             score: row.score,
             verdict: row.verdict,
+            why: row.why,
             legitimacy: row.legitimacy,
             liveness: row.liveness,
             breakdown: row.breakdown,
@@ -39,10 +40,20 @@ export function createJobScoresRepo(db: Db) {
       const [row] = await db.select().from(jobScores).where(eq(jobScores.id, id)).limit(1);
       return row ?? null;
     },
+    // system-architecture.md §6 decision 8 "daily cap env var" — server/search/run.ts
+    // sums today's spend across ALL runs before scoring another job this run.
+    async sumCostUsdSince(cutoff: Date): Promise<number> {
+      const [row] = await db
+        .select({ total: sql<string | null>`sum(${jobScores.costUsd})` })
+        .from(jobScores)
+        .where(gte(jobScores.createdAt, cutoff));
+      return row?.total ? Number(row.total) : 0;
+    },
   };
 }
 
 export const jobScoresRepo: ReturnType<typeof createJobScoresRepo> = {
   upsertByJobResumePolicy: (row) => createJobScoresRepo(getDb()).upsertByJobResumePolicy(row),
   getById: (id) => createJobScoresRepo(getDb()).getById(id),
+  sumCostUsdSince: (cutoff) => createJobScoresRepo(getDb()).sumCostUsdSince(cutoff),
 };

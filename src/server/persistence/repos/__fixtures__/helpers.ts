@@ -15,6 +15,7 @@ export async function insertSource(db: Db, overrides: Partial<typeof sources.$in
     .insert(sources)
     .values({
       id: unique("source"),
+      name: "Test Source",
       kind: "ats",
       persona: "remote",
       enabled: true,
@@ -80,6 +81,7 @@ export async function insertJobScore(
       resumeId,
       score: 4.2,
       verdict: "Apply",
+      why: "Strong overlap with recent backend experience.",
       legitimacy: { tier: "clear", tone: "good", summary: "Looks fine.", signals: [] },
       liveness: "active",
       breakdown: [],

@@ -1,11 +1,36 @@
 import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { makeMockLlm } from "@/lib/llm/mock";
 import { insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
 import { createSearchRunsRepo, type SearchRunRow } from "@/server/persistence/repos/searchRuns";
-import { jobs, resumes, searchRuns, sources } from "@/server/persistence/schema";
+import { jobs, jobScores, resumes, searchRuns, sources } from "@/server/persistence/schema";
 import type { SourceRow } from "@/server/persistence/repos/sources";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import type { RawPosting, SourceConnector } from "./connector";
+
+// Scoring is wired into the run (B6) — every startSearch() call that
+// actually upserts a matched job reaches scoreTopCandidates, which needs an
+// LlmClient. No network in tests: a scripted mock covering both stages.
+const testLlm = makeMockLlm({
+  "jd-extract": {
+    title: "Data Engineer",
+    mustHaves: ["SQL"],
+    niceToHaves: [],
+    responsibilities: ["Build pipelines"],
+    redFlags: [],
+  },
+  "match-score": {
+    score: 4.1,
+    verdict: "Apply",
+    why: "Strong data engineering overlap.",
+    breakdown: [{ label: "Skills", value: 4.5 }],
+    fit: [{ k: "SQL", v: "5 years" }],
+    gaps: [],
+    reasons: { for: ["Matches stack"], against: [] },
+    legitimacy: { tier: "High Confidence", summary: "Established company.", signals: [] },
+    lowConfidence: false,
+  },
+});
 
 async function findJobByDedupeKey(db: TestDb, dedupeKey: string) {
   const [row] = await db.select().from(jobs).where(eq(jobs.dedupeKey, dedupeKey)).limit(1);
@@ -14,6 +39,9 @@ async function findJobByDedupeKey(db: TestDb, dedupeKey: string) {
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
+// No real liveness probe (no network in tests) — scoreTopCandidates calls
+// this for every candidate it scores.
+vi.mock("@/server/score/liveness", () => ({ probeLivenessDeep: vi.fn().mockResolvedValue("active") }));
 
 const { startSearch, ActiveRunConflictError, NoActiveResumeError, UnknownSourceIdsError } = await import("./run");
 const { __resetForTests, get: getRunHandle, getActiveRunForPersona } = await import("@/server/runs/registry");
@@ -77,7 +105,8 @@ describe("startSearch", () => {
     __resetForTests();
     // Every test shares one PGlite instance (beforeAll) — without this, a
     // later test's listEnabledByPersona("remote") would also see earlier
-    // tests' source rows.
+    // tests' source rows. job_scores (B6) FKs jobs, so it must go first.
+    await state.testDb.delete(jobScores);
     await state.testDb.delete(jobs);
     await state.testDb.delete(searchRuns);
     await state.testDb.delete(sources);
@@ -112,6 +141,7 @@ describe("startSearch", () => {
         concurrency: 5,
         connectorTimeoutMs: 500,
         hardRunTimeoutMs: 3000,
+        llm: testLlm,
         connectorForSource: (source) =>
           source.id === "src-good"
             ? stubConnector(source, [matching, nonMatching])
@@ -126,6 +156,8 @@ describe("startSearch", () => {
     expect(finalRow.status).toBe("completed");
     expect(finalRow.stats.scanned).toBe(2);
     expect(finalRow.stats.matched).toBe(1);
+    expect(finalRow.stats.scored).toBe(1);
+    expect(finalRow.stats.worth).toBe(1); // testLlm's canned verdict is "Apply"
     expect(finalRow.stats.perSource).toEqual(
       expect.arrayContaining([
         { sourceId: "src-good", found: 2, errors: 0 },
@@ -259,6 +291,7 @@ describe("startSearch", () => {
 
     let boardYields: RawPosting[] = [];
     const deps = {
+      llm: testLlm,
       connectorForSource: (source: SourceRow) =>
         source.id === "src-ats" ? stubConnector(source, [atsPosting]) : stubConnector(source, boardYields),
     };
@@ -288,5 +321,55 @@ describe("startSearch", () => {
 
     const afterRun3 = await findJobByDedupeKey(state.testDb, dedupeKey);
     expect(afterRun3?.aliases).toEqual([{ sourceId: "src-board", url: boardPosting.url }]);
+  });
+
+  it("B6 integration: scores top-N candidates and streams ordered progress(score/legitimacy)…job…done SSE, with stats.worth/ghosts populated", async () => {
+    const runsRepo = createSearchRunsRepo(state.testDb);
+    await insertResume(state.testDb, { ...resumeFixture, isActive: true });
+    const good = await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
+
+    const posting: RawPosting = {
+      sourceId: good.id,
+      url: "https://example.com/jobs/integration",
+      title: "Data Engineer",
+      company: "Acme",
+      location: "Remote",
+    };
+
+    const runPromise = startSearch(
+      { persona: "remote" },
+      { llm: testLlm, connectorForSource: (source) => stubConnector(source, [posting]) },
+    );
+    const reservedId = getActiveRunForPersona("remote")!;
+    const handle = getRunHandle(reservedId)!;
+    const events: { event: string; data: unknown }[] = [];
+    handle.subscribe((event) => events.push({ event: event.event, data: event.data }));
+
+    const run = await runPromise;
+    const finalRow = await waitForTerminal(runsRepo, run.id);
+
+    expect(finalRow.status).toBe("completed");
+    expect(finalRow.stats.scored).toBe(1);
+    expect(finalRow.stats.worth).toBe(1);
+    expect(finalRow.stats.ghosts).toBe(0);
+
+    const order = events.map((e) => e.event);
+    // progress(sources) ... progress(fetch) ... progress(score)×k ... job ... progress(legitimacy) ... done
+    expect(order[0]).toBe("progress");
+    expect(order[order.length - 1]).toBe("done");
+    expect(order).toContain("job");
+    const jobIndex = order.indexOf("job");
+    const legitimacyIndex = events.findIndex(
+      (e) => e.event === "progress" && (e.data as { stage: string }).stage === "legitimacy",
+    );
+    expect(legitimacyIndex).toBeGreaterThan(jobIndex);
+    expect(order[order.length - 2]).toBe("progress"); // legitimacy stage right before done
+
+    const scoreStages = events.filter((e) => e.event === "progress" && (e.data as { stage: string }).stage === "score");
+    expect(scoreStages.length).toBeGreaterThan(0);
+
+    const jobEvent = events.find((e) => e.event === "job")!;
+    expect((jobEvent.data as { verdict: string }).verdict).toBe("Apply");
+    expect((jobEvent.data as { legitimacy: { tier: string } }).legitimacy.tier).toBe("clear");
   });
 });

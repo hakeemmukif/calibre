@@ -981,6 +981,169 @@
         "summary": "Health check"
       }
     },
+    "/api/jobs": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "persona",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/Persona"
+            }
+          },
+          {
+            "description": "repeatable",
+            "in": "query",
+            "name": "tier",
+            "required": false,
+            "schema": {
+              "description": "repeatable",
+              "items": {
+                "$ref": "#/components/schemas/LegitimacyTier"
+              },
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "minScore",
+            "required": false,
+            "schema": {
+              "maximum": 5,
+              "minimum": 0,
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "isNew",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "remote",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "default 25",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "description": "default 25",
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "items": {
+                      "items": {
+                        "$ref": "#/components/schemas/Job"
+                      },
+                      "type": "array"
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "stats": {
+                      "$ref": "#/components/schemas/SummaryStripStats"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "nextCursor",
+                    "stats"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Page of scored jobs + hero stats computed server-side over the full scoped set"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unknown query parameter or invalid value"
+          }
+        },
+        "summary": "Scored feed — filterable, cursored — F2 (B6)"
+      }
+    },
+    "/api/jobs/{id}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            },
+            "description": "The frozen Job (no separate detail entity)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unknown job id"
+          }
+        },
+        "summary": "Single job incl. applyUrl — F2/F3 (B6)"
+      }
+    },
     "/api/resume": {
       "get": {
         "responses": {
@@ -1173,7 +1336,7 @@
                 }
               }
             },
-            "description": "JSON snapshot, or an SSE stream of progress/done/error (never job — discovery only, B6 scores)"
+            "description": "JSON snapshot, or an SSE stream of progress/job/done/error (search scores top-N candidates and streams each as a `job` event — B6)"
           },
           "404": {
             "content": {

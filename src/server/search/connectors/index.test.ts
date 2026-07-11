@@ -5,6 +5,7 @@ import { connectorForSource } from "./index";
 function source(id: string, overrides: Partial<SourceRow> = {}): SourceRow {
   return {
     id,
+    name: id,
     kind: "ats",
     persona: "remote",
     enabled: true,

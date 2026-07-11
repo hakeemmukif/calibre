@@ -55,6 +55,11 @@ export const Job = z.object({                        // §5 frozen + §11.8 exte
   gaps: z.array(z.object({ tone: z.enum(['warn','ok']), k: z.string(), v: z.string() })),
   legitimacy: Legitimacy,
   applyUrl: z.string().url(),                        // F3: the canonical posting URL
+  // Assembly rule (features/feed/assemble.ts, B6): applyUrl = jobs.applyUrl ?? jobs.url —
+  // jobs.applyUrl is the nullable resolved-redirect (set on fetchDetail, F3 hard problem
+  // "Apply-URL capture"); jobs.url is the always-present canonical posting URL. This is a
+  // documented fallback, not a silent default: a job with no resolved redirect yet still
+  // gets a valid applyUrl from its own canonical listing URL.
   source: SourceRef, persona: Persona,
   firstSeen: z.string().datetime(), isNew: z.boolean(),
 });

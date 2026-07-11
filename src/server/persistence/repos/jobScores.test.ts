@@ -16,6 +16,7 @@ describe("jobScoresRepo", () => {
       resumeId: resume.id,
       score: 4,
       verdict: "Apply",
+      why: "Matches core stack.",
       legitimacy: { tier: "clear", tone: "good", summary: "x", signals: [] },
       liveness: "active",
       breakdown: [],
@@ -45,6 +46,7 @@ describe("jobScoresRepo", () => {
       jobId: job.id,
       resumeId: resume.id,
       verdict: "Apply" as const,
+      why: "Matches core stack.",
       legitimacy: { tier: "clear" as const, tone: "good" as const, summary: "x", signals: [] },
       liveness: "active" as const,
       breakdown: [],
@@ -64,5 +66,40 @@ describe("jobScoresRepo", () => {
     expect(second.id).toBe(first.id);
     expect(second.score).toBe(4.8);
     expect(second.escalated).toBe(true);
+  });
+
+  it("sumCostUsdSince sums only rows created at/after the cutoff", async () => {
+    const db = await createTestDb();
+    const repo = createJobScoresRepo(db);
+    const source = await insertSource(db);
+    const resume = await insertResume(db);
+    const jobA = await insertJob(db, source.id, { dedupeKey: "dk-cost-a", url: "https://example.com/cost-a" });
+    const jobB = await insertJob(db, source.id, { dedupeKey: "dk-cost-b", url: "https://example.com/cost-b" });
+
+    const base = {
+      resumeId: resume.id,
+      verdict: "Apply" as const,
+      why: "x",
+      legitimacy: { tier: "clear" as const, tone: "good" as const, summary: "x", signals: [] },
+      liveness: "active" as const,
+      breakdown: [],
+      reasons: { for: [], against: [] },
+      fit: [],
+      gaps: [],
+      jdFacts: {},
+      model: "m1",
+      escalated: false,
+      policyVersion: "v1",
+      score: 4,
+    };
+
+    await repo.upsertByJobResumePolicy({ ...base, jobId: jobA.id, costUsd: 0.01 });
+    await repo.upsertByJobResumePolicy({ ...base, jobId: jobB.id, costUsd: 0.02 });
+
+    const total = await repo.sumCostUsdSince(new Date("2000-01-01T00:00:00.000Z"));
+    expect(total).toBeCloseTo(0.03);
+
+    const none = await repo.sumCostUsdSince(new Date("2999-01-01T00:00:00.000Z"));
+    expect(none).toBe(0);
   });
 });

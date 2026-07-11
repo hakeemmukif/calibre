@@ -34,7 +34,14 @@ type LegitimacyShape = {
 };
 
 type PerSourceStat = { sourceId: string; found: number; errors: number };
-type SearchRunStats = { scanned: number; matched: number; scored: number; ghosts: number; perSource: PerSourceStat[] };
+type SearchRunStats = {
+  scanned: number;
+  matched: number;
+  scored: number;
+  worth: number; // B6 addition: Apply/Consider verdict count, feeds toSearchRun's stats.worth
+  ghosts: number;
+  perSource: PerSourceStat[];
+};
 
 type ApplicationAnswerEntry = {
   questionId: string;
@@ -55,6 +62,7 @@ type TailoredResumeDiffEntry = {
 
 export const sources = pgTable("sources", {
   id: text("id").primaryKey(), // natural key: 'greenhouse' | 'lever' | 'ashby' | 'jobstreet' | ...
+  name: text("name").notNull(), // display label for Job.source.name (SourceRef) — B6 addition, no prior home
   kind: text("kind", { enum: ["ats", "board"] }).notNull(),
   persona: text("persona", { enum: ["remote", "local", "both"] }).notNull(),
   enabled: boolean("enabled").notNull(),
@@ -113,6 +121,7 @@ export const jobScores = pgTable(
     resumeId: uuid("resume_id").notNull().references(() => resumes.id),
     score: numeric("score", { precision: 3, scale: 1, mode: "number" }).notNull(),
     verdict: text("verdict", { enum: ["Apply", "Consider", "Research first", "Skip"] }).notNull(),
+    why: text("why").notNull(), // frozen Job.why — one-line rationale, part of EvalScores model output (B6 addition)
     legitimacy: jsonb("legitimacy").$type<LegitimacyShape>().notNull(),
     liveness: text("liveness", { enum: ["active", "expired", "uncertain"] }).notNull(),
     breakdown: jsonb("breakdown").$type<BreakdownEntry[]>().notNull(),

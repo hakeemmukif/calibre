@@ -75,7 +75,7 @@ describe("run registry", () => {
   it("markStaleRunningOnBoot flips a leftover 'running' row to 'failed' and leaves others untouched", async () => {
     const repo = createSearchRunsRepo(state.testDb);
     const resume = await insertResume(state.testDb);
-    const base = { resumeId: resume.id, personas: ["remote" as const], stats: { scanned: 0, matched: 0, scored: 0, ghosts: 0, perSource: [] } };
+    const base = { resumeId: resume.id, personas: ["remote" as const], stats: { scanned: 0, matched: 0, scored: 0, worth: 0, ghosts: 0, perSource: [] } };
 
     const running = await repo.insert({ ...base, status: "running" });
     const completed = await repo.insert({ ...base, status: "completed" });

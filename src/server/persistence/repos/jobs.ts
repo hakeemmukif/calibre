@@ -1,17 +1,20 @@
 import { and, desc, eq, gte, ilike, inArray, or, sql } from "drizzle-orm";
 import { getDb } from "../db";
-import { jobs, jobScores, type JobAlias } from "../schema";
+import { jobs, jobScores, sources, type JobAlias } from "../schema";
 import type { Db } from "./db";
 
 export type NewJob = typeof jobs.$inferInsert;
 export type JobRow = typeof jobs.$inferSelect;
 export type JobScoreRow = typeof jobScores.$inferSelect;
+export type SourceRow = typeof sources.$inferSelect;
 
-// Raw jobs⋈job_scores pair — deliberately unflattened. Turning this into the
-// frozen `Job` wire shape (applyUrl fallback, `source`, `isNew`, tags/etc.) is
-// `features/feed/assemble.ts`'s job (see phase-b-backend.md B6), not the
-// repo's — B1 only supplies the joined rows a later slice assembles.
-export type JobJoinScore = { job: JobRow; score: JobScoreRow };
+// Raw jobs⋈job_scores⋈sources triple — deliberately unflattened. Turning this
+// into the frozen `Job` wire shape (applyUrl fallback, `source` SourceRef,
+// `isNew`, tags/etc.) is `features/feed/assemble.ts`'s job (see
+// phase-b-backend.md B6), not the repo's. `source` was added by B6 —
+// `Job.source: SourceRef` needs the sources row (name/kind/persona), which a
+// {job,score} pair alone can't supply.
+export type JobJoinScore = { job: JobRow; score: JobScoreRow; source: SourceRow };
 
 export type JobsQuery = {
   persona?: "remote" | "local";
@@ -58,6 +61,25 @@ function latestJobScores(db: Db) {
     .as("latest_job_scores");
 }
 
+// Shared by listScored (paginated page) and statsForQuery (full scoped set,
+// task-B6-brief.md "stats computed server-side over the FULL scoped result
+// set, not the page") — same filters, no cursor/limit (those are page-only).
+function buildFilterConditions(q: Omit<JobsQuery, "cursor" | "limit">) {
+  const conditions = [];
+  if (q.persona) conditions.push(eq(jobs.persona, q.persona));
+  if (q.remote) conditions.push(eq(jobs.persona, "remote"));
+  if (q.tier && q.tier.length > 0) {
+    conditions.push(inArray(sql`(${jobScores.legitimacy}->>'tier')`, q.tier));
+  }
+  if (q.minScore !== undefined) conditions.push(gte(jobScores.score, q.minScore));
+  if (q.isNew) conditions.push(gte(jobs.firstSeenAt, q.isNew));
+  if (q.q) {
+    const like = `%${q.q}%`;
+    conditions.push(or(ilike(jobs.title, like), ilike(jobs.company, like)));
+  }
+  return conditions;
+}
+
 // {sourceId,url}-deduped union — a re-sighting from a source already present
 // among the aliases refreshes nothing (idempotent); a new source's alias is
 // added. Never drops a previously-recorded alias (task-B5-brief.md alias-
@@ -95,19 +117,8 @@ export function createJobsRepo(db: Db) {
 
     async listScored(q: JobsQuery): Promise<{ items: JobJoinScore[]; nextCursor: string | null }> {
       const limit = q.limit ?? DEFAULT_LIMIT;
-      const conditions = [];
+      const conditions = buildFilterConditions(q);
 
-      if (q.persona) conditions.push(eq(jobs.persona, q.persona));
-      if (q.remote) conditions.push(eq(jobs.persona, "remote"));
-      if (q.tier && q.tier.length > 0) {
-        conditions.push(inArray(sql`(${jobScores.legitimacy}->>'tier')`, q.tier));
-      }
-      if (q.minScore !== undefined) conditions.push(gte(jobScores.score, q.minScore));
-      if (q.isNew) conditions.push(gte(jobs.firstSeenAt, q.isNew));
-      if (q.q) {
-        const like = `%${q.q}%`;
-        conditions.push(or(ilike(jobs.title, like), ilike(jobs.company, like)));
-      }
       if (q.cursor) {
         const c = decodeCursor(q.cursor);
         conditions.push(
@@ -118,10 +129,11 @@ export function createJobsRepo(db: Db) {
       const latest = latestJobScores(db);
 
       const rows = await db
-        .select({ job: jobs, score: jobScores })
+        .select({ job: jobs, score: jobScores, source: sources })
         .from(jobs)
         .innerJoin(jobScores, eq(jobScores.jobId, jobs.id))
         .innerJoin(latest, eq(latest.id, jobScores.id))
+        .innerJoin(sources, eq(sources.id, jobs.sourceId))
         .where(conditions.length > 0 ? and(...conditions) : undefined)
         .orderBy(desc(jobs.firstSeenAt), desc(jobs.id))
         .limit(limit + 1);
@@ -135,13 +147,50 @@ export function createJobsRepo(db: Db) {
     async getById(id: string): Promise<JobJoinScore | null> {
       const latest = latestJobScores(db);
       const [row] = await db
-        .select({ job: jobs, score: jobScores })
+        .select({ job: jobs, score: jobScores, source: sources })
         .from(jobs)
         .innerJoin(jobScores, eq(jobScores.jobId, jobs.id))
         .innerJoin(latest, eq(latest.id, jobScores.id))
+        .innerJoin(sources, eq(sources.id, jobs.sourceId))
         .where(eq(jobs.id, id))
         .limit(1);
       return row ?? null;
+    },
+
+    // task-B6-brief.md "stats computed server-side over the FULL scoped
+    // result set, not the page" — same filters as listScored, no
+    // cursor/limit. Aggregated in JS rather than SQL COUNT FILTER: dataset
+    // size is single-operator-MVP small, and it keeps the jsonb->>'tier'
+    // comparison logic in one place (buildFilterConditions / tier strings)
+    // instead of duplicating it as raw SQL CASE expressions.
+    async statsForQuery(
+      q: Omit<JobsQuery, "cursor" | "limit">,
+      sinceLastCutoff?: Date | null,
+    ): Promise<{ scanned: number; worth: number; ghosts: number; flagged: number; sinceLast: number }> {
+      const conditions = buildFilterConditions(q);
+      const latest = latestJobScores(db);
+
+      const rows = await db
+        .select({
+          verdict: jobScores.verdict,
+          tier: sql<string>`(${jobScores.legitimacy}->>'tier')`,
+          firstSeenAt: jobs.firstSeenAt,
+        })
+        .from(jobs)
+        .innerJoin(jobScores, eq(jobScores.jobId, jobs.id))
+        .innerJoin(latest, eq(latest.id, jobScores.id))
+        .where(conditions.length > 0 ? and(...conditions) : undefined);
+
+      const worthVerdicts = new Set(["Apply", "Consider"]);
+      const flaggedTiers = new Set(["suspicious", "ghost", "scam"]);
+
+      return {
+        scanned: rows.length,
+        worth: rows.filter((r) => worthVerdicts.has(r.verdict)).length,
+        ghosts: rows.filter((r) => r.tier === "ghost").length,
+        flagged: rows.filter((r) => flaggedTiers.has(r.tier)).length,
+        sinceLast: sinceLastCutoff ? rows.filter((r) => r.firstSeenAt > sinceLastCutoff).length : 0,
+      };
     },
   };
 }
@@ -150,4 +199,5 @@ export const jobsRepo: ReturnType<typeof createJobsRepo> = {
   upsertByDedupeKey: (row) => createJobsRepo(getDb()).upsertByDedupeKey(row),
   listScored: (q) => createJobsRepo(getDb()).listScored(q),
   getById: (id) => createJobsRepo(getDb()).getById(id),
+  statsForQuery: (q, sinceLastCutoff) => createJobsRepo(getDb()).statsForQuery(q, sinceLastCutoff),
 };

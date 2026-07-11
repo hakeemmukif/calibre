@@ -5,6 +5,7 @@ import { createLeverConnector } from "./lever";
 function source(overrides: Partial<SourceRow> = {}): SourceRow {
   return {
     id: "lever",
+    name: "Lever",
     kind: "ats",
     persona: "remote",
     enabled: true,

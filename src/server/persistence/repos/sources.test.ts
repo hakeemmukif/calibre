@@ -9,6 +9,7 @@ describe("sourcesRepo", () => {
 
     const inserted = await repo.insert({
       id: "greenhouse",
+      name: "Greenhouse",
       kind: "ats",
       persona: "remote",
       enabled: true,
@@ -24,10 +25,10 @@ describe("sourcesRepo", () => {
     const db = await createTestDb();
     const repo = createSourcesRepo(db);
 
-    await repo.insert({ id: "greenhouse", kind: "ats", persona: "remote", enabled: true, config: {} });
-    await repo.insert({ id: "jobstreet", kind: "board", persona: "local", enabled: true, config: {} });
-    await repo.insert({ id: "everywhere", kind: "board", persona: "both", enabled: true, config: {} });
-    await repo.insert({ id: "disabled-remote", kind: "ats", persona: "remote", enabled: false, config: {} });
+    await repo.insert({ id: "greenhouse", name: "Greenhouse", kind: "ats", persona: "remote", enabled: true, config: {} });
+    await repo.insert({ id: "jobstreet", name: "JobStreet", kind: "board", persona: "local", enabled: true, config: {} });
+    await repo.insert({ id: "everywhere", name: "Everywhere", kind: "board", persona: "both", enabled: true, config: {} });
+    await repo.insert({ id: "disabled-remote", name: "Disabled Remote", kind: "ats", persona: "remote", enabled: false, config: {} });
 
     const remote = await repo.listEnabledByPersona("remote");
     expect(remote.map((r) => r.id).sort()).toEqual(["everywhere", "greenhouse"]);

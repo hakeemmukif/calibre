@@ -160,13 +160,54 @@ registry.registerPath({
   request: { params: z.object({ id: z.string() }) },
   responses: {
     200: {
-      description: "JSON snapshot, or an SSE stream of progress/done/error (never job — discovery only, B6 scores)",
+      description:
+        "JSON snapshot, or an SSE stream of progress/job/done/error (search scores top-N candidates and streams each as a `job` event — B6)",
       content: {
         "application/json": { schema: SearchRun },
         "text/event-stream": { schema: SseEvent },
       },
     },
     404: { description: "Unknown run id", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/jobs",
+  summary: "Scored feed — filterable, cursored — F2 (B6)",
+  request: {
+    query: z.object({
+      persona: Persona.optional(),
+      tier: z.array(LegitimacyTier).optional().describe("repeatable"),
+      minScore: z.number().min(0).max(5).optional(),
+      isNew: z.boolean().optional(),
+      remote: z.boolean().optional(),
+      q: z.string().optional(),
+      cursor: z.string().optional(),
+      limit: z.number().int().min(1).max(100).optional().describe("default 25"),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Page of scored jobs + hero stats computed server-side over the full scoped set",
+      content: {
+        "application/json": {
+          schema: z.object({ items: z.array(Job), nextCursor: z.string().nullable(), stats: SummaryStripStats }),
+        },
+      },
+    },
+    422: { description: "Unknown query parameter or invalid value", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/jobs/{id}",
+  summary: "Single job incl. applyUrl — F2/F3 (B6)",
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: { description: "The frozen Job (no separate detail entity)", content: { "application/json": { schema: Job } } },
+    404: { description: "Unknown job id", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
 

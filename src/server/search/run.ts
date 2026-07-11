@@ -1,20 +1,30 @@
-// F2 discovery run (system-architecture.md §4 "F2 Search+score" discovery
-// half, §6 decision 2 "inline async ... in-memory run registry ... hard
-// runtime cap"). B5 scope only: fan out over connectors, role-fuzzy-match
-// pre-filter, dedupe/alias-merge, upsert `jobs`. NO scoring, NO `job` SSE
-// events — B6 adds those.
+// F2 discovery + scoring run (system-architecture.md §4 "F2 Search+score",
+// §6 decision 2 "inline async ... in-memory run registry ... hard runtime
+// cap", decision 8 "cost cap"). B5 built discovery (fan out, role-fuzzy-match
+// pre-filter, dedupe/alias-merge, upsert `jobs`); B6 adds scoring: top-N
+// candidates -> scoreJob -> assembled `Job` streamed as the `job` SSE event
+// B5 deferred, plus the `score`/`legitimacy` progress stages and
+// `stats.worth`/`ghosts`.
 import pLimit from "p-limit";
-import { jobsRepo } from "@/server/persistence/repos/jobs";
+import type { LlmClient } from "@/lib/llm/client";
+import { getLlm } from "@/lib/llm/client";
+import { assembleJob } from "@/features/feed/assemble";
+import { jobsRepo, type JobRow } from "@/server/persistence/repos/jobs";
+import { jobScoresRepo } from "@/server/persistence/repos/jobScores";
 import { resumesRepo, type ResumeRow } from "@/server/persistence/repos/resumes";
 import { searchRunsRepo, type SearchRunRow } from "@/server/persistence/repos/searchRuns";
 import { sourcesRepo, type SourceRow } from "@/server/persistence/repos/sources";
 import { create, release, getActiveRunForPersona, type RunHandle } from "@/server/runs/registry";
+import { scoreJob } from "@/server/score";
 import type { ErrorEnvelope, Persona, SearchRun } from "@/types";
 import { toSearchRun } from "./assemble-run";
 import type { RawPosting, SourceConnector } from "./connector";
 import { connectorForSource } from "./connectors";
 import { companySlugFor, dedupeKeyFor, resolveCanonicalCollision, roleTokensHash, secondaryKey } from "./dedupe";
+import { resolveIsNewCutoff } from "./jobsFeed";
 import { deriveRoleTargets, roleFuzzyMatch } from "./roleMatch";
+
+const TOP_N_CANDIDATES = 30; // system-architecture.md §6 decision 8 "per-run score cap (~30 jobs)"
 
 export class NoActiveResumeError extends Error {
   constructor(message = "No résumé exists — a search requires an active résumé to score against.") {
@@ -56,6 +66,8 @@ export interface StartSearchDeps {
   connectorTimeoutMs?: number;
   hardRunTimeoutMs?: number;
   connectorForSource?: (source: SourceRow) => SourceConnector;
+  llm?: LlmClient;
+  dailyCapUsd?: number;
 }
 
 export async function startSearch(input: StartSearchInput, deps: StartSearchDeps = {}): Promise<SearchRun> {
@@ -93,6 +105,7 @@ export async function startSearch(input: StartSearchInput, deps: StartSearchDeps
         scanned: 0,
         matched: 0,
         scored: 0,
+        worth: 0,
         ghosts: 0,
         perSource: scopedSources.map((s) => ({ sourceId: s.id, found: 0, errors: 0 })),
       },
@@ -134,7 +147,7 @@ async function failRun(runId: string, persona: Persona, handle: RunHandle, err: 
 async function runFanOut(
   row: SearchRunRow,
   sources: SourceRow[],
-  resumeRow: Pick<ResumeRow, "structured">,
+  resumeRow: ResumeRow,
   persona: Persona,
   handle: RunHandle,
   deps: StartSearchDeps,
@@ -207,13 +220,15 @@ async function runFanOut(
   await Promise.all(tasks);
   clearTimeout(hardCapTimer);
 
-  await upsertMatchedPostings(matchedPostings, persona);
+  const upsertedJobs = await upsertMatchedPostings(matchedPostings, persona);
+  const { scored, worth, ghosts } = await scoreTopCandidates(row, upsertedJobs, resumeRow, persona, handle, deps);
 
   const stats = {
     scanned,
     matched: matchedPostings.length,
-    scored: 0,
-    ghosts: 0,
+    scored,
+    worth,
+    ghosts,
     perSource: [...perSource.entries()].map(([sourceId, s]) => ({ sourceId, found: s.found, errors: s.errors })),
   };
   await searchRunsRepo.updateStats(row.id, stats);
@@ -266,10 +281,16 @@ function groupByCollision(matched: { posting: RawPosting; source: SourceRow }[])
   return groups;
 }
 
-async function upsertMatchedPostings(matched: { posting: RawPosting; source: SourceRow }[], persona: Persona): Promise<void> {
+// Returns the upserted rows (+ each one's canonical source) so the caller can
+// score them — B5 discarded these since scoring didn't exist yet.
+async function upsertMatchedPostings(
+  matched: { posting: RawPosting; source: SourceRow }[],
+  persona: Persona,
+): Promise<{ job: JobRow; source: SourceRow }[]> {
   const groups = groupByCollision(matched);
+  const upserted: { job: JobRow; source: SourceRow }[] = [];
   for (const { canonical, canonicalSource, aliasUrls } of groups.values()) {
-    await jobsRepo.upsertByDedupeKey({
+    const job = await jobsRepo.upsertByDedupeKey({
       dedupeKey: dedupeKeyFor(canonical.url),
       url: canonical.url,
       sourceId: canonicalSource.id,
@@ -287,5 +308,84 @@ async function upsertMatchedPostings(matched: { posting: RawPosting; source: Sou
       aliases: aliasUrls,
       raw: canonical,
     });
+    upserted.push({ job, source: canonicalSource });
   }
+  return upserted;
+}
+
+function startOfToday(): Date {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  return start;
+}
+
+// Cost-capped scoring phase (system-architecture.md §6 decision 8): score the
+// top-N (~30) candidates surviving the role-fuzzy-match pre-filter, stopping
+// early (without crashing the run) once the daily LLM spend cap is hit. Emits
+// the `job` SSE event B5 deferred as each job is scored, plus `score` /
+// `legitimacy` progress stages.
+async function scoreTopCandidates(
+  row: SearchRunRow,
+  candidates: { job: JobRow; source: SourceRow }[],
+  resume: ResumeRow,
+  persona: Persona,
+  handle: RunHandle,
+  deps: StartSearchDeps,
+): Promise<{ scored: number; worth: number; ghosts: number }> {
+  const topCandidates = candidates.slice(0, TOP_N_CANDIDATES);
+  let scored = 0;
+  let worth = 0;
+  let ghosts = 0;
+
+  if (topCandidates.length === 0) return { scored, worth, ghosts };
+
+  const isNewCutoff = await resolveIsNewCutoff(persona);
+  const llm = deps.llm ?? getLlm();
+  const dailyCapUsd =
+    deps.dailyCapUsd ?? (process.env.CALIBER_DAILY_LLM_USD ? Number(process.env.CALIBER_DAILY_LLM_USD) : undefined);
+  let spentToday = dailyCapUsd !== undefined ? await jobScoresRepo.sumCostUsdSince(startOfToday()) : 0;
+
+  handle.emit({
+    event: "progress",
+    data: { stage: "score", current: 0, total: topCandidates.length, label: `Scoring ${topCandidates.length} job(s)…` },
+  });
+
+  for (const [index, { job, source }] of topCandidates.entries()) {
+    if (dailyCapUsd !== undefined && spentToday >= dailyCapUsd) {
+      console.error(`search run ${row.id}: daily LLM cost cap ($${dailyCapUsd}) reached — stopping further scoring`);
+      break;
+    }
+
+    try {
+      const scoreRow = await scoreJob({ job, resume, llm });
+      spentToday += scoreRow.costUsd;
+      scored += 1;
+      if (scoreRow.verdict === "Apply" || scoreRow.verdict === "Consider") worth += 1;
+      if (scoreRow.legitimacy.tier === "ghost") ghosts += 1;
+
+      handle.emit({ event: "job", data: assembleJob({ job, score: scoreRow, source }, { isNewCutoff }) });
+    } catch (err) {
+      // A single job's scoring failure (LLM error, malformed response) is
+      // tolerated the same way a connector failure is (B5 precedent) — the
+      // run keeps going rather than crashing over one bad candidate.
+      console.error(`search run ${row.id}: scoring job ${job.id} failed:`, err);
+    }
+
+    handle.emit({
+      event: "progress",
+      data: {
+        stage: "score",
+        current: index + 1,
+        total: topCandidates.length,
+        label: `${index + 1}/${topCandidates.length} scored`,
+      },
+    });
+  }
+
+  handle.emit({
+    event: "progress",
+    data: { stage: "legitimacy", current: topCandidates.length, total: topCandidates.length, label: "Legitimacy checks complete" },
+  });
+
+  return { scored, worth, ghosts };
 }

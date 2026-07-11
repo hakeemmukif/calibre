@@ -5,6 +5,7 @@ import { createAshbyConnector } from "./ashby";
 function source(overrides: Partial<SourceRow> = {}): SourceRow {
   return {
     id: "ashby",
+    name: "Ashby",
     kind: "ats",
     persona: "remote",
     enabled: true,

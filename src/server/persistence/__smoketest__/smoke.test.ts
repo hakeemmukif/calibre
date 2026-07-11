@@ -5,7 +5,7 @@ import { sources } from '../schema';
 describe('smoke', () => {
   it('applies migrations and inserts', async () => {
     const db = await createTestDb();
-    const [row] = await db.insert(sources).values({ id: 'greenhouse', kind: 'ats', persona: 'both', enabled: true, config: {} }).returning();
+    const [row] = await db.insert(sources).values({ id: 'greenhouse', name: 'Greenhouse', kind: 'ats', persona: 'both', enabled: true, config: {} }).returning();
     expect(row.id).toBe('greenhouse');
   });
 });

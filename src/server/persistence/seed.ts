@@ -8,10 +8,10 @@ import { sources } from "./schema";
 import type { Db } from "./repos/db";
 
 export const sourceSeeds: (typeof sources.$inferInsert)[] = [
-  { id: "greenhouse", kind: "ats", persona: "remote", enabled: true, config: { slug: "REPLACE_ME" } },
-  { id: "lever", kind: "ats", persona: "remote", enabled: true, config: { slug: "REPLACE_ME" } },
-  { id: "ashby", kind: "ats", persona: "remote", enabled: true, config: { slug: "REPLACE_ME" } },
-  { id: "jobstreet", kind: "board", persona: "local", enabled: true, config: { query: "REPLACE_ME" } },
+  { id: "greenhouse", name: "Greenhouse", kind: "ats", persona: "remote", enabled: true, config: { slug: "REPLACE_ME" } },
+  { id: "lever", name: "Lever", kind: "ats", persona: "remote", enabled: true, config: { slug: "REPLACE_ME" } },
+  { id: "ashby", name: "Ashby", kind: "ats", persona: "remote", enabled: true, config: { slug: "REPLACE_ME" } },
+  { id: "jobstreet", name: "JobStreet", kind: "board", persona: "local", enabled: true, config: { query: "REPLACE_ME" } },
 ];
 
 export async function seedSources(db: Db) {

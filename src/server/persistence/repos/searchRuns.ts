@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { getDb } from "../db";
 import { searchRuns } from "../schema";
 import type { Db } from "./db";
@@ -15,6 +15,20 @@ export function createSearchRunsRepo(db: Db) {
     async getById(id: string): Promise<SearchRunRow | null> {
       const [row] = await db.select().from(searchRuns).where(eq(searchRuns.id, id)).limit(1);
       return row ?? null;
+    },
+    // task-B6-brief.md `sinceLast`/wire-`isNew` cutoff: "the previous
+    // COMPLETED search run's finishedAt". `personas` is a jsonb array
+    // (both-persona runs are possible), so persona containment is filtered
+    // in JS rather than a jsonb `@>` SQL operator — dataset is single-
+    // operator-MVP small (a handful of runs at most).
+    async getLatestCompleted(persona?: "remote" | "local"): Promise<SearchRunRow | null> {
+      const rows = await db
+        .select()
+        .from(searchRuns)
+        .where(eq(searchRuns.status, "completed"))
+        .orderBy(desc(searchRuns.finishedAt));
+      const match = persona ? rows.find((r) => r.personas.includes(persona)) : rows[0];
+      return match ?? null;
     },
     async updateStatus(
       id: string,
@@ -49,6 +63,7 @@ export function createSearchRunsRepo(db: Db) {
 export const searchRunsRepo: ReturnType<typeof createSearchRunsRepo> = {
   insert: (row) => createSearchRunsRepo(getDb()).insert(row),
   getById: (id) => createSearchRunsRepo(getDb()).getById(id),
+  getLatestCompleted: (persona) => createSearchRunsRepo(getDb()).getLatestCompleted(persona),
   updateStatus: (id, status, patch) => createSearchRunsRepo(getDb()).updateStatus(id, status, patch),
   updateStats: (id, stats) => createSearchRunsRepo(getDb()).updateStats(id, stats),
   markAllRunningAsFailed: (errorMessage) => createSearchRunsRepo(getDb()).markAllRunningAsFailed(errorMessage),

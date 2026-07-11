@@ -5,6 +5,7 @@ import { createJobstreetConnector } from "./jobstreet";
 function source(overrides: Partial<SourceRow> = {}): SourceRow {
   return {
     id: "jobstreet",
+    name: "JobStreet",
     kind: "board",
     persona: "local",
     enabled: true,

@@ -237,6 +237,89 @@ describe("jobsRepo", () => {
     expect(found?.score.id).toBe(newer.id);
   });
 
+  it("statsForQuery aggregates over the FULL scoped set, not a page", async () => {
+    const db = await createTestDb();
+    const repo = createJobsRepo(db);
+    const source = await insertSource(db);
+    const resume = await insertResume(db);
+
+    const verdicts: ("Apply" | "Consider" | "Research first" | "Skip")[] = ["Apply", "Consider", "Research first", "Skip"];
+    const tiers: ("clear" | "suspicious" | "ghost" | "scam" | "verified")[] = ["clear", "suspicious", "ghost", "scam", "verified"];
+
+    for (let i = 0; i < 10; i += 1) {
+      const job = await repo.upsertByDedupeKey({
+        dedupeKey: `dk-stats-${i}`,
+        url: `https://example.com/stats-${i}`,
+        sourceId: source.id,
+        title: `Job ${i}`,
+        company: "Acme",
+        location: "Remote",
+        persona: "remote",
+        aliases: [],
+        raw: {},
+      });
+      await insertJobScore(db, job.id, resume.id, {
+        verdict: verdicts[i % verdicts.length],
+        legitimacy: { tier: tiers[i % tiers.length], tone: "good", summary: "x", signals: [] },
+      });
+    }
+
+    const stats = await repo.statsForQuery({});
+    expect(stats.scanned).toBe(10);
+    // verdicts cycle 0..9 (period 4): Apply at 0,4,8; Consider at 1,5,9 -> 6 worth
+    expect(stats.worth).toBe(6);
+    // tiers cycle 0..9: ghost at i=2,7 -> 2 ghosts
+    expect(stats.ghosts).toBe(2);
+    // flagged = suspicious|ghost|scam: i=1,2,3,6,7,8 -> 6
+    expect(stats.flagged).toBe(6);
+
+    const page = await repo.listScored({ limit: 2 });
+    expect(page.items).toHaveLength(2);
+    // the full-set stats must not shrink to match the small page
+    expect(stats.scanned).toBeGreaterThan(page.items.length);
+  });
+
+  it("statsForQuery's sinceLast counts only rows newer than the given cutoff, 0 without one", async () => {
+    const db = await createTestDb();
+    const repo = createJobsRepo(db);
+    const source = await insertSource(db);
+    const resume = await insertResume(db);
+
+    const older = await repo.upsertByDedupeKey({
+      dedupeKey: "dk-older",
+      url: "https://example.com/older",
+      sourceId: source.id,
+      title: "Older Job",
+      company: "Acme",
+      location: "Remote",
+      persona: "remote",
+      aliases: [],
+      raw: {},
+      firstSeenAt: new Date("2026-01-01T00:00:00.000Z"),
+    });
+    await insertJobScore(db, older.id, resume.id);
+
+    const newer = await repo.upsertByDedupeKey({
+      dedupeKey: "dk-newer",
+      url: "https://example.com/newer",
+      sourceId: source.id,
+      title: "Newer Job",
+      company: "Acme",
+      location: "Remote",
+      persona: "remote",
+      aliases: [],
+      raw: {},
+      firstSeenAt: new Date("2026-06-01T00:00:00.000Z"),
+    });
+    await insertJobScore(db, newer.id, resume.id);
+
+    const withCutoff = await repo.statsForQuery({}, new Date("2026-03-01T00:00:00.000Z"));
+    expect(withCutoff.sinceLast).toBe(1);
+
+    const withoutCutoff = await repo.statsForQuery({});
+    expect(withoutCutoff.sinceLast).toBe(0);
+  });
+
   it("getById returns the joined job+score", async () => {
     const db = await createTestDb();
     const repo = createJobsRepo(db);

@@ -5,6 +5,7 @@ import { createGreenhouseConnector } from "./greenhouse";
 function source(overrides: Partial<SourceRow> = {}): SourceRow {
   return {
     id: "greenhouse",
+    name: "Greenhouse",
     kind: "ats",
     persona: "remote",
     enabled: true,
