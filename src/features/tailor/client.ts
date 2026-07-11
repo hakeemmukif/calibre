@@ -1,0 +1,53 @@
+// F6 typed client — start/poll/stream tailoring + finalize/pdf
+// (api-contract.md §3 "POST /api/tailor", "GET /api/tailor/:id",
+// "POST /api/tailor/:id/finalize", "GET /api/tailor/:id/pdf"). Never imports
+// server/* or lib/llm.
+import { SseEvent, TailoredResume } from "@/types";
+import { requestJson } from "@/features/http";
+
+export async function startTailor(input: { jobId: string }): Promise<TailoredResume> {
+  return requestJson(
+    "/api/tailor",
+    { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) },
+    TailoredResume,
+  );
+}
+
+export async function getTailor(id: string): Promise<TailoredResume> {
+  return requestJson(`/api/tailor/${id}`, undefined, TailoredResume);
+}
+
+// Same content-negotiated SSE pattern as features/search/client.ts.
+export function subscribeTailor(id: string, onEvent: (event: SseEvent) => void): () => void {
+  const source = new EventSource(`/api/tailor/${id}`);
+  const eventNames = ["progress", "job", "done", "error"] as const;
+
+  const handlers = eventNames.map((name) => {
+    const handler = (e: MessageEvent<string>) => {
+      const event = SseEvent.parse({ event: name, data: JSON.parse(e.data) });
+      onEvent(event);
+      if (name === "done" || name === "error") source.close();
+    };
+    source.addEventListener(name, handler);
+    return { name, handler };
+  });
+
+  return () => {
+    for (const { name, handler } of handlers) source.removeEventListener(name, handler);
+    source.close();
+  };
+}
+
+export async function finalizeTailor(id: string, acceptedIndices: number[]): Promise<TailoredResume> {
+  return requestJson(
+    `/api/tailor/${id}/finalize`,
+    { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ acceptedIndices }) },
+    TailoredResume,
+  );
+}
+
+// The PDF route returns a binary body — this is just the href the UI opens
+// in a new tab/window, not a fetch+parse wrapper.
+export function tailorPdfUrl(id: string): string {
+  return `/api/tailor/${id}/pdf`;
+}
