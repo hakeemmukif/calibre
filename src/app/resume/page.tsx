@@ -9,6 +9,8 @@
 import * as React from "react";
 import { ResumeUpload, type ResumeUploadStatus } from "@/caliber-ui/compositions/Resume/ResumeUpload";
 import { ResumeView } from "@/caliber-ui/compositions/Resume/ResumeView";
+import { Button } from "@/caliber-ui/components/Button";
+import { Icon } from "@/caliber-ui/components/Icon";
 import { getResume, uploadResume } from "@/features/resume/client";
 import { startSearch } from "@/features/search/client";
 import type { Resume } from "@/types";
@@ -18,6 +20,20 @@ export default function ResumePage() {
   const [loaded, setLoaded] = React.useState(false);
   const [status, setStatus] = React.useState<ResumeUploadStatus>("idle");
   const [error, setError] = React.useState<string | undefined>();
+  const [searchError, setSearchError] = React.useState<string | undefined>();
+
+  async function startSearches() {
+    setSearchError(undefined);
+    const results = await Promise.allSettled([startSearch({ persona: "remote" }), startSearch({ persona: "local" })]);
+    const failed = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
+    if (failed.length === 0) return;
+    const reason = failed[0].reason instanceof Error ? failed[0].reason.message : String(failed[0].reason);
+    setSearchError(
+      failed.length === results.length
+        ? `Search failed to start — retry. (${reason})`
+        : `One of the two searches failed to start — retry. (${reason})`,
+    );
+  }
 
   React.useEffect(() => {
     void getResume().then((r) => {
@@ -37,7 +53,7 @@ export default function ResumePage() {
         file.type === "text/plain" ? await uploadResume({ text: await file.text() }) : await uploadResume({ file });
       setStatus("done");
       setResume(uploaded);
-      void Promise.allSettled([startSearch({ persona: "remote" }), startSearch({ persona: "local" })]);
+      void startSearches();
     } catch (err) {
       setStatus("error");
       setError(err instanceof Error ? err.message : "Couldn't parse that file.");
@@ -50,13 +66,39 @@ export default function ResumePage() {
     <div style={{ minHeight: "100vh", background: "var(--bg-app)", padding: 24 }}>
       <div style={{ maxWidth: 760, margin: "0 auto" }}>
         {resume ? (
-          <ResumeView
-            resume={resume}
-            onReupload={() => {
-              setResume(null);
-              setStatus("idle");
-            }}
-          />
+          <>
+            {searchError && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  marginBottom: 12,
+                  padding: "10px 14px",
+                  borderRadius: "var(--radius-sm)",
+                  background: "var(--danger-soft)",
+                  color: "var(--danger-ink)",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <Icon name="triangle-alert" size={16} />
+                  <span style={{ font: "var(--type-body)" }}>{searchError}</span>
+                </div>
+                <Button variant="secondary" iconLeft="refresh-cw" onClick={() => void startSearches()}>
+                  Retry
+                </Button>
+              </div>
+            )}
+            <ResumeView
+              resume={resume}
+              onReupload={() => {
+                setResume(null);
+                setStatus("idle");
+                setSearchError(undefined);
+              }}
+            />
+          </>
         ) : (
           <ResumeUpload status={status} onFile={handleFile} error={error} />
         )}

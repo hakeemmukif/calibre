@@ -17,6 +17,8 @@ import { useParams, useRouter } from "next/navigation";
 import { ApplyQuestionsAssistant } from "@/caliber-ui/compositions/Apply/ApplyQuestionsAssistant";
 import type { IntakeMode } from "@/caliber-ui/compositions/Apply/QuestionIntake";
 import type { RegenerateMode } from "@/caliber-ui/compositions/Apply/AnswerCard";
+import { Button } from "@/caliber-ui/components/Button";
+import { Icon } from "@/caliber-ui/components/Icon";
 import { draftAnswers, extractQuestions, patchAnswers } from "@/features/apply/client";
 import { getJob } from "@/features/feed/client";
 import { getResume } from "@/features/resume/client";
@@ -29,6 +31,7 @@ export default function ApplyAssistantPage() {
   const [resume, setResume] = React.useState<Resume | null>(null);
   const [detected, setDetected] = React.useState<ApplicationQuestion[] | undefined>();
   const [loaded, setLoaded] = React.useState(false);
+  const [error, setError] = React.useState<string | undefined>();
 
   const questionsById = React.useRef<Record<string, ApplicationQuestion>>({});
   const answersId = React.useRef<string | undefined>(undefined);
@@ -37,25 +40,34 @@ export default function ApplyAssistantPage() {
     for (const q of questions) questionsById.current[q.id] = q;
   }
 
-  React.useEffect(() => {
-    void (async () => {
+  const load = React.useCallback(async () => {
+    setError(undefined);
+    try {
       const [fetchedJob, fetchedResume] = await Promise.all([getJob(id), getResume()]);
       setJob(fetchedJob);
       setResume(fetchedResume);
-      // Tier 1/2 (ATS API / DOM parse) — a known-ATS form arrives
-      // pre-extracted; a 502 EXTRACTION_FAILED here just means neither tier
-      // found a form, so intake falls through to the paste tabs.
-      try {
-        const result = await extractQuestions({ jobId: id });
-        remember(result.questions);
-        setDetected(result.questions);
-      } catch {
-        setDetected(undefined);
-      } finally {
-        setLoaded(true);
-      }
-    })();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't load this page.");
+      setLoaded(true);
+      return;
+    }
+    // Tier 1/2 (ATS API / DOM parse) — a known-ATS form arrives
+    // pre-extracted; a 502 EXTRACTION_FAILED here just means neither tier
+    // found a form, so intake falls through to the paste tabs.
+    try {
+      const result = await extractQuestions({ jobId: id });
+      remember(result.questions);
+      setDetected(result.questions);
+    } catch {
+      setDetected(undefined);
+    } finally {
+      setLoaded(true);
+    }
   }, [id]);
+
+  React.useEffect(() => {
+    void load();
+  }, [load]);
 
   async function onExtract(mode: IntakeMode, text: string): Promise<ApplicationQuestion[]> {
     void mode; // both paste-form/paste-jd map to the single `pastedForm` tier-3 field
@@ -86,7 +98,35 @@ export default function ApplyAssistantPage() {
     void patchAnswers(answersId.current, answers).then(() => router.push(`/jobs/${id}`));
   }
 
-  if (!loaded || !job) return null;
+  if (!loaded) return null;
+
+  if (error) {
+    return (
+      <div style={{ minHeight: "100vh", background: "var(--bg-app)", padding: 24 }}>
+        <div style={{ maxWidth: "var(--content-max, 960px)", margin: "0 auto" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "10px 14px",
+              borderRadius: "var(--radius-sm)",
+              background: "var(--danger-soft)",
+              color: "var(--danger-ink)",
+            }}
+          >
+            <Icon name="triangle-alert" size={16} />
+            <span style={{ font: "var(--type-body)" }}>{error}</span>
+          </div>
+          <Button variant="secondary" iconLeft="refresh-cw" style={{ marginTop: 12 }} onClick={() => void load()}>
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!job) return null;
 
   if (!resume) {
     return (

@@ -53,9 +53,14 @@ export default function TailorPage() {
     if (!job) return;
     setStatus("generating");
     setError(undefined);
-    const draft = await startTailor({ jobId: job.id });
-    setTailored(draft);
-    await pollUntilTerminal(draft.id);
+    try {
+      const draft = await startTailor({ jobId: job.id });
+      setTailored(draft);
+      await pollUntilTerminal(draft.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't start tailoring.");
+      setStatus("error");
+    }
   }
 
   function onToggle(index: number, accept: boolean) {
