@@ -1577,6 +1577,217 @@
         },
         "summary": "Run status — JSON snapshot by default; SSE via Accept: text/event-stream"
       }
+    },
+    "/api/tailor": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "jobId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "jobId"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TailoredResume"
+                }
+              }
+            },
+            "description": "Tailor run queued"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unknown job id"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No résumé exists to tailor"
+          }
+        },
+        "summary": "Start tailoring the résumé to a job — F6 (B8)"
+      }
+    },
+    "/api/tailor/{id}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TailoredResume"
+                }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/SseEvent"
+                }
+              }
+            },
+            "description": "JSON snapshot, or an SSE stream of progress/done/error (stages analyze -> rewrite -> render -> done)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unknown tailor run id"
+          }
+        },
+        "summary": "Tailor status + result — JSON snapshot by default; SSE via Accept: text/event-stream — F6 (B8)"
+      }
+    },
+    "/api/tailor/{id}/finalize": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "acceptedIndices": {
+                    "items": {
+                      "type": "integer"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "acceptedIndices"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TailoredResume"
+                }
+              }
+            },
+            "description": "TailoredResume server-rendered with only the accepted diff entries applied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unknown tailor run id"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Run has not completed yet"
+          }
+        },
+        "summary": "Persist the accepted-only diff — renders an accepted-only résumé — F6 (B8)"
+      }
+    },
+    "/api/tailor/{id}/pdf": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "description": "Binary PDF bytes",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Binary PDF bytes"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unknown tailor run id"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Run has not been finalized yet (POST .../finalize not yet called, or status !== 'completed')"
+          }
+        },
+        "summary": "Rendered PDF of the finalized (accepted-only) résumé — F6 (B8)"
+      }
     }
   },
   "webhooks": {}

@@ -161,9 +161,15 @@ export const tailoredResumes = pgTable("tailored_resumes", {
   pdfPath: text("pdf_path"),
   status: text("status", { enum: ["queued", "running", "completed", "failed"] }).notNull(), // reconciliation 2
   finalizedAt: timestamp("finalized_at"), // reconciliation 2 (new column, gates GET .../pdf)
-  model: text("model"), // null until the run completes (see report: extension of reconciliation 2)
+  // B8: frozen `TailoredResume.model` (src/types) is a required string, even on
+  // the queued/202 draft — populated from config/models.yml's static "tailor"
+  // task routing at insert time, then overwritten with the LLM call's actual
+  // `result.model` on completion (matches config in real OpenRouter use;
+  // mock-LLM tests deliberately diverge to prove the overwrite happens).
+  model: text("model").notNull(),
   costUsd: numeric("cost_usd", { precision: 8, scale: 4, mode: "number" }), // null until the run completes
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  completedAt: timestamp("completed_at"), // B8: frozen `TailoredResume.completedAt` — set when analyze/rewrite/render finishes, distinct from `finalizedAt` (the later accept-subset action)
 });
 
 export const applications = pgTable("applications", {

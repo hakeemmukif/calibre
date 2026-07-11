@@ -268,6 +268,79 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "post",
+  path: "/api/tailor",
+  summary: "Start tailoring the résumé to a job — F6 (B8)",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({ jobId: z.string() }),
+        },
+      },
+    },
+  },
+  responses: {
+    202: { description: "Tailor run queued", content: { "application/json": { schema: TailoredResume } } },
+    404: { description: "Unknown job id", content: { "application/json": { schema: ErrorEnvelope } } },
+    409: { description: "No résumé exists to tailor", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/tailor/{id}",
+  summary: "Tailor status + result — JSON snapshot by default; SSE via Accept: text/event-stream — F6 (B8)",
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: "JSON snapshot, or an SSE stream of progress/done/error (stages analyze -> rewrite -> render -> done)",
+      content: {
+        "application/json": { schema: TailoredResume },
+        "text/event-stream": { schema: SseEvent },
+      },
+    },
+    404: { description: "Unknown tailor run id", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/tailor/{id}/finalize",
+  summary: "Persist the accepted-only diff — renders an accepted-only résumé — F6 (B8)",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({ acceptedIndices: z.array(z.number().int()) }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: "TailoredResume server-rendered with only the accepted diff entries applied", content: { "application/json": { schema: TailoredResume } } },
+    404: { description: "Unknown tailor run id", content: { "application/json": { schema: ErrorEnvelope } } },
+    409: { description: "Run has not completed yet", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/tailor/{id}/pdf",
+  summary: "Rendered PDF of the finalized (accepted-only) résumé — F6 (B8)",
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: "Binary PDF bytes",
+      content: { "application/pdf": { schema: z.string().describe("Binary PDF bytes") } },
+    },
+    404: { description: "Unknown tailor run id", content: { "application/json": { schema: ErrorEnvelope } } },
+    409: { description: "Run has not been finalized yet (POST .../finalize not yet called, or status !== 'completed')", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
   method: "patch",
   path: "/api/apply/answers/{id}",
   summary: "Edit a persisted answer set (user edits or per-question regenerate) — F4 (B7)",

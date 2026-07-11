@@ -15,6 +15,13 @@
       "when": 1783745641272,
       "tag": "0001_abnormal_blob",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783750268893,
+      "tag": "0002_oval_sunset_bain",
+      "breakpoints": true
     }
   ]
 }
