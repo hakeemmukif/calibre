@@ -29,6 +29,7 @@ import {
   Tone,
   Legitimacy,
   SourceRef,
+  Source,
   Job,
   Resume,
   RunStatus,
@@ -50,6 +51,7 @@ const entitySchemas: Record<string, z.ZodType> = {
   Tone,
   Legitimacy,
   SourceRef,
+  Source,
   Job,
   Resume,
   RunStatus,
@@ -445,6 +447,39 @@ registry.registerPath({
     200: { description: "The updated Application", content: { "application/json": { schema: Application } } },
     404: { description: "Unknown application id", content: { "application/json": { schema: ErrorEnvelope } } },
     422: { description: "Empty patch (zero fields)", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/sources",
+  summary: "Sources management: every row, both personas, disabled included, ordered by name",
+  responses: {
+    200: {
+      description: "All source rows",
+      content: { "application/json": { schema: z.object({ items: z.array(Source) }) } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/sources/{id}",
+  summary: "Enable/disable a source — id is a TEXT natural key (e.g. 'gh-stripe'), not a uuid",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({ enabled: z.boolean() }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: "The updated Source", content: { "application/json": { schema: Source } } },
+    404: { description: "Unknown source id", content: { "application/json": { schema: ErrorEnvelope } } },
+    422: { description: "Invalid body (enabled must be a boolean)", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
 

@@ -29,6 +29,17 @@ export const SourceRef = z.object({ // Source entity, referenced from Job
 });
 export type SourceRef = z.infer<typeof SourceRef>;
 
+// Full source row for the Sources management page — includes disabled rows
+// and the DB-only "both" persona (SourceRef stays the slim per-job ref).
+export const Source = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  kind: z.enum(["ats", "board"]),
+  persona: z.enum(["remote", "local", "both"]),
+  enabled: z.boolean(),
+});
+export type Source = z.infer<typeof Source>;
+
 export const Job = z.object({ // §5 frozen + §11.8 extensions
   id: z.string(),
   score: z.number().min(0).max(5),

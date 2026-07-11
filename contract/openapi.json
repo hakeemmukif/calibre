@@ -642,6 +642,44 @@
         ],
         "type": "object"
       },
+      "Source": {
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "ats",
+              "board"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "persona": {
+            "enum": [
+              "remote",
+              "local",
+              "both"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "persona",
+          "enabled"
+        ],
+        "type": "object"
+      },
       "SourceRef": {
         "properties": {
           "id": {
@@ -1882,6 +1920,98 @@
           }
         },
         "summary": "Run status — JSON snapshot by default; SSE via Accept: text/event-stream"
+      }
+    },
+    "/api/sources": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "items": {
+                      "items": {
+                        "$ref": "#/components/schemas/Source"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "All source rows"
+          }
+        },
+        "summary": "Sources management: every row, both personas, disabled included, ordered by name"
+      }
+    },
+    "/api/sources/{id}": {
+      "patch": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "enabled"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Source"
+                }
+              }
+            },
+            "description": "The updated Source"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unknown source id"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Invalid body (enabled must be a boolean)"
+          }
+        },
+        "summary": "Enable/disable a source — id is a TEXT natural key (e.g. 'gh-stripe'), not a uuid"
       }
     },
     "/api/tailor": {
