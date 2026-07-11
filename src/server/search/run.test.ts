@@ -212,6 +212,52 @@ describe("startSearch", () => {
     expect(notUpserted).toBeUndefined();
   });
 
+  it("board-kind sources bypass the role matcher; ats-kind sources still require a match (task-7b)", async () => {
+    const runsRepo = createSearchRunsRepo(state.testDb);
+    await insertResume(state.testDb, { ...resumeFixture, isActive: true });
+    const board = await insertSource(state.testDb, { id: "src-board", kind: "board", persona: "remote" });
+    const ats = await insertSource(state.testDb, { id: "src-ats", kind: "ats", persona: "remote" });
+
+    // "Warehouse Associate" shares zero tokens with the résumé's "Senior Data
+    // Engineer" — roleFuzzyMatch would reject it from either source.
+    const boardPosting: RawPosting = {
+      sourceId: board.id,
+      url: "https://board.example.com/jobs/1",
+      title: "Warehouse Associate",
+      company: "Acme",
+      location: "Remote",
+      description: "Manage warehouse inventory.",
+    };
+    const atsPosting: RawPosting = {
+      sourceId: ats.id,
+      url: "https://ats.example.com/jobs/1",
+      title: "Warehouse Associate",
+      company: "Beta Corp",
+      location: "Remote",
+      description: "Manage warehouse inventory.",
+    };
+
+    const run = await startSearch(
+      { persona: "remote" },
+      {
+        llm: testLlm,
+        connectorForSource: (source) =>
+          source.id === "src-board" ? stubConnector(source, [boardPosting]) : stubConnector(source, [atsPosting]),
+      },
+    );
+
+    const finalRow = await waitForTerminal(runsRepo, run.id);
+    expect(finalRow.status).toBe("completed");
+    expect(finalRow.stats.scanned).toBe(2);
+    expect(finalRow.stats.matched).toBe(1); // only the board posting bypasses the matcher
+
+    const boardJob = await findJobByDedupeKey(state.testDb, "board.example.com/jobs/1");
+    expect(boardJob?.title).toBe("Warehouse Associate");
+
+    const atsJob = await findJobByDedupeKey(state.testDb, "ats.example.com/jobs/1");
+    expect(atsJob).toBeUndefined();
+  });
+
   it("throws NoActiveResumeError when no résumé exists", async () => {
     const originalDb = state.testDb;
     state.testDb = await createTestDb(); // fresh, résumé-less DB
@@ -415,40 +461,32 @@ describe("startSearch", () => {
     expect((jobEvent.data as { legitimacy: { tier: string } }).legitimacy.tier).toBe("clear");
   });
 
-  it("daily cost cap: stops scoring early once dailyCapUsd is reached, still completes (finding 3)", async () => {
+  it("daily cost cap: stops scoring early once dailyCapUsd is reached BETWEEN batches, still completes (finding 3 + task-7b batching)", async () => {
     const runsRepo = createSearchRunsRepo(state.testDb);
     await insertResume(state.testDb, { ...resumeFixture, isActive: true });
     const good = await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
 
-    // Two matching candidates; costingLlm charges 0.02/job (0.01 jd-extract +
-    // 0.01 match-score) — a 0.015 cap lets the 1st job through, then the
-    // pre-scoring check for the 2nd sees spentToday (0.02) >= cap and stops.
+    // Four matching candidates, distinct company (so dedupe.ts secondaryKey
+    // keeps them as 4 separate jobs) — SCORE_BATCH_SIZE (3) puts the first 3
+    // in batch 1 and the 4th alone in batch 2. costingLlm charges 0.02/job;
+    // cap 0.025 is BELOW even a single job's running total after job 2
+    // (0.04), so a per-job check (pre-batching behaviour) would have stopped
+    // mid-batch after 2 jobs — but the cap is only checked BETWEEN batches
+    // now, so batch 1 runs to completion (all 3, spentToday -> 0.06) before
+    // the pre-batch-2 check sees 0.06 >= 0.025 and stops; the 4th candidate
+    // is never attempted.
     const postings: RawPosting[] = [
-      {
-        sourceId: good.id,
-        url: "https://example.com/jobs/cap-1",
-        title: "Data Engineer",
-        company: "Acme",
-        location: "Remote",
-        description: "Build data pipelines with SQL.",
-      },
-      {
-        sourceId: good.id,
-        url: "https://example.com/jobs/cap-2",
-        title: "Data Engineer",
-        company: "Beta Corp", // deliberately distinct from postings[0] — same
-        // company+title+location would collide into a single canonical job
-        // (dedupe.ts secondaryKey), leaving only one candidate to score.
-        location: "Remote",
-        description: "Build more data pipelines with SQL.",
-      },
+      { sourceId: good.id, url: "https://example.com/jobs/cap-1", title: "Data Engineer", company: "Acme", location: "Remote", description: "Build data pipelines with SQL." },
+      { sourceId: good.id, url: "https://example.com/jobs/cap-2", title: "Data Engineer", company: "Beta Corp", location: "Remote", description: "Build more data pipelines with SQL." },
+      { sourceId: good.id, url: "https://example.com/jobs/cap-3", title: "Data Engineer", company: "Gamma Corp", location: "Remote", description: "Build even more data pipelines with SQL." },
+      { sourceId: good.id, url: "https://example.com/jobs/cap-4", title: "Data Engineer", company: "Delta Corp", location: "Remote", description: "Build data pipelines yet again with SQL." },
     ];
 
     const run = await startSearch(
       { persona: "remote" },
       {
         llm: costingLlm,
-        dailyCapUsd: 0.015,
+        dailyCapUsd: 0.025,
         connectorForSource: (source) => stubConnector(source, postings),
       },
     );
@@ -456,9 +494,40 @@ describe("startSearch", () => {
     const finalRow = await waitForTerminal(runsRepo, run.id);
 
     expect(finalRow.status).toBe("completed");
-    expect(finalRow.stats.matched).toBe(2);
-    expect(finalRow.stats.scored).toBeLessThan(finalRow.stats.matched);
-    expect(finalRow.stats.scored).toBe(1);
+    expect(finalRow.stats.matched).toBe(4);
+    expect(finalRow.stats.scored).toBe(3); // all of batch 1 — proves the cap wasn't enforced mid-batch
     expect(finalRow.stats.capStopped).toBe(true);
+  });
+
+  it("batched scoring: all candidates in a single batch are scored, aggregating stats across a mix of successes and EmptyJobDescriptionError (task-7b)", async () => {
+    const runsRepo = createSearchRunsRepo(state.testDb);
+    await insertResume(state.testDb, { ...resumeFixture, isActive: true });
+    const good = await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
+
+    // 3 candidates (one SCORE_BATCH_SIZE batch): 2 with a description score
+    // normally via testLlm; the 3rd has no description and the stub
+    // connector has no fetchDetail, so ensureDescription leaves it null and
+    // scoreJob throws EmptyJobDescriptionError -> counted unscored, not a
+    // tolerated failure.
+    const postings: RawPosting[] = [
+      { sourceId: good.id, url: "https://example.com/jobs/mix-1", title: "Data Engineer", company: "Acme", location: "Remote", description: "Build data pipelines with SQL." },
+      { sourceId: good.id, url: "https://example.com/jobs/mix-2", title: "Data Engineer", company: "Beta Corp", location: "Remote", description: "Build more data pipelines with SQL." },
+      { sourceId: good.id, url: "https://example.com/jobs/mix-3", title: "Data Engineer", company: "Gamma Corp", location: "Remote" },
+    ];
+
+    const run = await startSearch(
+      { persona: "remote" },
+      { llm: testLlm, connectorForSource: (source) => stubConnector(source, postings) },
+    );
+
+    const finalRow = await waitForTerminal(runsRepo, run.id);
+
+    expect(finalRow.status).toBe("completed");
+    expect(finalRow.stats.matched).toBe(3);
+    expect(finalRow.stats.scored).toBe(2);
+    expect(finalRow.stats.worth).toBe(2); // testLlm's canned verdict is "Apply"
+    expect(finalRow.stats.ghosts).toBe(0);
+    expect(finalRow.stats.unscored).toBe(1);
+    expect(finalRow.stats.capStopped).toBe(false);
   });
 });

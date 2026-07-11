@@ -26,6 +26,7 @@ import { resolveIsNewCutoff } from "./jobsFeed";
 import { deriveRoleTargets, roleFuzzyMatch } from "./roleMatch";
 
 const TOP_N_CANDIDATES = 30; // system-architecture.md §6 decision 8 "per-run score cap (~30 jobs)"
+const SCORE_BATCH_SIZE = 3; // observed 25-60s/match-score call — batched concurrency keeps a 30-job run inside the hard cap
 
 export class NoActiveResumeError extends Error {
   constructor(message = "No résumé exists — a search requires an active résumé to score against.") {
@@ -54,7 +55,13 @@ export class UnknownSourceIdsError extends Error {
 
 const DEFAULT_CONCURRENCY = 8;
 const DEFAULT_CONNECTOR_TIMEOUT_MS = 15_000;
-const DEFAULT_HARD_RUN_TIMEOUT_MS = 2 * 60 * 1000;
+// Observed live (task-7b smoke): 25-60s per match-score call on the
+// configured model (gpt-oss-120b). TOP_N (30) scored in SCORE_BATCH_SIZE (3)
+// batches of concurrent calls is up to ~10 batches sequential, each bounded
+// by its slowest job (worst case ~60s) => up to ~10 min worst case. Spend is
+// already bounded by TOP_N + the optional CALIBER_DAILY_LLM_USD cap, so a
+// longer wall-clock cap doesn't unbound cost — only lets slow runs finish.
+const DEFAULT_HARD_RUN_TIMEOUT_MS = 10 * 60 * 1000;
 
 export interface StartSearchInput {
   persona: Persona;
@@ -198,7 +205,15 @@ async function runFanOut(
         })) {
           scanned += 1;
           stat.found += 1;
-          if (targets.some((t) => roleFuzzyMatch(t, posting))) {
+          // Board sources (JobStreet et al) are already query-scoped upstream
+          // — the source's configured search query IS the role filter, so
+          // re-filtering through roleFuzzyMatch double-gates and (observed
+          // live) rejects nearly every all-baseline title ("Graduate Software
+          // Engineer"). ATS sources dump their ENTIRE board, so they still
+          // need the matcher. Mirrors the donor, where board results were
+          // query-scoped at fetch time and roleFuzzyMatch belonged to the
+          // per-user radar, not the scan gate.
+          if (source.kind === "board" || targets.some((t) => roleFuzzyMatch(t, posting))) {
             matchedPostings.push({ posting, source });
           }
         }
@@ -364,47 +379,65 @@ async function scoreTopCandidates(
     data: { stage: "score", current: 0, total: topCandidates.length, label: `Scoring ${topCandidates.length} job(s)…` },
   });
 
-  for (const [index, { job, source }] of topCandidates.entries()) {
+  // Batched concurrency (task-7b): each job's match-score call is observed at
+  // 25-60s, so scoring TOP_N_CANDIDATES sequentially cannot fit the hard run
+  // cap. Batches of SCORE_BATCH_SIZE run via Promise.all, preserving the
+  // per-job try/catch semantics below. Two deliberate trade-offs vs. the old
+  // per-job loop: (1) the daily-cap check only runs BETWEEN batches (before
+  // starting each one), so a batch already in flight always finishes — the
+  // cap can overshoot by at most one batch's worth of spend; (2) the `job`
+  // SSE event for each candidate fires as its own Promise settles, so event
+  // order WITHIN a batch may interleave (acceptable — ordering across
+  // batches, and progress/legitimacy framing around them, is preserved).
+  let doneCount = 0;
+  for (let i = 0; i < topCandidates.length; i += SCORE_BATCH_SIZE) {
     if (dailyCapUsd !== undefined && spentToday >= dailyCapUsd) {
       console.error(`search run ${row.id}: daily LLM cost cap ($${dailyCapUsd}) reached — stopping further scoring`);
       capStopped = true;
       break;
     }
 
-    try {
-      const jobToScore = await ensureDescription(job, source).catch((err) => {
-        console.error(`search run ${row.id}: detail fetch for job ${job.id} failed:`, err);
-        return job; // scoreJob will throw EmptyJobDescriptionError -> counted unscored
-      });
-      const scoreRow = await scoreJob({ job: jobToScore, resume, llm });
-      spentToday += scoreRow.costUsd;
-      scored += 1;
-      if (scoreRow.verdict === "Apply" || scoreRow.verdict === "Consider") worth += 1;
-      if (scoreRow.legitimacy.tier === "ghost") ghosts += 1;
+    const batch = topCandidates.slice(i, i + SCORE_BATCH_SIZE);
+    await Promise.all(
+      batch.map(async ({ job, source }) => {
+        try {
+          const jobToScore = await ensureDescription(job, source).catch((err) => {
+            console.error(`search run ${row.id}: detail fetch for job ${job.id} failed:`, err);
+            return job; // scoreJob will throw EmptyJobDescriptionError -> counted unscored
+          });
+          const scoreRow = await scoreJob({ job: jobToScore, resume, llm });
+          spentToday += scoreRow.costUsd;
+          scored += 1;
+          if (scoreRow.verdict === "Apply" || scoreRow.verdict === "Consider") worth += 1;
+          if (scoreRow.legitimacy.tier === "ghost") ghosts += 1;
 
-      handle.emit({ event: "job", data: assembleJob({ job, score: scoreRow, source }, { isNewCutoff }) });
-    } catch (err) {
-      if (err instanceof EmptyJobDescriptionError) {
-        // Expected, not a failure — the connector has no fetchDetail, or its
-        // detail fetch failed (logged above, job unchanged), leaving
-        // `description` null. Recorded distinctly (stats.unscored) rather
-        // than folded into the generic tolerated-failure log below.
-        unscored += 1;
-      } else {
-        // A single job's scoring failure (LLM error, malformed response) is
-        // tolerated the same way a connector failure is (B5 precedent) — the
-        // run keeps going rather than crashing over one bad candidate.
-        console.error(`search run ${row.id}: scoring job ${job.id} failed:`, err);
-      }
-    }
+          handle.emit({ event: "job", data: assembleJob({ job, score: scoreRow, source }, { isNewCutoff }) });
+        } catch (err) {
+          if (err instanceof EmptyJobDescriptionError) {
+            // Expected, not a failure — the connector has no fetchDetail, or
+            // its detail fetch failed (logged above, job unchanged), leaving
+            // `description` null. Recorded distinctly (stats.unscored) rather
+            // than folded into the generic tolerated-failure log below.
+            unscored += 1;
+          } else {
+            // A single job's scoring failure (LLM error, malformed response)
+            // is tolerated the same way a connector failure is (B5
+            // precedent) — the run keeps going rather than crashing over one
+            // bad candidate.
+            console.error(`search run ${row.id}: scoring job ${job.id} failed:`, err);
+          }
+        }
+      }),
+    );
 
+    doneCount += batch.length;
     handle.emit({
       event: "progress",
       data: {
         stage: "score",
-        current: index + 1,
+        current: doneCount,
         total: topCandidates.length,
-        label: `${index + 1}/${topCandidates.length} scored`,
+        label: `${doneCount}/${topCandidates.length} scored`,
       },
     });
   }
