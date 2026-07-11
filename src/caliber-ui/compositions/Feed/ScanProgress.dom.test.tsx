@@ -9,11 +9,12 @@ import { ScanProgress, type ScanProgressStageRow } from './ScanProgress';
 // automatic afterEach(cleanup) never registers — clean up explicitly.
 afterEach(cleanup);
 
+// must mirror features/search/scanStages.ts SCAN_STAGES
 const runningStages: ScanProgressStageRow[] = [
-  { stage: 'discover', label: 'Finding jobs across boards', state: 'done' },
-  { stage: 'extract', label: 'Reading job descriptions', state: 'done' },
-  { stage: 'score', label: 'Scoring fit and legitimacy', state: 'active', current: 4, total: 30, detail: '4/30 scored' },
-  { stage: 'finalize', label: 'Finalizing your feed', state: 'pending' },
+  { stage: 'sources', label: 'Discovering postings', state: 'done' },
+  { stage: 'fetch', label: 'Reading each posting', state: 'done' },
+  { stage: 'score', label: 'Scoring fit', state: 'active', current: 4, total: 30, detail: '4/30 scored' },
+  { stage: 'legitimacy', label: 'Filtering ghost jobs', state: 'pending' },
 ];
 
 const doneStages: ScanProgressStageRow[] = runningStages.map((s) => ({ ...s, state: 'done', detail: undefined }));
@@ -22,10 +23,10 @@ describe('ScanProgress running state', () => {
   it('renders all four passed stage labels and no summary/close button', () => {
     render(<ScanProgress status="running" stages={runningStages} />);
 
-    expect(screen.getByText('Finding jobs across boards')).toBeInTheDocument();
-    expect(screen.getByText('Reading job descriptions')).toBeInTheDocument();
-    expect(screen.getByText('Scoring fit and legitimacy')).toBeInTheDocument();
-    expect(screen.getByText('Finalizing your feed')).toBeInTheDocument();
+    expect(screen.getByText('Discovering postings')).toBeInTheDocument();
+    expect(screen.getByText('Reading each posting')).toBeInTheDocument();
+    expect(screen.getByText('Scoring fit')).toBeInTheDocument();
+    expect(screen.getByText('Filtering ghost jobs')).toBeInTheDocument();
 
     expect(screen.queryByText(/flagged ghost/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /view your matches/i })).not.toBeInTheDocument();

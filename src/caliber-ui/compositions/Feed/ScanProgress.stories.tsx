@@ -9,11 +9,12 @@ const meta: Meta<typeof ScanProgress> = {
 export default meta;
 type Story = StoryObj<typeof ScanProgress>;
 
+// must mirror features/search/scanStages.ts SCAN_STAGES
 const runningStages: ScanProgressStageRow[] = [
-  { stage: "discover", label: "Finding jobs across boards", state: "done" },
-  { stage: "extract", label: "Reading job descriptions", state: "done" },
-  { stage: "score", label: "Scoring fit and legitimacy", state: "active", current: 4, total: 30, detail: "4/30 scored" },
-  { stage: "finalize", label: "Finalizing your feed", state: "pending" },
+  { stage: "sources", label: "Discovering postings", state: "done" },
+  { stage: "fetch", label: "Reading each posting", state: "done" },
+  { stage: "score", label: "Scoring fit", state: "active", current: 4, total: 30, detail: "4/30 scored" },
+  { stage: "legitimacy", label: "Filtering ghost jobs", state: "pending" },
 ];
 
 const doneStages: ScanProgressStageRow[] = runningStages.map((s) => ({ ...s, state: "done", detail: undefined }));
