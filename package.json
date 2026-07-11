@@ -7,13 +7,15 @@
     "build": "next build",
     "start": "next start",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx src/server/persistence/seed.ts",
-    "contract": "tsx src/contract/generate.ts"
+    "contract": "tsx src/contract/generate.ts",
+    "contract:check": "tsx src/contract/generate.ts && git diff --exit-code contract/openapi.json"
   },
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^8.5.0",
@@ -38,6 +40,7 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^4.7.0",
+    "@vitest/coverage-v8": "^2.1.9",
     "drizzle-kit": "^0.31.10",
     "storybook": "^8.6.18",
     "tsx": "^4.23.0",

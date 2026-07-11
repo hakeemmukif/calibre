@@ -5,5 +5,14 @@ import { resolve } from 'node:path';
 export default defineConfig({
   plugins: [react()],
   resolve: { alias: { '@': resolve(__dirname, 'src') } },
-  test: { environment: 'node', include: ['src/**/*.test.ts', 'src/**/*.test.tsx'] },
+  test: {
+    environment: 'node',
+    include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'html'],
+      include: ['src/**'],
+      exclude: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'src/**/__fixtures__/**', 'src/**/__test-utils__/**'],
+    },
+  },
 });
