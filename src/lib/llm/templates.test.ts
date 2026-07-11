@@ -1,6 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { describe, expect, it, vi } from "vitest";
 import type { TaskName } from "./client";
 import { policyVersion, renderTemplate } from "./templates";
+
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return { ...actual, readFileSync: vi.fn(actual.readFileSync) };
+});
 
 describe("policyVersion", () => {
   it("is stable across repeated calls for the same task", () => {
@@ -36,8 +42,16 @@ describe("renderTemplate", () => {
     expect(messages[0].role).toBe("system");
   });
 
-  it("throws on an unknown task", () => {
+  it("throws 'Unknown task' when the template file is missing (ENOENT)", () => {
     expect(() => renderTemplate("not-a-real-task" as TaskName, {})).toThrow(/unknown task/i);
+  });
+
+  it("rethrows non-ENOENT file errors unchanged instead of masking them as 'unknown task'", () => {
+    const eacces = Object.assign(new Error("permission denied"), { code: "EACCES" });
+    vi.mocked(readFileSync).mockImplementationOnce(() => {
+      throw eacces;
+    });
+    expect(() => renderTemplate("resume-extract", { rawText: "raw" })).toThrow("permission denied");
   });
 
   it("throws when a required var is missing", () => {

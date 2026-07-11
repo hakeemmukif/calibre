@@ -13,7 +13,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { LlmMessage, TaskName } from "./client";
 
-const TEMPLATES_DIR = join(__dirname, "../../../config/templates");
+const TEMPLATES_DIR = join(process.cwd(), "config", "templates");
 const DELIMITER_RE = /^---\s*(system|user:[\w-]+)\s*---$/;
 
 interface Block {
@@ -29,8 +29,11 @@ function templatePath(task: TaskName): string {
 function readTemplateFile(task: TaskName): string {
   try {
     return readFileSync(templatePath(task), "utf-8");
-  } catch {
-    throw new Error(`Unknown task "${task}": no template at config/templates/${task}.md`);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new Error(`Unknown task "${task}": no template at config/templates/${task}.md`);
+    }
+    throw err;
   }
 }
 

@@ -21,7 +21,7 @@ interface RawConfig {
   prices: Record<string, RawPrice>;
 }
 
-const CONFIG_PATH = join(__dirname, "../../../config/models.yml");
+const CONFIG_PATH = join(process.cwd(), "config", "models.yml");
 
 let cached: RawConfig | undefined;
 
