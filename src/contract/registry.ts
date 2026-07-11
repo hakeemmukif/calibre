@@ -85,7 +85,52 @@ registry.registerPath({
   },
 });
 
+registry.registerPath({
+  method: "post",
+  path: "/api/resume",
+  summary: "Upload (PDF/DOCX) or paste a résumé — F1 ingest",
+  request: {
+    body: {
+      content: {
+        "multipart/form-data": {
+          schema: z.object({ file: z.string().describe("PDF or DOCX file, ≤10MB") }),
+        },
+        "application/json": {
+          schema: z.object({ text: z.string().min(100) }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: "Parsed résumé", content: { "application/json": { schema: Resume } } },
+    413: { description: "File exceeds the 10MB limit", content: { "application/json": { schema: ErrorEnvelope } } },
+    422: {
+      description: "Bad mime type or too-short/missing text",
+      content: { "application/json": { schema: ErrorEnvelope } },
+    },
+    502: {
+      description: "Extraction or LLM structuring failed — no résumé persisted",
+      content: { "application/json": { schema: ErrorEnvelope } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/resume",
+  summary: "Fetch the current résumé",
+  responses: {
+    200: { description: "Current résumé", content: { "application/json": { schema: Resume } } },
+    404: { description: "No résumé uploaded yet", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
 type SchemaDefinition = { type: "schema"; schema: z.ZodType };
+
+// Exported so generate.ts can assert every frozen entity actually landed in
+// `document.components.schemas` — a future zod-to-openapi bump can't
+// silently emit empty/partial components without failing the build.
+export const entityNames = Object.keys(entitySchemas);
 
 // The full definitions list `generate.ts` (or any future consumer) should
 // build the document from — the tagged entity component schemas above, plus

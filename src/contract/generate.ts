@@ -6,7 +6,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { OpenApiGeneratorV31 } from "@asteasolutions/zod-to-openapi";
 import type { OpenAPIObject } from "openapi3-ts/oas31";
-import { getDefinitions } from "./registry";
+import { entityNames, getDefinitions } from "./registry";
 
 const AUTH_NOTE = "Auth: none in v1 (single-operator; network-layer protection only).";
 
@@ -30,6 +30,12 @@ export function buildDocument(): OpenAPIObject {
 
   if (!document.openapi || !document.info || !document.paths || !document.components) {
     throw new Error("contract: generated OpenAPI document is missing required top-level keys");
+  }
+
+  const schemas = document.components.schemas ?? {};
+  const missing = entityNames.filter((name) => !(name in schemas));
+  if (missing.length > 0) {
+    throw new Error(`contract: missing component schema(s) for frozen entities: ${missing.join(", ")}`);
   }
 
   return document;

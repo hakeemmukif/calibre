@@ -897,6 +897,110 @@
         },
         "summary": "Health check"
       }
+    },
+    "/api/resume": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Resume"
+                }
+              }
+            },
+            "description": "Current résumé"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No résumé uploaded yet"
+          }
+        },
+        "summary": "Fetch the current résumé"
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "text": {
+                    "minLength": 100,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "type": "object"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "file": {
+                    "description": "PDF or DOCX file, ≤10MB",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Resume"
+                }
+              }
+            },
+            "description": "Parsed résumé"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "File exceeds the 10MB limit"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad mime type or too-short/missing text"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Extraction or LLM structuring failed — no résumé persisted"
+          }
+        },
+        "summary": "Upload (PDF/DOCX) or paste a résumé — F1 ingest"
+      }
     }
   },
   "webhooks": {}

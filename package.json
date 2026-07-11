@@ -19,11 +19,13 @@
     "@asteasolutions/zod-to-openapi": "^8.5.0",
     "drizzle-orm": "^0.45.2",
     "lucide-react": "^1.24.0",
+    "mammoth": "^1.12.0",
     "next": "^15.5.20",
     "openai": "^6.46.0",
     "postgres": "^3.4.9",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
+    "unpdf": "^1.6.2",
     "yaml": "^2.9.0",
     "zod": "^4.4.3"
   },

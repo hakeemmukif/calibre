@@ -13,22 +13,11 @@ import {
   unique,
   uuid,
 } from "drizzle-orm/pg-core";
+import type { ResumeStore } from "../resume/resume-store";
 
 // ---- shared jsonb shapes (only where a precise contract shape exists) ----
 
-type ContactLine = { label: string; value: string };
-type ExperienceEntry = { company: string; title: string; dates: string; bullets: string[]; location?: string };
-type EducationEntry = { school: string; credential: string; dates: string };
-type SkillGroup = { label: string; items: string[] };
-export type ResumeStore = {
-  name: string;
-  contact: ContactLine[];
-  summary: string;
-  experience: ExperienceEntry[];
-  education: EducationEntry[];
-  skills: SkillGroup[];
-  extras: string[];
-};
+export type { ResumeStore };
 
 type JobAlias = { sourceId: string; url: string };
 
