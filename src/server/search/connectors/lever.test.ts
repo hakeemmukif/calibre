@@ -57,6 +57,32 @@ describe("lever connector", () => {
     ]);
   });
 
+  it("maps confirmed geo fields: country (ISO-2) + workplaceType (capture 2026-07-12)", async () => {
+    const fixture = [
+      {
+        text: "Executive Assistant",
+        hostedUrl: "https://jobs.lever.co/acme/geo-1",
+        categories: { location: "United States" },
+        country: "US",
+        workplaceType: "remote",
+      },
+      {
+        text: "No geo fields",
+        hostedUrl: "https://jobs.lever.co/acme/geo-2",
+        categories: { location: "Remote" },
+      },
+    ];
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(fixture), { status: 200 })));
+
+    const connector = createLeverConnector(source());
+    const postings = await collect(
+      connector.discover({ targets: [], since: new Date(0), signal: new AbortController().signal, onProgress: () => {} }),
+    );
+
+    expect(postings[0]?.geo).toEqual({ workMode: "remote", countryCode: "US" });
+    expect(postings[1]?.geo).toBeUndefined();
+  });
+
   it("yields nothing when the response body is not an array (defensive, not a hard failure)", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ not: "an array" }), { status: 200 })));
     const connector = createLeverConnector(source());

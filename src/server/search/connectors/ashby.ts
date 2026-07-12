@@ -6,18 +6,38 @@
 // unauthenticated hits); ported here as a fixed retry budget.
 import type { SourceRow } from "@/server/persistence/repos/sources";
 import type { RawPosting, SourceConnector } from "../connector";
+import { parseLocationGeo, type ParsedGeo } from "../geo";
 import { htmlToText } from "./_html";
 import { fetchJson } from "./_http";
 
 const ASHBY_TIMEOUT_MS = 30_000;
 const ASHBY_RETRIES = 2;
 
+// isRemote + address.postalAddress.addressCountry live-verified 2026-07-12
+// (docs/architecture/connector-geo-capture.md) — only confirmed fields read.
 interface AshbyJob {
   title?: string;
   jobUrl?: string;
   location?: string;
+  isRemote?: boolean;
+  address?: { postalAddress?: { addressCountry?: string } };
   publishedAt?: string;
   descriptionHtml?: string;
+}
+
+// Structured geo from confirmed payload fields (spec §5 Layer B): isRemote
+// beats string parsing for workMode; addressCountry (a country NAME) maps to
+// ISO-2 via the curated tables. {} -> undefined so the resolver's merge
+// falls back to the location string entirely.
+function ashbyGeo(j: AshbyJob): ParsedGeo | undefined {
+  const geo: ParsedGeo = {};
+  if (j.isRemote === true) geo.workMode = "remote";
+  const country = j.address?.postalAddress?.addressCountry;
+  if (country) {
+    const parsed = parseLocationGeo(country);
+    if (parsed.countryCode) geo.countryCode = parsed.countryCode;
+  }
+  return Object.keys(geo).length > 0 ? geo : undefined;
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -61,6 +81,7 @@ export function createAshbyConnector(source: SourceRow): SourceConnector {
           title: j.title ?? "",
           company: slug,
           location: j.location || undefined,
+          geo: ashbyGeo(j),
           description:
             typeof j.descriptionHtml === "string" && j.descriptionHtml.trim().length > 0
               ? htmlToText(j.descriptionHtml).slice(0, 40_000)

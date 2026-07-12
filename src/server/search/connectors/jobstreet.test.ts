@@ -65,6 +65,7 @@ describe("jobstreet connector", () => {
         title: "Graduate Software Engineer",
         company: "SEEK",
         location: "Kuala Lumpur",
+        geo: { countryCode: "MY" }, // locations[].countryCode, capture 2026-07-12
         postedAt: "2026-07-01T00:00:00Z",
       },
     ]);
@@ -110,6 +111,30 @@ describe("jobstreet connector", () => {
     );
 
     expect(posting?.location).toBe("Kuala Lumpur / Penang");
+  });
+
+  it("maps confirmed geo fields: locations[].countryCode + workArrangements.displayText (capture 2026-07-12)", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      fixturePage([
+        {
+          id: "3",
+          title: "Hybrid Engineer",
+          companyName: "Geo Sdn Bhd",
+          locations: [{ label: "Kuala Lumpur", countryCode: "MY" }],
+          workArrangements: { displayText: "Hybrid" },
+        },
+        { id: "4", title: "No geo fields", companyName: "Plain Sdn Bhd", locations: [{ label: "Somewhere" }] },
+      ]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const connector = createJobstreetConnector(source());
+    const postings = await collect(
+      connector.discover({ targets: [], since: new Date(0), signal: new AbortController().signal, onProgress: () => {} }),
+    );
+
+    expect(postings[0]?.geo).toEqual({ countryCode: "MY", workMode: "hybrid" });
+    expect(postings[1]?.geo).toBeUndefined();
   });
 
   it("stops paginating once a page returns fewer than pageSize results", async () => {

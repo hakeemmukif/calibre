@@ -85,9 +85,11 @@ export function resolveEligibility(args: ResolveEligibilityArgs): { tier: Eligib
     return { tier: "abroad", evidence: `JD: hires only in ${terms.join(", ")}` };
   }
 
-  // 3. Layer B — connector geo (structured if provided, else parsed string).
+  // 3. Layer B — connector geo MERGED over the parsed string: structured
+  // fields (a payload's isRemote/country) override, the string fills gaps —
+  // a partial connectorGeo must never erase what the string carries.
   const location = args.location && args.location.trim().length > 0 ? args.location : undefined;
-  const geo = args.connectorGeo ?? parseLocationGeo(location);
+  const geo: ParsedGeo = { ...parseLocationGeo(location), ...args.connectorGeo };
 
   if (geo.regionHint === "worldwide") return { tier: "anywhere", evidence: `location: ${location ?? "worldwide"}` };
 

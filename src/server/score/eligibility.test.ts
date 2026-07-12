@@ -107,6 +107,21 @@ describe("resolveEligibility precedence", () => {
     expect(resolveEligibility({ ...ATS_APAC, location: "Remote" }).tier).toBe("eligible");
   });
 
+  // Structured connector geo MERGES with the parsed location string —
+  // partial structured fields must never erase what the string carries.
+  it("connectorGeo workMode merges with the string's country (Ashby isRemote + 'Remote (US)')", () => {
+    expect(
+      resolveEligibility({ ...ATS_RESTRICTED, location: "Remote (US)", connectorGeo: { workMode: "remote" } }).tier,
+    ).toBe("abroad");
+  });
+
+  it("connectorGeo countryCode overrides the string's parse", () => {
+    expect(
+      resolveEligibility({ ...ATS_RESTRICTED, location: "Remote", connectorGeo: { workMode: "remote", countryCode: "MY" } })
+        .tier,
+    ).toBe("eligible");
+  });
+
   // Fail-loud floor.
   it("empty location, no JD facts -> unknown with 'no geography stated'", () => {
     const r = resolveEligibility({ ...ATS_ANYWHERE, location: "" });

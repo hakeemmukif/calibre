@@ -15,6 +15,7 @@
 // makes that non-fatal to the run, not anything special done here.
 import type { SourceRow } from "@/server/persistence/repos/sources";
 import type { RawPosting, SourceConnector } from "../connector";
+import type { ParsedGeo } from "../geo";
 import { htmlToText } from "./_html";
 import { fetchJson, postJson } from "./_http";
 
@@ -34,13 +35,28 @@ interface JobstreetConfig {
   maxPages?: number;
 }
 
+// locations[].countryCode + workArrangements.displayText live-verified
+// 2026-07-12 (docs/architecture/connector-geo-capture.md).
 interface JobstreetItem {
   id?: string;
   title?: string;
   companyName?: string;
   advertiser?: { description?: string };
-  locations?: { label?: string }[];
+  locations?: { label?: string; countryCode?: string }[];
+  workArrangements?: { displayText?: string };
   listingDate?: string;
+}
+
+// Structured geo from confirmed payload fields (spec §5 Layer B).
+function jobstreetGeo(item: JobstreetItem): ParsedGeo | undefined {
+  const geo: ParsedGeo = {};
+  const countryCode = item.locations?.find((l) => l.countryCode)?.countryCode;
+  if (countryCode) geo.countryCode = countryCode.toUpperCase();
+  const wa = item.workArrangements?.displayText?.toLowerCase();
+  if (wa === "remote") geo.workMode = "remote";
+  else if (wa === "hybrid") geo.workMode = "hybrid";
+  else if (wa === "on-site" || wa === "onsite") geo.workMode = "onsite";
+  return Object.keys(geo).length > 0 ? geo : undefined;
 }
 
 function deriveBaseUrl(apiUrl: string): string {
@@ -116,6 +132,7 @@ export function createJobstreetConnector(source: SourceRow): SourceConnector {
                 ?.map((l) => l.label?.trim())
                 .filter((l): l is string => Boolean(l))
                 .join(" / ") || undefined,
+            geo: jobstreetGeo(item),
             postedAt: item.listingDate || undefined,
           };
           yield posting;

@@ -64,6 +64,34 @@ describe("ashby connector", () => {
     ]);
   });
 
+  it("maps confirmed geo fields: isRemote -> workMode, addressCountry -> countryCode (capture 2026-07-12)", async () => {
+    const fixture = {
+      jobs: [
+        {
+          title: "Platform Engineer",
+          jobUrl: "https://jobs.ashbyhq.com/acme/geo-1",
+          location: "Remote (US)",
+          isRemote: true,
+          address: { postalAddress: { addressCountry: "United States" } },
+        },
+        {
+          title: "No geo fields",
+          jobUrl: "https://jobs.ashbyhq.com/acme/geo-2",
+          location: "Remote",
+        },
+      ],
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(fixture), { status: 200 })));
+
+    const connector = createAshbyConnector(source());
+    const postings = await collect(
+      connector.discover({ targets: [], since: new Date(0), signal: new AbortController().signal, onProgress: () => {} }),
+    );
+
+    expect(postings[0]?.geo).toEqual({ workMode: "remote", countryCode: "US" });
+    expect(postings[1]?.geo).toBeUndefined(); // {} normalizes to absent — resolver falls back to the string
+  });
+
   it("caps the yielded description at 40_000 chars", async () => {
     const fixture = {
       jobs: [

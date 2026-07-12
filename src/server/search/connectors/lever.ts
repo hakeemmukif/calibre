@@ -3,14 +3,29 @@
 // from the source row's `config.slug`.
 import type { SourceRow } from "@/server/persistence/repos/sources";
 import type { RawPosting, SourceConnector } from "../connector";
+import type { ParsedGeo } from "../geo";
 import { fetchJson } from "./_http";
 
+// country (ISO-2) + workplaceType live-verified 2026-07-12
+// (docs/architecture/connector-geo-capture.md) — only confirmed fields read.
 interface LeverPosting {
   text?: string;
   hostedUrl?: string;
   categories?: { location?: string };
+  country?: string;
+  workplaceType?: string;
   descriptionPlain?: string;
   createdAt?: number;
+}
+
+// Structured geo from confirmed payload fields (spec §5 Layer B).
+function leverGeo(p: LeverPosting): ParsedGeo | undefined {
+  const geo: ParsedGeo = {};
+  if (p.workplaceType === "remote") geo.workMode = "remote";
+  else if (p.workplaceType === "hybrid") geo.workMode = "hybrid";
+  else if (p.workplaceType === "onsite" || p.workplaceType === "on-site") geo.workMode = "onsite";
+  if (typeof p.country === "string" && p.country.length === 2) geo.countryCode = p.country.toUpperCase();
+  return Object.keys(geo).length > 0 ? geo : undefined;
 }
 
 export function createLeverConnector(source: SourceRow): SourceConnector {
@@ -35,6 +50,7 @@ export function createLeverConnector(source: SourceRow): SourceConnector {
           title: p.text ?? "",
           company: slug,
           location: p.categories?.location || undefined,
+          geo: leverGeo(p),
           description: typeof p.descriptionPlain === "string" ? p.descriptionPlain : undefined,
           postedAt: typeof p.createdAt === "number" ? new Date(p.createdAt).toISOString() : undefined,
         };
