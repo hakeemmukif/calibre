@@ -282,4 +282,71 @@ describe("useUrlCheck", () => {
     expect(result.current.state.check?.id).toBe("check-2");
     expect(result.current.state.stage).toBe("searching");
   });
+
+  // final-review fix wave FIX 4: the generationRef machinery had zero direct
+  // coverage — these pin the guard against a stale SUCCESSFUL resolution
+  // (distinct from the stale-rejection test above), using manually-resolved
+  // promises to sequence the race deterministically.
+
+  it("a stale poll success from a superseded generation does not clobber a fresh submit's state", async () => {
+    const stalePoll = deferred<UrlCheck>();
+    startCheck.mockResolvedValueOnce(check({ id: "check-1", status: "running", stage: "fetching" }));
+    getCheck.mockImplementationOnce(() => stalePoll.promise);
+    const { result } = renderHook(() => useUrlCheck());
+
+    await act(async () => {
+      await result.current.submit("https://example.com/job");
+    });
+    // Fires the poll timer, which invokes getCheck() — still pending.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+
+    // A second submit supersedes generation #1 before the first poll settles.
+    startCheck.mockResolvedValueOnce(check({ id: "check-2", status: "running", stage: "searching" }));
+    await act(async () => {
+      await result.current.submit("https://example.com/job2");
+    });
+
+    // The stale generation's poll now resolves successfully — it must be a
+    // silent no-op, not a jump back to whatever it reports.
+    await act(async () => {
+      stalePoll.resolve(check({ id: "check-1", status: "completed", jobId: "job-1" }));
+      await Promise.resolve().then(() => Promise.resolve());
+    });
+
+    expect(result.current.state.check?.id).toBe("check-2");
+    expect(result.current.state.status).toBe("running");
+    expect(result.current.state.stage).toBe("searching");
+    expect(getJob).not.toHaveBeenCalled();
+  });
+
+  it("a stale getJob success arriving after dismiss() does not clobber the idle state", async () => {
+    const staleGetJob = deferred<Job>();
+    startCheck.mockResolvedValue(check({ id: "check-1", status: "running", stage: "scoring" }));
+    getCheck.mockResolvedValueOnce(check({ id: "check-1", status: "completed", stage: "scoring", jobId: "job-1" }));
+    getJob.mockImplementationOnce(() => staleGetJob.promise);
+    const { result } = renderHook(() => useUrlCheck());
+
+    await act(async () => {
+      await result.current.submit("https://example.com/job");
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+    // getJob is now pending (deferred) — the "completed" branch is mid-flight.
+    expect(result.current.state.status).toBe("running");
+
+    act(() => {
+      result.current.dismiss();
+    });
+    expect(result.current.state).toEqual({ status: "idle", stage: null, check: null, job: null });
+
+    await act(async () => {
+      staleGetJob.resolve(job({ id: "job-1" }));
+      await Promise.resolve().then(() => Promise.resolve());
+    });
+
+    expect(result.current.state).toEqual({ status: "idle", stage: null, check: null, job: null });
+  });
 });
