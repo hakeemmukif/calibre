@@ -4,10 +4,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z, ZodError } from "zod";
 import { ActiveRunConflictError, NoActiveResumeError, UnknownSourceIdsError, startSearch } from "@/server/search/run";
-import { Persona, type ErrorEnvelope } from "@/types";
+import { ScanPersona, type ErrorEnvelope } from "@/types";
 
 const RequestBody = z.object({
-  persona: Persona,
+  persona: ScanPersona,
   sources: z.array(z.string()).min(1).optional(),
 });
 

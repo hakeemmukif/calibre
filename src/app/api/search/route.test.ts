@@ -142,4 +142,10 @@ describe("POST /api/search", () => {
     expect(res.status).toBe(422);
     expect((await res.json()).error.code).toBe("VALIDATION_ERROR");
   });
+
+  it("persona 'pasted' returns 422 VALIDATION_ERROR (scan-only boundary — spec §11.2)", async () => {
+    const res = await POST(jsonRequest({ persona: "pasted" }));
+    expect(res.status).toBe(422);
+    expect((await res.json()).error.code).toBe("VALIDATION_ERROR");
+  });
 });
