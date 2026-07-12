@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { assembleJob } from "@/features/feed/assemble";
 import { isUuid } from "@/server/http/params";
+import { ApplicationExistsError, deletePastedJob, NotDeletableError, UnknownJobError } from "@/server/jobs/delete-job";
 import { jobsRepo } from "@/server/persistence/repos/jobs";
 import { resolveIsNewCutoff } from "@/server/search/jobsFeed";
 import type { ErrorEnvelope } from "@/types";
@@ -25,4 +26,27 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 
   const cutoff = await resolveIsNewCutoff(joined.job.persona);
   return NextResponse.json(assembleJob(joined, { isNewCutoff: cutoff }), { status: 200 });
+}
+
+export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  if (!isUuid(id)) {
+    return errorResponse(404, "NOT_FOUND", `No job with id "${id}".`);
+  }
+
+  try {
+    await deletePastedJob(id);
+    return new NextResponse(null, { status: 204 });
+  } catch (err) {
+    if (err instanceof UnknownJobError) {
+      return errorResponse(404, "NOT_FOUND", err.message);
+    }
+    if (err instanceof NotDeletableError) {
+      return errorResponse(409, "CONFLICT", err.message);
+    }
+    if (err instanceof ApplicationExistsError) {
+      return errorResponse(409, "CONFLICT", err.message);
+    }
+    throw err;
+  }
 }
