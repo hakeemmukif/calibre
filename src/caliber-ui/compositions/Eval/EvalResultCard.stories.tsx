@@ -14,19 +14,50 @@ type Story = StoryObj<typeof EvalResultCard>;
 const noop = () => console.log("action");
 
 export const Verified: Story = {
-  args: { job: jobs.find((j) => j.legitimacy.tier === "verified")!, onOpen: noop, onSave: noop },
+  args: { job: jobs.find((j) => j.legitimacy.tier === "verified")!, onOpen: noop, onSave: noop, onTailor: noop, onDismiss: noop },
 };
 
 export const Suspicious: Story = {
-  args: { job: jobs.find((j) => j.legitimacy.tier === "suspicious")!, onOpen: noop, onSave: noop },
+  args: { job: jobs.find((j) => j.legitimacy.tier === "suspicious")!, onOpen: noop, onSave: noop, onTailor: noop, onDismiss: noop },
+};
+
+export const Ghost: Story = {
+  args: { job: jobs.find((j) => j.legitimacy.tier === "ghost")!, onOpen: noop, onSave: noop, onTailor: noop, onDismiss: noop },
 };
 
 export const Scam: Story = {
-  args: { job: jobs.find((j) => j.legitimacy.tier === "scam")!, onOpen: noop, onSave: noop },
+  args: { job: jobs.find((j) => j.legitimacy.tier === "scam")!, onOpen: noop, onSave: noop, onTailor: noop, onDismiss: noop },
 };
 
 export const LowFitHighLegit: Story = {
-  args: { job: jobs.find((j) => j.legitimacy.tier === "clear")!, onOpen: noop, onSave: noop },
+  args: { job: jobs.find((j) => j.legitimacy.tier === "clear")!, onOpen: noop, onSave: noop, onTailor: noop, onDismiss: noop },
+};
+
+export const AlreadyKnown: Story = {
+  args: {
+    job: jobs.find((j) => j.legitimacy.tier === "verified")!,
+    onOpen: noop,
+    onSave: noop,
+    onTailor: noop,
+    onDismiss: noop,
+    alreadyKnownScopeLabel: "Remote",
+  },
+};
+
+export const WebCheckFailed: Story = {
+  args: {
+    job: {
+      ...jobs.find((j) => j.legitimacy.tier === "suspicious")!,
+      legitimacy: {
+        ...jobs.find((j) => j.legitimacy.tier === "suspicious")!.legitimacy,
+        webEvidence: { status: "failed", reason: "search provider timeout" },
+      },
+    },
+    onOpen: noop,
+    onSave: noop,
+    onTailor: noop,
+    onDismiss: noop,
+  },
 };
 
 export const LoadingSkeleton: Story = {
