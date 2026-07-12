@@ -9,8 +9,18 @@ const meta: Meta<typeof UrlEvalBar> = {
 export default meta;
 type Story = StoryObj<typeof UrlEvalBar>;
 
-function Demo({ status, error }: { status: UrlEvalStatus; error?: string }) {
-  return <UrlEvalBar status={status} error={error} onSubmit={(url) => console.log("eval", url)} />;
+function Demo(props: {
+  status: UrlEvalStatus;
+  stageText?: string;
+  error?: string;
+  showPasteBox?: boolean;
+}) {
+  return (
+    <UrlEvalBar
+      {...props}
+      onSubmit={(url, text) => console.log("eval", url, text)}
+    />
+  );
 }
 
 export const Idle: Story = {
@@ -21,6 +31,24 @@ export const Evaluating: Story = {
   render: () => <Demo status="evaluating" />,
 };
 
+export const EvaluatingWithStage: Story = {
+  render: () => <Demo status="evaluating" stageText="Reading the posting…" />,
+};
+
+export const Success: Story = {
+  render: () => <Demo status="success" />,
+};
+
 export const InvalidUrlError: Story = {
   render: () => <Demo status="error" error="That doesn't look like a job posting URL." />,
+};
+
+export const NeedsTextPasteBox: Story = {
+  render: () => (
+    <Demo
+      status="error"
+      error="We couldn't read that page automatically — paste the posting text below and try again."
+      showPasteBox
+    />
+  ),
 };
