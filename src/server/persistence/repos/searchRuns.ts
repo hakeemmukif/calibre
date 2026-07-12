@@ -1,4 +1,5 @@
 import { desc, eq, inArray } from "drizzle-orm";
+import type { ScanPersona } from "@/types";
 import { getDb } from "../db";
 import { searchRuns } from "../schema";
 import type { Db } from "./db";
@@ -21,7 +22,7 @@ export function createSearchRunsRepo(db: Db) {
     // (both-persona runs are possible), so persona containment is filtered
     // in JS rather than a jsonb `@>` SQL operator — dataset is single-
     // operator-MVP small (a handful of runs at most).
-    async getLatestCompleted(persona?: "remote" | "local"): Promise<SearchRunRow | null> {
+    async getLatestCompleted(persona?: ScanPersona): Promise<SearchRunRow | null> {
       const rows = await db
         .select()
         .from(searchRuns)

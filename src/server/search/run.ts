@@ -17,7 +17,7 @@ import { searchRunsRepo, type SearchRunRow } from "@/server/persistence/repos/se
 import { sourcesRepo, type SourceRow } from "@/server/persistence/repos/sources";
 import { create, release, getActiveRunForPersona, type RunHandle } from "@/server/runs/registry";
 import { EmptyJobDescriptionError, scoreJob } from "@/server/score";
-import type { ErrorEnvelope, Persona, SearchRun } from "@/types";
+import type { ErrorEnvelope, ScanPersona, SearchRun } from "@/types";
 import { toSearchRun } from "./assemble-run";
 import type { RawPosting, SourceConnector } from "./connector";
 import { connectorForSource } from "./connectors";
@@ -67,7 +67,7 @@ const DEFAULT_CONNECTOR_TIMEOUT_MS = 15_000;
 const DEFAULT_HARD_RUN_TIMEOUT_MS = 10 * 60 * 1000;
 
 export interface StartSearchInput {
-  persona: Persona;
+  persona: ScanPersona;
   sources?: string[];
   resumeId?: string;
 }
@@ -146,7 +146,7 @@ export async function startSearch(input: StartSearchInput, deps: StartSearchDeps
 // row stayed 'running' forever (worse combined with a process restart,
 // since nothing else ever revisits it) and no live SSE subscriber ever saw a
 // terminal event. Mark the row 'failed' and emit a terminal 'error' event.
-async function failRun(runId: string, persona: Persona, handle: RunHandle, err: unknown): Promise<void> {
+async function failRun(runId: string, persona: ScanPersona, handle: RunHandle, err: unknown): Promise<void> {
   console.error(`search run ${runId} crashed unexpectedly:`, err);
   const message = err instanceof Error ? err.message : String(err);
 
@@ -165,7 +165,7 @@ async function runFanOut(
   row: SearchRunRow,
   sources: SourceRow[],
   resumeRow: ResumeRow,
-  persona: Persona,
+  persona: ScanPersona,
   profile: ProfileRow,
   handle: RunHandle,
   deps: StartSearchDeps,
@@ -321,7 +321,7 @@ function groupByCollision(matched: { posting: RawPosting; source: SourceRow }[])
 // score them — B5 discarded these since scoring didn't exist yet.
 async function upsertMatchedPostings(
   matched: { posting: RawPosting; source: SourceRow }[],
-  persona: Persona,
+  persona: ScanPersona,
   profile: ProfileRow,
 ): Promise<{ job: JobRow; source: SourceRow }[]> {
   const groups = groupByCollision(matched);
@@ -377,7 +377,7 @@ async function scoreTopCandidates(
   row: SearchRunRow,
   candidates: { job: JobRow; source: SourceRow }[],
   resume: ResumeRow,
-  persona: Persona,
+  persona: ScanPersona,
   profile: ProfileRow,
   handle: RunHandle,
   deps: StartSearchDeps,

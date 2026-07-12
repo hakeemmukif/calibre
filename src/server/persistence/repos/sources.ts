@@ -1,4 +1,5 @@
 import { and, asc, eq, or } from "drizzle-orm";
+import type { ScanPersona } from "@/types";
 import { getDb } from "../db";
 import { sources } from "../schema";
 import type { Db } from "./db";
@@ -17,7 +18,7 @@ export function createSourcesRepo(db: Db) {
       return row ?? null;
     },
     // §3 PersonaToggle: `sources WHERE persona IN (active, 'both') AND enabled`
-    async listEnabledByPersona(persona: "remote" | "local"): Promise<SourceRow[]> {
+    async listEnabledByPersona(persona: ScanPersona): Promise<SourceRow[]> {
       return db
         .select()
         .from(sources)
