@@ -108,4 +108,20 @@ describe("fetchPageText", () => {
     expect(result.pageTitle).toBe("Senior Engineer & Lead");
     expect(result.text).toContain("Job description content.");
   });
+
+  it("flags login-wall boilerplate as blocked even when the stripped text clears MIN_TEXT_CHARS", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(htmlPage("Sign in to continue viewing this page. ".repeat(20)), {
+          status: 200,
+          headers: { "content-type": "text/html" },
+        }),
+      ),
+    );
+
+    const result = await fetchPageText("https://example.com/job");
+
+    expect(result).toEqual({ ok: false, reason: "blocked" });
+  });
 });

@@ -19,6 +19,18 @@ export const MAX_BYTES = 2_000_000;
 const TIMEOUT_MS = 10_000;
 const MAX_REDIRECTS = 3;
 
+// Boilerplate on gated pages (LinkedIn/Indeed auth-walls, Cloudflare
+// challenge screens) instead of the posting — flagged 'blocked' even when
+// the stripped text clears MIN_TEXT_CHARS.
+const LOGIN_WALL_MARKERS = [
+  /sign in to continue/i,
+  /join linkedin/i,
+  /authwall/i,
+  /enable javascript to continue/i,
+  /verify you are human/i,
+  /checking your browser before accessing/i,
+];
+
 export async function fetchPageText(url: string): Promise<FetchPageResult> {
   let currentUrl: URL;
   try {
@@ -71,6 +83,7 @@ export async function fetchPageText(url: string): Promise<FetchPageResult> {
     const raw = new TextDecoder().decode(body.bytes);
     const pageTitle = extractTitle(raw);
     const text = htmlToText(raw);
+    if (LOGIN_WALL_MARKERS.some((marker) => marker.test(text))) return { ok: false, reason: "blocked" };
     if (text.length < MIN_TEXT_CHARS) return { ok: false, reason: text.length === 0 ? "empty" : "blocked" };
     if (text.length > MAX_TEXT_CHARS) return { ok: false, reason: "oversize" };
     return { ok: true, text, pageTitle };
