@@ -285,7 +285,6 @@ export async function startUrlCheck(
     throw new PayloadTooLargeError(req.text.length);
   }
 
-  const profile = await profileRepo.get();
   const dedupeKey = dedupeKeyFor(req.url);
   const existingJob = await jobsRepo.getByDedupeKey(dedupeKey);
 
@@ -307,6 +306,7 @@ export async function startUrlCheck(
     return { check: assemble(row), started: false };
   }
 
+  const profile = await profileRepo.get();
   const row = await urlChecksRepo.insert({
     id: crypto.randomUUID(),
     url: req.url,
