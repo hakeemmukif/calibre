@@ -4,17 +4,18 @@ import { Input } from "../../components/Input";
 import { Button } from "../../components/Button";
 import { Icon } from "../../components/Icon";
 
-export type UrlEvalStatus = "idle" | "evaluating" | "error";
+export type UrlEvalStatus = "idle" | "evaluating" | "success" | "error";
 
 export interface UrlEvalBarProps {
   onSubmit(url: string): void;
   status: UrlEvalStatus;
+  stageText?: string;
   error?: string;
 }
 
 // UrlEvalBar — the header omnibox front door for F2 (paste a URL to eval a
 // role). Composes Input (link icon) + Button "Check".
-export function UrlEvalBar({ onSubmit, status, error }: UrlEvalBarProps) {
+export function UrlEvalBar({ onSubmit, status, stageText, error }: UrlEvalBarProps) {
   const [url, setUrl] = React.useState("");
   const evaluating = status === "evaluating";
 
@@ -40,8 +41,19 @@ export function UrlEvalBar({ onSubmit, status, error }: UrlEvalBarProps) {
           {evaluating ? "Checking…" : "Check"}
         </Button>
       </div>
+      {status === "evaluating" && stageText && (
+        <div style={{ display: "flex", alignItems: "center", gap: 5, font: "var(--type-caption)", color: "var(--text-muted)" }}>
+          {stageText}
+        </div>
+      )}
+      {status === "success" && (
+        <div style={{ display: "flex", alignItems: "center", gap: 5, font: "var(--type-caption)", color: "var(--success)" }}>
+          <Icon name="circle-check" size={13} />
+          Checked
+        </div>
+      )}
       {status === "error" && error && (
-        <div style={{ display: "flex", alignItems: "center", gap: 5, font: "var(--type-caption)", color: "var(--danger-ink)" }}>
+        <div role="alert" style={{ display: "flex", alignItems: "center", gap: 5, font: "var(--type-caption)", color: "var(--danger-ink)" }}>
           <Icon name="triangle-alert" size={13} />
           {error}
         </div>
