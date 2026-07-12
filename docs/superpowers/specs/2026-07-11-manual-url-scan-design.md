@@ -1,7 +1,7 @@
 # Manual URL Scan — design
 
 - **Date:** 2026-07-11
-- **Status:** Approved for planning (design brainstormed + Fable-reviewed)
+- **Status:** Superseded by `2026-07-12-pasted-job-ingestion-design.md` (which adopts this spec's naming, gates, and `scoreJob` extension, and extends it with a search-escalation tier, an automatic ghost posting-history check, an async `url_checks` run, a dedicated Pasted feed scope, and delete)
 - **Feature:** paste a job URL → verify it is a real posting → extract fields, score fit + legitimacy → persist into the feed. A manual, single-URL equivalent of the automated market scan, reusing the existing scoring pipeline.
 
 ## 1. Goal
