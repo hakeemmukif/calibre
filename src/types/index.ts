@@ -4,8 +4,11 @@
 // these shapes. `Schema.parse(...)` at every boundary — no silent defaults.
 import { z } from "zod";
 
-export const Persona = z.enum(["remote", "local"]);
+export const Persona = z.enum(["remote", "local", "pasted"]);
 export type Persona = z.infer<typeof Persona>;
+
+export const ScanPersona = z.enum(["remote", "local"]);
+export type ScanPersona = z.infer<typeof ScanPersona>;
 
 export const LegitimacyTier = z.enum(["verified", "clear", "suspicious", "ghost", "scam"]); // §11.8
 export type LegitimacyTier = z.infer<typeof LegitimacyTier>;
@@ -13,11 +16,32 @@ export type LegitimacyTier = z.infer<typeof LegitimacyTier>;
 export const Tone = z.enum(["verified", "good", "warn", "ghost", "danger"]);
 export type Tone = z.infer<typeof Tone>;
 
+export const GhostWebEvidence = z.object({
+  sightings: z.array(
+    z.object({
+      url: z.string().url(), // the citation IS the sighting
+      source: z.string(),
+      postedDate: z.string().optional(),
+    }),
+  ),
+  companySignals: z.array(z.string()),
+  summary: z.string(),
+  confidence: z.number().min(0).max(1),
+});
+export type GhostWebEvidence = z.infer<typeof GhostWebEvidence>;
+
+export const WebEvidence = z.discriminatedUnion("status", [
+  GhostWebEvidence.extend({ status: z.literal("ok") }),
+  z.object({ status: z.literal("failed"), reason: z.string() }),
+]);
+export type WebEvidence = z.infer<typeof WebEvidence>;
+
 export const Legitimacy = z.object({
   tier: LegitimacyTier,
   tone: Tone,
   summary: z.string(),
   confidence: z.number().min(0).max(1).optional(), // only if scorer emits a real number (§11.8 D/G)
+  webEvidence: WebEvidence.optional(),
 });
 export type Legitimacy = z.infer<typeof Legitimacy>;
 
@@ -37,7 +61,7 @@ export type Eligibility = z.infer<typeof Eligibility>;
 export const SourceRef = z.object({ // Source entity, referenced from Job
   id: z.string(),
   name: z.string(),
-  kind: z.enum(["ats", "board"]),
+  kind: z.enum(["ats", "board", "manual"]),
   persona: Persona,
 });
 export type SourceRef = z.infer<typeof SourceRef>;
@@ -47,7 +71,7 @@ export type SourceRef = z.infer<typeof SourceRef>;
 export const Source = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
-  kind: z.enum(["ats", "board"]),
+  kind: z.enum(["ats", "board", "manual"]),
   persona: z.enum(["remote", "local", "both"]),
   enabled: z.boolean(),
 });
@@ -212,19 +236,24 @@ export const TailoredResume = z.object({
 });
 export type TailoredResume = z.infer<typeof TailoredResume>;
 
+export const ErrorCode = z.enum([
+  "VALIDATION_ERROR",
+  "NOT_FOUND",
+  "CONFLICT",
+  "RUN_NOT_READY",
+  "PARSE_FAILED",
+  "EXTRACTION_FAILED",
+  "UPSTREAM_LLM_ERROR",
+  "PAYLOAD_TOO_LARGE",
+  "FETCH_BLOCKED",
+  "NOT_A_JOB_POSTING",
+  "INTERNAL",
+]);
+export type ErrorCode = z.infer<typeof ErrorCode>;
+
 export const ErrorEnvelope = z.object({
   error: z.object({
-    code: z.enum([
-      "VALIDATION_ERROR",
-      "NOT_FOUND",
-      "CONFLICT",
-      "RUN_NOT_READY",
-      "PARSE_FAILED",
-      "EXTRACTION_FAILED",
-      "UPSTREAM_LLM_ERROR",
-      "PAYLOAD_TOO_LARGE",
-      "INTERNAL",
-    ]),
+    code: ErrorCode,
     message: z.string(),
     details: z.unknown().optional(), // e.g. ZodIssue[] for VALIDATION_ERROR
   }),
@@ -256,3 +285,23 @@ export const SummaryStripStats = z.object({
   excluded: z.number().int(), // hidden by the eligibility predicate (spec §8) — 0 under relocation "open"
 });
 export type SummaryStripStats = z.infer<typeof SummaryStripStats>;
+
+export const UrlCheckRequest = z.object({
+  url: z.string().url(), // applyUrl + dedupe key (dedupeKeyFor throws on bad URLs)
+  text: z.string().min(1).optional(), // paste-text fallback; skips fetch/search tiers
+});
+export type UrlCheckRequest = z.infer<typeof UrlCheckRequest>;
+
+export const UrlCheck = z.object({
+  id: z.string().uuid(),
+  url: z.string().url(),
+  status: RunStatus,
+  stage: z.string().nullable(), // open string — Progress.stage precedent
+  jobId: z.string().uuid().nullable(),
+  alreadyKnown: z.boolean(),
+  needsText: z.boolean(), // true ⇔ failure recoverable by pasting JD text
+  error: z.object({ code: ErrorCode, message: z.string() }).nullable(),
+  createdAt: z.string().datetime(),
+  finishedAt: z.string().datetime().nullable(),
+});
+export type UrlCheck = z.infer<typeof UrlCheck>;
