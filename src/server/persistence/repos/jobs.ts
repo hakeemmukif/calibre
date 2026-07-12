@@ -121,6 +121,17 @@ export function createJobsRepo(db: Db) {
       return row ?? null;
     },
 
+    // url-check admission self-healing (final review fix wave FIX 1a): a
+    // dedupe-hit job may be a PERSISTED-BUT-UNSCORED orphan (a prior
+    // startUrlCheck's persist-stage upsert succeeded but scoreJob threw) —
+    // short-circuiting to alreadyKnown for that job would hide it forever
+    // (every feed/detail view inner-joins job_scores). Callers must only
+    // treat a dedupe hit as alreadyKnown when it has at least one score row.
+    async hasAnyScore(jobId: string): Promise<boolean> {
+      const [row] = await db.select({ id: jobScores.id }).from(jobScores).where(eq(jobScores.jobId, jobId)).limit(1);
+      return row !== undefined;
+    },
+
     async listScored(q: JobsQuery): Promise<{ items: JobJoinScore[]; nextCursor: string | null }> {
       const limit = q.limit ?? DEFAULT_LIMIT;
       const conditions = buildFilterConditions(q);
@@ -267,6 +278,7 @@ export function createJobsRepo(db: Db) {
 export const jobsRepo: ReturnType<typeof createJobsRepo> = {
   upsertByDedupeKey: (row) => createJobsRepo(getDb()).upsertByDedupeKey(row),
   getByDedupeKey: (dedupeKey) => createJobsRepo(getDb()).getByDedupeKey(dedupeKey),
+  hasAnyScore: (jobId) => createJobsRepo(getDb()).hasAnyScore(jobId),
   listScored: (q) => createJobsRepo(getDb()).listScored(q),
   getById: (id) => createJobsRepo(getDb()).getById(id),
   getRowWithSourceById: (id) => createJobsRepo(getDb()).getRowWithSourceById(id),

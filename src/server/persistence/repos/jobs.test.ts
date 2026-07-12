@@ -105,6 +105,33 @@ describe("jobsRepo", () => {
     expect(missing).toBeNull();
   });
 
+  it("hasAnyScore is false for a persisted-but-unscored job, true once a job_scores row exists (final review fix wave FIX 1a)", async () => {
+    const db = await createTestDb();
+    const repo = createJobsRepo(db);
+    const source = await insertSource(db);
+    const resume = await insertResume(db);
+
+    const job = await repo.upsertByDedupeKey({
+      dedupeKey: "dk-hasanyscore",
+      url: "https://example.com/hasanyscore",
+      sourceId: source.id,
+      title: "Backend Engineer",
+      company: "Acme",
+      location: "Remote",
+      persona: "remote",
+      eligibility: "unknown",
+      eligibilityEvidence: "test fixture",
+      aliases: [],
+      raw: {},
+    });
+
+    expect(await repo.hasAnyScore(job.id)).toBe(false);
+
+    await insertJobScore(db, job.id, resume.id);
+
+    expect(await repo.hasAnyScore(job.id)).toBe(true);
+  });
+
   it("upsertByDedupeKey merges aliases across re-sightings instead of replacing them (regression)", async () => {
     const db = await createTestDb();
     const repo = createJobsRepo(db);

@@ -2,7 +2,13 @@ import { eq } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import type { LlmClient } from "@/lib/llm/client";
 import { makeMockLlm } from "@/lib/llm/mock";
-import { insertProfile, insertResume, insertSource, insertJob } from "@/server/persistence/repos/__fixtures__/helpers";
+import {
+  insertProfile,
+  insertResume,
+  insertSource,
+  insertJob,
+  insertJobScore,
+} from "@/server/persistence/repos/__fixtures__/helpers";
 import { createJobsRepo } from "@/server/persistence/repos/jobs";
 import { createUrlChecksRepo, type UrlCheckRow } from "@/server/persistence/repos/urlChecks";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
@@ -106,15 +112,19 @@ describe("startUrlCheck admission", () => {
     expect(calls).toEqual([]);
   });
 
-  it("dedupe short-circuit: existing job -> 200-shaped alreadyKnown, no LLM call, no pipeline started", async () => {
+  it("dedupe short-circuit: existing SCORED job -> 200-shaped alreadyKnown, no LLM call, no pipeline started", async () => {
     const db = await createTestDb();
     state.testDb = db;
-    await insertResume(db, { isActive: true });
+    const resume = await insertResume(db, { isActive: true });
     const source = await insertSource(db);
     const existing = await insertJob(db, source.id, {
       dedupeKey: "example.com/already-known",
       url: "https://example.com/already-known",
     });
+    // Admission only short-circuits a dedupe hit that already has a score
+    // (final review fix wave FIX 1a) — an unscored hit is the orphan case,
+    // covered separately below.
+    await insertJobScore(db, existing.id, resume.id);
     const calls: string[] = [];
 
     const { check, started } = await startUrlCheck(
@@ -151,6 +161,38 @@ describe("startUrlCheck admission", () => {
 
     const finalRow = await waitForTerminal(db, check.id);
     expect(finalRow.status).toBe("failed"); // ManualSourceMissingError -> INTERNAL, confirms the pipeline actually ran
+  });
+
+  it("orphan self-healing: dedupe hit with NO score row runs the pipeline (not alreadyKnown) and completes with a score (final review fix wave FIX 1a)", async () => {
+    const db = await createTestDb();
+    state.testDb = db;
+    await setUpForPipeline(db);
+    const orphanJobsRepo = createJobsRepo(db);
+    const orphan = await insertJob(db, "manual", {
+      dedupeKey: "example.com/orphan",
+      url: "https://example.com/orphan",
+      persona: "pasted",
+    });
+    expect(await orphanJobsRepo.hasAnyScore(orphan.id)).toBe(false);
+
+    const { check, started } = await startUrlCheck(
+      { url: "https://example.com/orphan" },
+      {
+        llm: jdExtractLlm({ title: "Backend Engineer", company: "Acme", isJobPosting: true, mustHaves: [], niceToHaves: [], responsibilities: [], redFlags: [] }),
+        fetchPageText: async () => ({ ok: true, text: "Acme hiring.", pageTitle: undefined }),
+        fetchGhostWebEvidence: async () => ({ webEvidence: { status: "ok", sightings: [], companySignals: [], summary: "ok", confidence: 0.5 }, costUsd: 0 }),
+        scoreJob: async () => ({ costUsd: 0.02 }) as unknown as ReturnType<typeof scoreJob> extends Promise<infer T> ? T : never,
+      },
+    );
+
+    expect(started).toBe(true);
+    expect(check.status).toBe("queued");
+    expect(check.alreadyKnown).toBe(false);
+
+    const finalRow = await waitForTerminal(db, check.id);
+    expect(finalRow.status).toBe("completed");
+    expect(finalRow.jobId).toBe(orphan.id);
+    expect(finalRow.alreadyKnown).toBe(false);
   });
 });
 
@@ -308,7 +350,7 @@ describe("runPipeline — persisting edge cases", () => {
     const ghostSpy = vi.fn();
     const scoreSpy = vi.fn();
 
-    const { check } = await startUrlCheck(
+    const { check, started } = await startUrlCheck(
       { url: "https://example.com/race" }, // SAME url as `raced` above
       {
         llm: jdExtractLlm({ title: "Backend Engineer", company: "Acme", isJobPosting: true, mustHaves: [], niceToHaves: [], responsibilities: [], redFlags: [] }),
@@ -318,17 +360,19 @@ describe("runPipeline — persisting edge cases", () => {
       },
     );
 
-    // Admission's own dedupeKey lookup hits the pre-seeded `raced` row
-    // directly, so this takes the 200 alreadyKnown admission path (Step 8's
-    // dedupe short-circuit), not the persisting-stage race branch — same
-    // operator-visible symptom (alreadyKnown, no ghost-check, no score) as
-    // the mid-pipeline job.sourceId !== "manual" race, which is exercised by
-    // the plain existence of that branch in Step 7's implementation rather
-    // than a real setTimeout-timed race in this suite (accepted gap, noted
-    // in this step's commit message).
-    expect(check.status).toBe("completed");
-    expect(check.alreadyKnown).toBe(true);
-    expect(check.jobId).toBe(raced.id);
+    // `raced` has no score row, so admission's hasAnyScore gate (final
+    // review fix wave FIX 1a) does NOT short-circuit it at admission —
+    // the pipeline actually runs and hits the mid-pipeline
+    // job.sourceId !== "manual" race branch (Step 7), closing the
+    // "accepted gap" this test used to note (it previously only hit the
+    // admission shortcut by accident, never the real race branch).
+    expect(started).toBe(true);
+    expect(check.status).toBe("queued");
+
+    const finalRow = await waitForTerminal(db, check.id);
+    expect(finalRow.status).toBe("completed");
+    expect(finalRow.alreadyKnown).toBe(true);
+    expect(finalRow.jobId).toBe(raced.id);
     expect(ghostSpy).not.toHaveBeenCalled();
     expect(scoreSpy).not.toHaveBeenCalled();
   });

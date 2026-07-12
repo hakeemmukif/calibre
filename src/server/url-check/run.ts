@@ -297,7 +297,13 @@ export async function startUrlCheck(
   const dedupeKey = dedupeKeyFor(req.url);
   const existingJob = await jobsRepo.getByDedupeKey(dedupeKey);
 
-  if (existingJob) {
+  // A dedupe hit only short-circuits to alreadyKnown when it's actually
+  // scored (final review fix wave FIX 1a). An unscored hit is a
+  // persisted-but-unscored orphan (a prior run's persist-stage upsert
+  // succeeded but scoreJob then threw) — falling through to the normal
+  // pipeline below self-heals it: the persist stage's upsert hits the same
+  // dedupe key and updates the row, then scoring completes it.
+  if (existingJob && (await jobsRepo.hasAnyScore(existingJob.id))) {
     const row = await urlChecksRepo.insert({
       id: crypto.randomUUID(),
       url: req.url,
