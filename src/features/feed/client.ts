@@ -43,3 +43,7 @@ export async function getJob(id: string): Promise<Job> {
 export async function evaluateJob(id: string): Promise<Job> {
   return requestJson(`/api/jobs/${id}/evaluate`, { method: "POST" }, Job);
 }
+
+export async function deleteJob(id: string): Promise<void> {
+  await requestJson(`/api/jobs/${id}`, { method: "DELETE" }, z.void());
+}
