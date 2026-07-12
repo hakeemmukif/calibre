@@ -9,6 +9,11 @@ import { renderTemplate } from "@/lib/llm/templates";
 
 export const JdFactsSchema = z.object({
   title: z.string(),
+  // Spec 2026-07-12 §6: the extract-gate. Optional so the shared
+  // automated path (scoreTopCandidates) never fails JdFactsSchema.parse
+  // when a cheap model omits it — required-at-the-boundary enforcement
+  // lives in the url-check pipeline (run.ts), not here.
+  isJobPosting: z.boolean().optional(),
   company: z.string().optional(),
   seniority: z.string().optional(),
   employmentType: z.string().optional(),

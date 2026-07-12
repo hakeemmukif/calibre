@@ -41,3 +41,40 @@ describe("JdFactsSchema hiring-scope fields", () => {
     ).toThrow();
   });
 });
+
+describe("JdFactsSchema isJobPosting field", () => {
+  it("accepts isJobPosting: true", () => {
+    const parsed = JdFactsSchema.parse({
+      title: "Engineer",
+      mustHaves: [],
+      niceToHaves: [],
+      responsibilities: [],
+      redFlags: [],
+      isJobPosting: true,
+    });
+    expect(parsed.isJobPosting).toBe(true);
+  });
+
+  it("accepts isJobPosting: false", () => {
+    const parsed = JdFactsSchema.parse({
+      title: "Engineer",
+      mustHaves: [],
+      niceToHaves: [],
+      responsibilities: [],
+      redFlags: [],
+      isJobPosting: false,
+    });
+    expect(parsed.isJobPosting).toBe(false);
+  });
+
+  it("stays undefined when omitted (do-not-guess contract)", () => {
+    const parsed = JdFactsSchema.parse({
+      title: "Engineer",
+      mustHaves: [],
+      niceToHaves: [],
+      responsibilities: [],
+      redFlags: [],
+    });
+    expect(parsed.isJobPosting).toBeUndefined();
+  });
+});
