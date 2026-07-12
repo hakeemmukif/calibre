@@ -109,6 +109,25 @@ describe("fetchPageText", () => {
     expect(result.text).toContain("Job description content.");
   });
 
+  it("reports oversize when the stripped text exceeds MAX_TEXT_CHARS while comfortably under the byte cap (spec §15)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        // ~52,000 stripped chars — well past the 40,000-char MAX_TEXT_CHARS
+        // cap but a fraction of the 2,000,000-byte MAX_BYTES cap, so this
+        // exercises the char-cap branch specifically, not the byte cap.
+        new Response(htmlPage("Job description content. ".repeat(2000)), {
+          status: 200,
+          headers: { "content-type": "text/html" },
+        }),
+      ),
+    );
+
+    const result = await fetchPageText("https://example.com/job");
+
+    expect(result).toEqual({ ok: false, reason: "oversize" });
+  });
+
   it("flags login-wall boilerplate as blocked even when the stripped text clears MIN_TEXT_CHARS", async () => {
     vi.stubGlobal(
       "fetch",
