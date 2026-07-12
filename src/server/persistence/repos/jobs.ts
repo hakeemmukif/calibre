@@ -1,5 +1,5 @@
 import { and, desc, eq, gt, gte, ilike, inArray, or, sql } from "drizzle-orm";
-import type { EligibilityTier } from "@/types";
+import type { EligibilityTier, Persona } from "@/types";
 import { getDb } from "../db";
 import { jobs, jobScores, sources, type JobAlias } from "../schema";
 import { decodeCursorId, encodeCursorId } from "./cursor";
@@ -19,7 +19,7 @@ export type SourceRow = typeof sources.$inferSelect;
 export type JobJoinScore = { job: JobRow; score: JobScoreRow; source: SourceRow };
 
 export type JobsQuery = {
-  persona?: "remote" | "local";
+  persona?: Persona;
   tier?: string[]; // job_scores.legitimacy.tier, repeatable (api-contract §3 `tier?`)
   minScore?: number;
   // Cutoff timestamp, not the wire boolean: "isNew"/"since last visit" is
@@ -58,7 +58,10 @@ function latestJobScores(db: Db) {
 // set, not the page") — same filters, no cursor/limit (those are page-only).
 function buildFilterConditions(q: Omit<JobsQuery, "cursor" | "limit">) {
   const conditions = [];
-  if (q.persona) conditions.push(eq(jobs.persona, q.persona));
+  // jobs.persona is a TEXT column with no DB-level CHECK (schema.ts's
+  // "remote"|"local" enum is TS-only) — the cast lets the "pasted" scope
+  // query correctly ahead of Task 4's schema.ts enum widening.
+  if (q.persona) conditions.push(eq(jobs.persona, q.persona as "remote" | "local"));
   if (q.eligibility && q.eligibility.length > 0) conditions.push(inArray(jobs.eligibility, q.eligibility));
   if (q.tier && q.tier.length > 0) {
     conditions.push(inArray(sql`(${jobScores.legitimacy}->>'tier')`, q.tier));
