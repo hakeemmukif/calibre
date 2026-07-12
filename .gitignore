@@ -15,3 +15,6 @@ playwright-report/
 
 # SDD subagent-driven-development scratch
 .superpowers/
+
+# Local Claude Code worktree artifacts
+.claude/worktrees/
