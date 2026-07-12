@@ -282,3 +282,123 @@ describe("runPipeline — needsText truth table", () => {
     expect(finalRow.needsText).toBe(true);
   });
 });
+
+describe("runPipeline — persisting edge cases", () => {
+  it("concurrent scan race: upsert returns a non-manual sourceId -> alreadyKnown, no ghost-check/score", async () => {
+    const db = await createTestDb();
+    state.testDb = db;
+    await setUpForPipeline(db);
+    const scanSource = await insertSource(db, { id: "greenhouse", kind: "ats" });
+    const jobsRepo = createJobsRepo(db);
+    // Simulate the race directly: pre-seed the SAME dedupe key under the
+    // scanned source before the pipeline's own upsert runs.
+    const raced = await jobsRepo.upsertByDedupeKey({
+      dedupeKey: "example.com/race",
+      url: "https://example.com/race",
+      sourceId: scanSource.id,
+      title: "Backend Engineer",
+      company: "Acme",
+      location: "Remote",
+      persona: "remote",
+      eligibility: "unknown",
+      eligibilityEvidence: "test fixture",
+      aliases: [],
+      raw: {},
+    });
+    const ghostSpy = vi.fn();
+    const scoreSpy = vi.fn();
+
+    const { check } = await startUrlCheck(
+      { url: "https://example.com/race" }, // SAME url as `raced` above
+      {
+        llm: jdExtractLlm({ title: "Backend Engineer", company: "Acme", isJobPosting: true, mustHaves: [], niceToHaves: [], responsibilities: [], redFlags: [] }),
+        fetchPageText: async () => ({ ok: true, text: "Acme hiring.", pageTitle: undefined }),
+        fetchGhostWebEvidence: ghostSpy,
+        scoreJob: scoreSpy,
+      },
+    );
+
+    // Admission's own dedupeKey lookup hits the pre-seeded `raced` row
+    // directly, so this takes the 200 alreadyKnown admission path (Step 8's
+    // dedupe short-circuit), not the persisting-stage race branch — same
+    // operator-visible symptom (alreadyKnown, no ghost-check, no score) as
+    // the mid-pipeline job.sourceId !== "manual" race, which is exercised by
+    // the plain existence of that branch in Step 7's implementation rather
+    // than a real setTimeout-timed race in this suite (accepted gap, noted
+    // in this step's commit message).
+    expect(check.status).toBe("completed");
+    expect(check.alreadyKnown).toBe(true);
+    expect(check.jobId).toBe(raced.id);
+    expect(ghostSpy).not.toHaveBeenCalled();
+    expect(scoreSpy).not.toHaveBeenCalled();
+  });
+
+  it("ghost-web failure is tolerated: pipeline still completes and scoreJob still receives status:'failed' webEvidence", async () => {
+    const db = await createTestDb();
+    state.testDb = db;
+    await setUpForPipeline(db);
+    let receivedWebEvidence: unknown;
+
+    const { check } = await startUrlCheck(
+      { url: "https://example.com/ghost-fails" },
+      {
+        llm: jdExtractLlm({ title: "Backend Engineer", company: "Acme", isJobPosting: true, mustHaves: [], niceToHaves: [], responsibilities: [], redFlags: [] }),
+        fetchPageText: async () => ({ ok: true, text: "Acme hiring.", pageTitle: undefined }),
+        fetchGhostWebEvidence: async () => ({ webEvidence: { status: "failed", reason: "sonar timed out" }, costUsd: 0 }),
+        scoreJob: async (args) => {
+          receivedWebEvidence = args.webEvidence;
+          return { costUsd: 0.02 } as unknown as ReturnType<typeof scoreJob> extends Promise<infer T> ? T : never;
+        },
+      },
+    );
+
+    const finalRow = await waitForTerminal(db, check.id);
+    expect(finalRow.status).toBe("completed");
+    expect(receivedWebEvidence).toEqual({ status: "failed", reason: "sonar timed out" });
+  });
+
+  it("manual source missing -> failed INTERNAL naming npm run db:seed", async () => {
+    const db = await createTestDb();
+    state.testDb = db;
+    await insertResume(db, { isActive: true });
+    await insertProfile(db);
+    // deliberately NOT seeding the "manual" source
+
+    const { check } = await startUrlCheck(
+      { url: "https://example.com/no-manual-source" },
+      {
+        llm: jdExtractLlm({ title: "Backend Engineer", company: "Acme", isJobPosting: true, mustHaves: [], niceToHaves: [], responsibilities: [], redFlags: [] }),
+        fetchPageText: async () => ({ ok: true, text: "Acme hiring.", pageTitle: undefined }),
+      },
+    );
+
+    const finalRow = await waitForTerminal(db, check.id);
+    expect(finalRow.status).toBe("failed");
+    expect(finalRow.error?.code).toBe("INTERNAL");
+    expect(finalRow.error?.message).toContain("npm run db:seed");
+    expect(finalRow.needsText).toBe(false);
+  });
+
+  it("scoreJob throws -> failed UPSTREAM_LLM_ERROR, needsText:false", async () => {
+    const db = await createTestDb();
+    state.testDb = db;
+    await setUpForPipeline(db);
+
+    const { check } = await startUrlCheck(
+      { url: "https://example.com/score-throws" },
+      {
+        llm: jdExtractLlm({ title: "Backend Engineer", company: "Acme", isJobPosting: true, mustHaves: [], niceToHaves: [], responsibilities: [], redFlags: [] }),
+        fetchPageText: async () => ({ ok: true, text: "Acme hiring.", pageTitle: undefined }),
+        fetchGhostWebEvidence: async () => ({ webEvidence: { status: "ok", sightings: [], companySignals: [], summary: "ok", confidence: 0.5 }, costUsd: 0 }),
+        scoreJob: async () => {
+          throw new Error("model refused");
+        },
+      },
+    );
+
+    const finalRow = await waitForTerminal(db, check.id);
+    expect(finalRow.status).toBe("failed");
+    expect(finalRow.error?.code).toBe("UPSTREAM_LLM_ERROR");
+    expect(finalRow.needsText).toBe(false);
+  });
+});
