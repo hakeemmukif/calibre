@@ -38,7 +38,7 @@ describe("searchRunsRepo", () => {
     expect(fetched?.id).toBe(inserted.id);
   });
 
-  it("markAllRunningAsFailed flips only 'running' rows to 'failed' with an error and finishedAt", async () => {
+  it("markAllUnfinishedAsFailed flips 'queued' and 'running' rows to 'failed' with an error and finishedAt, leaving completed/failed untouched", async () => {
     const db = await createTestDb();
     const repo = createSearchRunsRepo(db);
     const resume = await insertResume(db);
@@ -47,15 +47,19 @@ describe("searchRunsRepo", () => {
     const running = await repo.insert({ ...base, status: "running" });
     const queued = await repo.insert({ ...base, status: "queued" });
     const completed = await repo.insert({ ...base, status: "completed" });
+    const alreadyFailed = await repo.insert({ ...base, status: "failed" });
 
-    const flipped = await repo.markAllRunningAsFailed("stale: process restarted while running");
-    expect(flipped.map((r) => r.id)).toEqual([running.id]);
+    const flipped = await repo.markAllUnfinishedAsFailed("stale: process restarted while running");
+    expect(flipped.map((r) => r.id).sort()).toEqual([queued.id, running.id].sort());
 
     expect((await repo.getById(running.id))?.status).toBe("failed");
     expect((await repo.getById(running.id))?.error).toBe("stale: process restarted while running");
     expect((await repo.getById(running.id))?.finishedAt).not.toBeNull();
-    expect((await repo.getById(queued.id))?.status).toBe("queued");
+    expect((await repo.getById(queued.id))?.status).toBe("failed");
+    expect((await repo.getById(queued.id))?.error).toBe("stale: process restarted while running");
+    expect((await repo.getById(queued.id))?.finishedAt).not.toBeNull();
     expect((await repo.getById(completed.id))?.status).toBe("completed");
+    expect((await repo.getById(alreadyFailed.id))?.status).toBe("failed");
   });
 
   it("getLatestCompleted returns the most recent completed run, optionally scoped to a persona, null if none", async () => {

@@ -25,6 +25,12 @@ export async function getSearchRun(id: string): Promise<SearchRun> {
 // spec) — no manual header needed to hit the route's SSE branch. Each
 // `SseEvent` union member is a distinct named SSE event
 // (progress|job|done|error); the stream self-closes after done/error.
+//
+// Transport errors are left to EventSource's native auto-reconnect (no
+// `onerror` handler here): the server closes silently with a `retry` hint
+// when a handle isn't visible yet (route.ts's no-handle branch for a
+// queued/running row), and the browser reconnects on its own for any other
+// drop (proxy reset, dev-server recompile).
 export function subscribeSearch(id: string, onEvent: (event: SseEvent) => void): () => void {
   const source = new EventSource(`/api/search/${id}`);
   const eventNames = ["progress", "job", "done", "error"] as const;

@@ -1,7 +1,8 @@
 // In-memory run registry (system-architecture.md §6 decision 2: "inline
 // async in the Node process (no queue infra); in-memory run registry keyed
 // by search_runs.id; hard runtime cap. A restart kills a run (status
-// running → mark stale on boot)." + decision 3: SSE with polling fallback).
+// running → mark stale on boot)." + decision 3: SSE with client
+// auto-reconnect).
 //
 // A run's SSE stream is only servable while its process is alive — a handle
 // lives here for exactly that long. `GET /api/search/:id` falls back to the
@@ -62,10 +63,26 @@ function createRunHandle(kind: RunKind, id: string): RunHandle {
   };
 }
 
-const runs = new Map<string, RunHandle>();
+// `next dev` can instantiate this module once per route bundle (POST
+// /api/search and GET /api/search/:id are compiled/loaded independently) —
+// plain module-level Maps would then give each route its own registry
+// instance, so a handle registered by POST is invisible to GET, which
+// falsely reports the run as not-streamable. Backing the state with
+// `globalThis` ensures every bundle in the same process shares one instance.
+const g = globalThis as unknown as {
+  __caliberRunRegistry?: {
+    runs: Map<string, RunHandle>;
+    activeRunByPersona: Map<string, string>;
+  };
+};
+g.__caliberRunRegistry ??= {
+  runs: new Map<string, RunHandle>(),
+  activeRunByPersona: new Map<string, string>(),
+};
+const runs = g.__caliberRunRegistry.runs;
 // One active run id per persona — the 409-CONFLICT guard for
 // `POST /api/search` (task-B5-brief.md route contract).
-const activeRunByPersona = new Map<string, string>();
+const activeRunByPersona = g.__caliberRunRegistry.activeRunByPersona;
 
 export function create(kind: RunKind, id: string, persona?: string): RunHandle {
   const handle = createRunHandle(kind, id);
@@ -93,11 +110,12 @@ export function __resetForTests(): void {
   activeRunByPersona.clear();
 }
 
-// system-architecture.md §6 decision 2 — any `search_runs` row left `running`
-// from a previous process (a restart mid-run) is stale: no handle for it
-// exists in this fresh registry, so its SSE stream can never resume. Flip it
-// to `failed` so `GET /api/search/:id` reports a terminal state instead of
-// hanging forever in `running`. Call once on process start.
+// system-architecture.md §6 decision 2 — any `search_runs` row left `queued`
+// or `running` from a previous process (a restart mid-run, or a restart
+// between insert and fan-out) is stale: no handle for it exists in this
+// fresh registry, so its SSE stream can never resume. Flip both to `failed`
+// so `GET /api/search/:id` reports a terminal state instead of hanging
+// forever. Call once on process start.
 export async function markStaleRunningOnBoot(): Promise<void> {
-  await searchRunsRepo.markAllRunningAsFailed("stale: process restarted while this run was in progress");
+  await searchRunsRepo.markAllUnfinishedAsFailed("stale: process restarted while this run was in progress");
 }

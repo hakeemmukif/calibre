@@ -149,6 +149,25 @@ describe("GET /api/search/:id", () => {
     expect(events[0].event).toBe("done");
   });
 
+  it("SSE: no live handle for a queued/running row closes silently with a retry hint, no error/done event", async () => {
+    const resume = await insertResume(state.testDb, { isActive: true });
+    const repo = (await import("@/server/persistence/repos/searchRuns")).createSearchRunsRepo(state.testDb);
+    const runningRun = await repo.insert({
+      resumeId: resume.id,
+      personas: ["remote"],
+      status: "running",
+      stats: { scanned: 0, matched: 0, scored: 0, worth: 0, ghosts: 0, perSource: [], unscored: 0, capStopped: false },
+    });
+    expect(getRunHandle(runningRun.id)).toBeUndefined();
+
+    const res = await GET(getRequest(runningRun.id, { accept: "text/event-stream" }), {
+      params: Promise.resolve({ id: runningRun.id }),
+    });
+    const text = await res.text();
+    expect(text).toContain("retry: 2000");
+    expect(text).not.toMatch(/event: (done|error)/);
+  });
+
   it("a failed run streams a terminal error event with an INTERNAL ErrorEnvelope", async () => {
     const resume = await insertResume(state.testDb, { isActive: true });
     const repo = (await import("@/server/persistence/repos/searchRuns")).createSearchRunsRepo(state.testDb);

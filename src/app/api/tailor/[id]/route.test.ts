@@ -163,6 +163,28 @@ describe("GET /api/tailor/:id", () => {
     expect(events[0].event).toBe("done");
   });
 
+  it("SSE: no live handle for a queued/running row closes silently with a retry hint, no error/done event", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id);
+    const resume = await insertResume(state.testDb, { isActive: true });
+    const { createTailoredResumesRepo } = await import("@/server/persistence/repos/tailoredResumes");
+    const repo = createTailoredResumesRepo(state.testDb);
+    const runningRun = await repo.insert({
+      jobId: job.id,
+      baseResumeId: resume.id,
+      diff: [],
+      status: "running",
+      model: "test-model",
+    });
+
+    const res = await GET(getRequest(runningRun.id, { accept: "text/event-stream" }), {
+      params: Promise.resolve({ id: runningRun.id }),
+    });
+    const text = await res.text();
+    expect(text).toContain("retry: 2000");
+    expect(text).not.toMatch(/event: (done|error)/);
+  });
+
   it("a failed run streams a terminal error event with an INTERNAL ErrorEnvelope", async () => {
     const source = await insertSource(state.testDb);
     const job = await insertJob(state.testDb, source.id);

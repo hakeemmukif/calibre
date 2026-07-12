@@ -54,10 +54,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
               : ({ error: { code: "INTERNAL", message: `Tailor run ${id} failed.` } } satisfies ErrorEnvelope);
           controller.enqueue(encoder.encode(sseLine(eventName, data, 1)));
         } else {
-          const envelope: ErrorEnvelope = {
-            error: { code: "CONFLICT", message: `Run ${id} is not streamable (status: ${row.status}).` },
-          };
-          controller.enqueue(encoder.encode(sseLine("error", envelope, 1)));
+          // Row is `queued`/`running` but no handle exists yet — transient
+          // only (see src/app/api/search/[id]/route.ts's identical branch
+          // for the full rationale). Send a retry hint and close silently;
+          // EventSource auto-reconnects.
+          controller.enqueue(encoder.encode("retry: 2000\n: no live handle yet\n\n"));
         }
         close();
         return;

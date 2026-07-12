@@ -1,6 +1,6 @@
 // Run status route — JSON snapshot by default, SSE when `Accept:
-// text/event-stream` (api-contract.md §3/§4). Search-only this slice: emits
-// `progress`/`done`/`error`, never `job` (B6 adds job scoring/events).
+// text/event-stream` (api-contract.md §3/§4). Emits `progress`/`job`/`done`/
+// `error` (`job` is B6's scored `Job` streamed as found — server/search/run.ts).
 import { NextRequest, NextResponse } from "next/server";
 import { get as getRunHandle } from "@/server/runs/registry";
 import { isUuid } from "@/server/http/params";
@@ -63,10 +63,17 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
           };
           controller.enqueue(encoder.encode(sseLine("error", envelope, 1)));
         } else {
-          const envelope: ErrorEnvelope = {
-            error: { code: "CONFLICT", message: `Run ${id} is not streamable (status: ${row.status}).` },
-          };
-          controller.enqueue(encoder.encode(sseLine("error", envelope, 1)));
+          // Row is `queued`/`running` but no handle exists yet — this is
+          // only ever transient: either a `next dev` route-bundle race
+          // (fixed at the source by registry.ts's globalThis singleton,
+          // but a belt-and-suspenders case costs nothing here) or a request
+          // that raced the handle's own registration. It is never terminal:
+          // a truly orphaned row (process restart) is flipped to `failed`
+          // on boot (searchRunsRepo.markAllUnfinishedAsFailed), so any
+          // queued/running row here is guaranteed to resolve. Send a retry
+          // hint and close silently — EventSource auto-reconnects and the
+          // next attempt finds the handle (or the now-terminal row).
+          controller.enqueue(encoder.encode("retry: 2000\n: no live handle yet\n\n"));
         }
         close();
         return;

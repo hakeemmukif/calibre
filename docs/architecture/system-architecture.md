@@ -81,7 +81,7 @@ Model tiers (`config/models.yml`): `resume-extract`, `jd-extract`, `match-score`
 
 1. **Résumé file storage:** original bytes to a host disk volume (`data/uploads/`), path in DB; text+structured in DB. No S3 for single-user MVP.
 2. **Search execution:** inline async in the Node process (no queue infra); in-memory run registry keyed by `search_runs.id`; hard runtime cap. A restart kills a run (status `running` → mark stale on boot).
-3. **Progress:** SSE (donor `sse.ts` precedent) with polling fallback on `GET /api/search/:id`.
+3. **Progress:** SSE (donor `sse.ts` precedent) with EventSource auto-reconnect on `GET /api/search/:id` — the status route sends a retry hint and closes silently when no live handle exists for a non-terminal (queued/running) row, instead of synthesizing an error; the run registry is a `globalThis` singleton so `next dev` route-bundle rebundling can't hide a handle across POST/GET; boot flips both `queued` and `running` rows to `failed` so a truly orphaned row is always terminal.
 4. **Auth:** none in-app (spec non-goal); if deployed publicly, basic-auth at the proxy. Revisit before multi-user.
 5. **PDF:** Playwright-Chromium baked into the Docker image, invoked in-process — validate the base image in Phase B.
 6. **Template/model config:** `config/models.yml` (task→model+escalation) + versioned template `.md` files with Zod json_schemas; template hash = `policyVersion` (also seeds the §11 internal metrics moat later).

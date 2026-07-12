@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../db";
 import { searchRuns } from "../schema";
 import type { Db } from "./db";
@@ -49,12 +49,15 @@ export function createSearchRunsRepo(db: Db) {
     // system-architecture.md §6 decision 2: "A restart kills a run (status
     // running → mark stale on boot)" — there is no distinct 'stale' wire/DB
     // status, so staleness is represented as `failed` with an explanatory
-    // `error`. Called once by server/runs/registry.ts on process start.
-    async markAllRunningAsFailed(errorMessage: string): Promise<SearchRunRow[]> {
+    // `error`. Both 'queued' and 'running' rows are orphaned by a restart:
+    // a 'queued' row was inserted pre-fan-out, so no in-memory handle can
+    // exist for it either once the process (and its registry) is gone.
+    // Called once by server/runs/registry.ts on process start.
+    async markAllUnfinishedAsFailed(errorMessage: string): Promise<SearchRunRow[]> {
       return db
         .update(searchRuns)
         .set({ status: "failed", error: errorMessage, finishedAt: new Date() })
-        .where(eq(searchRuns.status, "running"))
+        .where(inArray(searchRuns.status, ["queued", "running"]))
         .returning();
     },
   };
@@ -66,5 +69,6 @@ export const searchRunsRepo: ReturnType<typeof createSearchRunsRepo> = {
   getLatestCompleted: (persona) => createSearchRunsRepo(getDb()).getLatestCompleted(persona),
   updateStatus: (id, status, patch) => createSearchRunsRepo(getDb()).updateStatus(id, status, patch),
   updateStats: (id, stats) => createSearchRunsRepo(getDb()).updateStats(id, stats),
-  markAllRunningAsFailed: (errorMessage) => createSearchRunsRepo(getDb()).markAllRunningAsFailed(errorMessage),
+  markAllUnfinishedAsFailed: (errorMessage) =>
+    createSearchRunsRepo(getDb()).markAllUnfinishedAsFailed(errorMessage),
 };
