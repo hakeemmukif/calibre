@@ -85,4 +85,25 @@ describe("urlChecksRepo", () => {
     const after = await repo.addCost(inserted.id, 0.005);
     expect(after?.costUsd).toBeCloseTo(0.015, 6);
   });
+
+  it("markAllUnfinishedAsFailed flips 'queued' and 'running' rows to 'failed', leaves completed/failed untouched", async () => {
+    const db = await createTestDb();
+    const repo = createUrlChecksRepo(db);
+    const base = { url: "https://x.example/job", dedupeKey: "x.example/job", alreadyKnown: false, needsText: false, costUsd: 0, raw: {} };
+
+    const running = await repo.insert({ ...base, status: "running" });
+    const queued = await repo.insert({ ...base, status: "queued" });
+    const completed = await repo.insert({ ...base, status: "completed" });
+    const alreadyFailed = await repo.insert({ ...base, status: "failed" });
+
+    const flippedCount = await repo.markAllUnfinishedAsFailed();
+    expect(flippedCount).toBe(2);
+
+    expect((await repo.getById(running.id))?.status).toBe("failed");
+    expect((await repo.getById(running.id))?.error).toMatchObject({ code: "INTERNAL" });
+    expect((await repo.getById(running.id))?.finishedAt).not.toBeNull();
+    expect((await repo.getById(queued.id))?.status).toBe("failed");
+    expect((await repo.getById(completed.id))?.status).toBe("completed");
+    expect((await repo.getById(alreadyFailed.id))?.status).toBe("failed");
+  });
 });
