@@ -5,8 +5,12 @@ that happens in a later scoring step. Return ONLY JSON matching the provided
 schema — no markdown, no commentary.
 
 --- user:instructions ---
-From the job description below, extract: role title, company, seniority
-level, employment type, location and remote policy, must-have skills,
+From the job description below, first determine whether this text is
+actually a job posting (set isJobPosting: true) or something else — a
+blog post, a company homepage, a login/paywall page, an error page, a
+list of multiple postings, etc. (set isJobPosting: false). Then extract:
+role title, company, seniority level, employment type, location and
+remote policy, must-have skills,
 nice-to-have skills, salary range if stated, key responsibilities,
 hiring geography if the posting states it (hiringScope: "anywhere" when it
 says it hires from anywhere/worldwide; "restricted" when it limits hiring to
