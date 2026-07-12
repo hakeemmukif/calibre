@@ -7,7 +7,7 @@ describe("seedSources", () => {
   it("inserts the 13 sources rows against PGlite", async () => {
     const db = await createTestDb();
     const inserted = await seedSources(db);
-    expect(inserted).toHaveLength(13);
+    expect(inserted).toHaveLength(14);
 
     const rows = await db.select().from(sources);
     expect(rows.map((r) => r.id).sort()).toEqual([
@@ -24,7 +24,8 @@ describe("seedSources", () => {
       "gh-stripe",
       "jobstreet",
       "lever-toptal",
+      "manual",
     ]);
-    expect(sourceSeeds).toHaveLength(13);
+    expect(sourceSeeds).toHaveLength(14);
   });
 });

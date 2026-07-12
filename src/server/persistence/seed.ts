@@ -40,6 +40,12 @@ export const sourceSeeds: (typeof sources.$inferInsert)[] = [
       country: "MY",
     },
   },
+  // Spec 2026-07-12-pasted-job-ingestion-design.md §10: the pasted-URL
+  // pipeline's source row — disabled (never fan-out scanned), persona
+  // 'both' (visible regardless of active toggle), kind 'manual' (no
+  // connector). url-check/run.ts resolves this by id and throws a
+  // specific error naming `npm run db:seed` if it's absent.
+  { id: "manual", name: "Manual URL", kind: "manual", persona: "both", enabled: false, config: {} },
 ];
 
 export async function seedSources(db: Db) {

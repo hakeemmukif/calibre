@@ -14,6 +14,7 @@ export const testSourceSeeds: (typeof sources.$inferInsert)[] = [
   { id: "lever", name: "Lever", kind: "ats", persona: "remote", enabled: true, config: { slug: "fixture", geo: { scope: "restricted" } } },
   { id: "ashby", name: "Ashby", kind: "ats", persona: "remote", enabled: true, config: { slug: "fixture", geo: { scope: "restricted" } } },
   { id: "jobstreet", name: "JobStreet", kind: "board", persona: "local", enabled: true, config: { query: "fixture", country: "MY" } },
+  { id: "manual", name: "Manual URL", kind: "manual", persona: "both", enabled: false, config: {} },
 ];
 
 export async function seedTestSources(db: Db) {
