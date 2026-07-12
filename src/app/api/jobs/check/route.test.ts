@@ -1,8 +1,14 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { makeMockLlm } from "@/lib/llm/mock";
-import { insertJob, insertProfile, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
-import { jobs, resumes, sources, urlChecks } from "@/server/persistence/schema";
+import {
+  insertJob,
+  insertJobScore,
+  insertProfile,
+  insertResume,
+  insertSource,
+} from "@/server/persistence/repos/__fixtures__/helpers";
+import { jobs, jobScores, resumes, sources, urlChecks } from "@/server/persistence/schema";
 import { dedupeKeyFor } from "@/server/search/dedupe";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 
@@ -33,6 +39,7 @@ describe("POST /api/jobs/check", () => {
   afterEach(async () => {
     llm.scripted = {};
     await state.testDb.delete(urlChecks);
+    await state.testDb.delete(jobScores);
     await state.testDb.delete(jobs);
     await state.testDb.delete(sources);
     await state.testDb.delete(resumes);
@@ -69,11 +76,15 @@ describe("POST /api/jobs/check", () => {
     expect((await res.json()).error.code).toBe("PAYLOAD_TOO_LARGE");
   });
 
-  it("a URL matching an already-known job short-circuits 200 alreadyKnown", async () => {
-    await insertResume(state.testDb, { isActive: true });
+  it("a URL matching an already-known SCORED job short-circuits 200 alreadyKnown", async () => {
+    const resume = await insertResume(state.testDb, { isActive: true });
     const source = await insertSource(state.testDb);
     const url = "https://example.com/already-known-job";
-    await insertJob(state.testDb, source.id, { url, dedupeKey: dedupeKeyFor(url) });
+    const job = await insertJob(state.testDb, source.id, { url, dedupeKey: dedupeKeyFor(url) });
+    // Admission only short-circuits a dedupe hit that already has a score
+    // (final review fix wave FIX 1a) — an unscored hit self-heals through
+    // the normal pipeline instead (covered at the unit level in run.test.ts).
+    await insertJobScore(state.testDb, job.id, resume.id);
 
     const res = await POST(jsonRequest({ url }));
     expect(res.status).toBe(200);
