@@ -93,6 +93,44 @@ const REGION_TOKENS: Record<string, string> = {
   global: "worldwide",
 };
 
+// Source-level geo annotation (spec §6), read from the sources row's config
+// jsonb. Boards carry `country` (their whole inventory is one country — the
+// Layer-A structural fact); ATS rows carry `geo.scope` — the operator-
+// confirmed prior for reading a bare "Remote". Missing/invalid annotation on
+// a real source is a configuration ERROR (fail loud), same posture as the
+// registry's unknown-connector throw.
+
+export interface SourceGeo {
+  country?: string;
+  scope?: "anywhere" | "restricted";
+  regions?: string[];
+}
+
+export class SourceGeoConfigError extends Error {
+  constructor(sourceId: string, detail: string) {
+    super(`source "${sourceId}": ${detail}`);
+    this.name = "SourceGeoConfigError";
+  }
+}
+
+export function parseSourceGeo(source: { id: string; kind: "ats" | "board"; config: unknown }): SourceGeo {
+  const config = (source.config ?? {}) as { country?: unknown; geo?: { scope?: unknown; regions?: unknown } };
+
+  if (source.kind === "board") {
+    if (typeof config.country !== "string" || config.country.length !== 2) {
+      throw new SourceGeoConfigError(source.id, 'board source needs config.country (ISO-3166-1 alpha-2, e.g. "MY")');
+    }
+    return { country: config.country };
+  }
+
+  const scope = config.geo?.scope;
+  if (scope !== "anywhere" && scope !== "restricted") {
+    throw new SourceGeoConfigError(source.id, 'ats source needs config.geo.scope: "anywhere" | "restricted"');
+  }
+  const regions = Array.isArray(config.geo?.regions) ? (config.geo.regions as string[]) : undefined;
+  return { scope, ...(regions ? { regions } : {}) };
+}
+
 function normalize(s: string): string {
   return s.toLowerCase().replace(/[–—]/g, "-");
 }

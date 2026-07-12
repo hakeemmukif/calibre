@@ -23,7 +23,7 @@ describe("ensureDescription", () => {
   it("short-circuits when the job already has a non-empty description (no connector call)", async () => {
     state.testDb = await createTestDb();
     const repo = createJobsRepo(state.testDb);
-    const source = await insertSource(state.testDb, { id: "jobstreet", kind: "board", persona: "local", config: {} });
+    const source = await insertSource(state.testDb, { id: "jobstreet", kind: "board", persona: "local", config: { country: "MY" } });
     const job = await repo.upsertByDedupeKey({
       dedupeKey: "dk-has-description",
       url: "https://id.jobstreet.com/id/job/1",
@@ -49,7 +49,7 @@ describe("ensureDescription", () => {
   it("returns the job unchanged when the connector has no fetchDetail", async () => {
     state.testDb = await createTestDb();
     const repo = createJobsRepo(state.testDb);
-    const source = await insertSource(state.testDb, { id: "greenhouse", kind: "ats", persona: "remote", config: { slug: "acme" } });
+    const source = await insertSource(state.testDb, { id: "greenhouse", kind: "ats", persona: "remote", config: { slug: "acme", geo: { scope: "restricted" } } });
     const job = await repo.upsertByDedupeKey({
       dedupeKey: "dk-no-fetch-detail",
       url: "https://boards.greenhouse.io/acme/jobs/1",
@@ -70,7 +70,7 @@ describe("ensureDescription", () => {
   it("fetches detail via the connector and persists it when the description is null", async () => {
     state.testDb = await createTestDb();
     const repo = createJobsRepo(state.testDb);
-    const source = await insertSource(state.testDb, { id: "jobstreet", kind: "board", persona: "local", config: {} });
+    const source = await insertSource(state.testDb, { id: "jobstreet", kind: "board", persona: "local", config: { country: "MY" } });
     const job = await repo.upsertByDedupeKey({
       dedupeKey: "dk-needs-detail",
       url: "https://id.jobstreet.com/id/job/2",
@@ -103,7 +103,7 @@ describe("ensureDescription", () => {
   it("caps a fetched description at 40_000 chars before persisting", async () => {
     state.testDb = await createTestDb();
     const repo = createJobsRepo(state.testDb);
-    const source = await insertSource(state.testDb, { id: "jobstreet", kind: "board", persona: "local", config: {} });
+    const source = await insertSource(state.testDb, { id: "jobstreet", kind: "board", persona: "local", config: { country: "MY" } });
     const job = await repo.upsertByDedupeKey({
       dedupeKey: "dk-needs-cap",
       url: "https://id.jobstreet.com/id/job/3",
@@ -134,7 +134,7 @@ describe("ensureDescription", () => {
   it("propagates a fetch failure (caller decides tolerance)", async () => {
     state.testDb = await createTestDb();
     const repo = createJobsRepo(state.testDb);
-    const source = await insertSource(state.testDb, { id: "jobstreet", kind: "board", persona: "local", config: {} });
+    const source = await insertSource(state.testDb, { id: "jobstreet", kind: "board", persona: "local", config: { country: "MY" } });
     const job = await repo.upsertByDedupeKey({
       dedupeKey: "dk-fetch-fails",
       url: "https://id.jobstreet.com/id/job/4",

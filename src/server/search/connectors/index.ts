@@ -5,6 +5,7 @@
 import { testDoublesEnabled } from "@/lib/llm/client";
 import type { SourceRow } from "@/server/persistence/repos/sources";
 import type { SourceConnector } from "../connector";
+import { parseSourceGeo } from "../geo";
 import { createAshbyConnector } from "./ashby";
 import { createFixtureConnector } from "./fixture";
 import { createGreenhouseConnector } from "./greenhouse";
@@ -20,6 +21,7 @@ const FACTORIES: Record<string, (source: SourceRow) => SourceConnector> = {
 
 export function connectorForSource(source: SourceRow): SourceConnector {
   if (testDoublesEnabled()) return createFixtureConnector(source);
+  parseSourceGeo(source); // fail loud on a mis-annotated real source before any fetch (spec §9.2)
   const key = (source.config as { connector?: string })?.connector ?? source.id;
   const factory = FACTORIES[key];
   if (!factory) throw new Error(`No connector registered for source id "${source.id}" (connector key "${key}")`);

@@ -11,19 +11,24 @@ import { getDb } from "./db";
 import { profile, sources } from "./schema";
 import type { Db } from "./repos/db";
 
+// config.geo.scope / config.country are the eligibility annotations (spec
+// 2026-07-12-remote-local-eligibility-design.md §6, operator-confirmed):
+// scope "anywhere" = all-remote employer, bare "Remote" reads work-from-
+// anywhere; "restricted" = needs JD-level proof, bare "Remote" stays
+// unknown; boards carry the country their whole inventory lives in.
 export const sourceSeeds: (typeof sources.$inferInsert)[] = [
-  { id: "gh-stripe", name: "Stripe", kind: "ats", persona: "remote", enabled: true, config: { connector: "greenhouse", slug: "stripe" } },
-  { id: "gh-gitlab", name: "GitLab", kind: "ats", persona: "remote", enabled: true, config: { connector: "greenhouse", slug: "gitlab" } },
-  { id: "ashby-ramp", name: "Ramp", kind: "ats", persona: "remote", enabled: true, config: { connector: "ashby", slug: "ramp" } },
-  { id: "ashby-plaid", name: "Plaid", kind: "ats", persona: "remote", enabled: true, config: { connector: "ashby", slug: "plaid" } },
-  { id: "ashby-airwallex", name: "Airwallex", kind: "ats", persona: "remote", enabled: true, config: { connector: "ashby", slug: "airwallex" } },
-  { id: "ashby-deel", name: "Deel", kind: "ats", persona: "remote", enabled: true, config: { connector: "ashby", slug: "deel" } },
-  { id: "gh-remote", name: "Remote", kind: "ats", persona: "remote", enabled: true, config: { connector: "greenhouse", slug: "remote" } },
-  { id: "lever-toptal", name: "Toptal", kind: "ats", persona: "remote", enabled: true, config: { connector: "lever", slug: "toptal" } },
-  { id: "ashby-elevenlabs", name: "ElevenLabs", kind: "ats", persona: "remote", enabled: true, config: { connector: "ashby", slug: "elevenlabs" } },
-  { id: "ashby-perplexity", name: "Perplexity", kind: "ats", persona: "remote", enabled: true, config: { connector: "ashby", slug: "perplexity" } },
-  { id: "ashby-zapier", name: "Zapier", kind: "ats", persona: "remote", enabled: true, config: { connector: "ashby", slug: "zapier" } },
-  { id: "ashby-supabase", name: "Supabase", kind: "ats", persona: "remote", enabled: true, config: { connector: "ashby", slug: "supabase" } },
+  { id: "gh-stripe", name: "Stripe", kind: "ats", persona: "remote", enabled: true, config: { connector: "greenhouse", slug: "stripe", geo: { scope: "restricted" } } },
+  { id: "gh-gitlab", name: "GitLab", kind: "ats", persona: "remote", enabled: true, config: { connector: "greenhouse", slug: "gitlab", geo: { scope: "anywhere" } } },
+  { id: "ashby-ramp", name: "Ramp", kind: "ats", persona: "remote", enabled: true, config: { connector: "ashby", slug: "ramp", geo: { scope: "restricted" } } },
+  { id: "ashby-plaid", name: "Plaid", kind: "ats", persona: "remote", enabled: true, config: { connector: "ashby", slug: "plaid", geo: { scope: "restricted" } } },
+  { id: "ashby-airwallex", name: "Airwallex", kind: "ats", persona: "remote", enabled: true, config: { connector: "ashby", slug: "airwallex", geo: { scope: "restricted", regions: ["APAC"] } } },
+  { id: "ashby-deel", name: "Deel", kind: "ats", persona: "remote", enabled: true, config: { connector: "ashby", slug: "deel", geo: { scope: "anywhere" } } },
+  { id: "gh-remote", name: "Remote", kind: "ats", persona: "remote", enabled: true, config: { connector: "greenhouse", slug: "remote", geo: { scope: "anywhere" } } },
+  { id: "lever-toptal", name: "Toptal", kind: "ats", persona: "remote", enabled: true, config: { connector: "lever", slug: "toptal", geo: { scope: "anywhere" } } },
+  { id: "ashby-elevenlabs", name: "ElevenLabs", kind: "ats", persona: "remote", enabled: true, config: { connector: "ashby", slug: "elevenlabs", geo: { scope: "restricted" } } },
+  { id: "ashby-perplexity", name: "Perplexity", kind: "ats", persona: "remote", enabled: true, config: { connector: "ashby", slug: "perplexity", geo: { scope: "restricted" } } },
+  { id: "ashby-zapier", name: "Zapier", kind: "ats", persona: "remote", enabled: true, config: { connector: "ashby", slug: "zapier", geo: { scope: "anywhere" } } },
+  { id: "ashby-supabase", name: "Supabase", kind: "ats", persona: "remote", enabled: true, config: { connector: "ashby", slug: "supabase", geo: { scope: "anywhere" } } },
   {
     id: "jobstreet", name: "JobStreet Malaysia", kind: "board", persona: "local", enabled: true,
     config: {
@@ -32,6 +37,7 @@ export const sourceSeeds: (typeof sources.$inferInsert)[] = [
       query: "software engineer",
       pageSize: 30,
       maxPages: 3,
+      country: "MY",
     },
   },
 ];

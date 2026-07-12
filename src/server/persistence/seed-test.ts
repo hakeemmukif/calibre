@@ -5,11 +5,15 @@ import { getDb } from "./db";
 import { profile, sources } from "./schema";
 import type { Db } from "./repos/db";
 
+// geo annotations mirror seed.ts's shapes (spec §6): greenhouse "anywhere"
+// makes its bare-"Remote" fixture posting classify `anywhere`; lever
+// "restricted" keeps its New-York fixture `abroad`; jobstreet country "MY"
+// stamps its KL fixture `local`.
 export const testSourceSeeds: (typeof sources.$inferInsert)[] = [
-  { id: "greenhouse", name: "Greenhouse", kind: "ats", persona: "remote", enabled: true, config: { slug: "fixture" } },
-  { id: "lever", name: "Lever", kind: "ats", persona: "remote", enabled: true, config: { slug: "fixture" } },
-  { id: "ashby", name: "Ashby", kind: "ats", persona: "remote", enabled: true, config: { slug: "fixture" } },
-  { id: "jobstreet", name: "JobStreet", kind: "board", persona: "local", enabled: true, config: { query: "fixture" } },
+  { id: "greenhouse", name: "Greenhouse", kind: "ats", persona: "remote", enabled: true, config: { slug: "fixture", geo: { scope: "anywhere" } } },
+  { id: "lever", name: "Lever", kind: "ats", persona: "remote", enabled: true, config: { slug: "fixture", geo: { scope: "restricted" } } },
+  { id: "ashby", name: "Ashby", kind: "ats", persona: "remote", enabled: true, config: { slug: "fixture", geo: { scope: "restricted" } } },
+  { id: "jobstreet", name: "JobStreet", kind: "board", persona: "local", enabled: true, config: { query: "fixture", country: "MY" } },
 ];
 
 export async function seedTestSources(db: Db) {

@@ -56,7 +56,7 @@ describe("extractQuestions", () => {
   });
 
   it("tier 1 (Greenhouse): maps a stubbed API fixture and never calls tier 2", async () => {
-    const source = await insertSource(state.testDb, { id: "greenhouse", kind: "ats", config: { slug: "acme" } });
+    const source = await insertSource(state.testDb, { id: "greenhouse", kind: "ats", config: { slug: "acme", geo: { scope: "restricted" } } });
     const job = await insertJob(state.testDb, source.id, {
       sourceId: "greenhouse",
       externalId: "123456",
@@ -86,7 +86,7 @@ describe("extractQuestions", () => {
   });
 
   it("both tiers empty -> ExtractionFailedError, never []", async () => {
-    const source = await insertSource(state.testDb, { id: "greenhouse", kind: "ats", config: { slug: "acme" } });
+    const source = await insertSource(state.testDb, { id: "greenhouse", kind: "ats", config: { slug: "acme", geo: { scope: "restricted" } } });
     const job = await insertJob(state.testDb, source.id, {
       sourceId: "greenhouse",
       externalId: "999",
@@ -103,7 +103,7 @@ describe("extractQuestions", () => {
   });
 
   it("falls through to tier 2 for a non-Greenhouse source, using the raw url path when domParse succeeds", async () => {
-    const source = await insertSource(state.testDb, { id: "lever", kind: "ats", config: {} });
+    const source = await insertSource(state.testDb, { id: "lever", kind: "ats", config: { geo: { scope: "restricted" } } });
     const job = await insertJob(state.testDb, source.id, {
       sourceId: "lever",
       url: "https://jobs.lever.co/acme/xyz",
@@ -138,7 +138,7 @@ describe("extractQuestions", () => {
   });
 
   it("tier 1 mapping failure (unrecognized field_type) falls through to tier 2; both empty -> ExtractionFailedError, never a bare Error (regression, fix pass finding 2)", async () => {
-    const source = await insertSource(state.testDb, { id: "greenhouse", kind: "ats", config: { slug: "acme" } });
+    const source = await insertSource(state.testDb, { id: "greenhouse", kind: "ats", config: { slug: "acme", geo: { scope: "restricted" } } });
     const job = await insertJob(state.testDb, source.id, {
       sourceId: "greenhouse",
       externalId: "424242",

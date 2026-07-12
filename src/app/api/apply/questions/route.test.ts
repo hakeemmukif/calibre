@@ -94,7 +94,7 @@ describe("POST /api/apply/questions", () => {
   });
 
   it("happy path via jobId (tier 1 Greenhouse) -> 200", async () => {
-    const source = await insertSource(state.testDb, { id: "greenhouse", kind: "ats", config: { slug: "acme" } });
+    const source = await insertSource(state.testDb, { id: "greenhouse", kind: "ats", config: { slug: "acme", geo: { scope: "restricted" } } });
     const job = await insertJob(state.testDb, source.id, {
       sourceId: "greenhouse",
       externalId: "123456",
@@ -129,7 +129,7 @@ describe("POST /api/apply/questions", () => {
   });
 
   it("tier 1 mapping failure (unrecognized field_type) falls through to tier 2; both empty -> 502, never a raw 500 (regression, fix pass finding 2)", async () => {
-    const source = await insertSource(state.testDb, { id: "greenhouse", kind: "ats", config: { slug: "acme" } });
+    const source = await insertSource(state.testDb, { id: "greenhouse", kind: "ats", config: { slug: "acme", geo: { scope: "restricted" } } });
     const job = await insertJob(state.testDb, source.id, {
       sourceId: "greenhouse",
       externalId: "424242",

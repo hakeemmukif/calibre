@@ -9,7 +9,7 @@ function source(id: string, overrides: Partial<SourceRow> = {}): SourceRow {
     kind: "ats",
     persona: "remote",
     enabled: true,
-    config: { slug: "acme" },
+    config: { slug: "acme", geo: { scope: "restricted" } },
     createdAt: new Date(),
     ...overrides,
   };
@@ -27,13 +27,21 @@ describe("connectorForSource", () => {
 
   it("resolves the connector from config.connector when present (per-company rows)", () => {
     const connector = connectorForSource(
-      source("gh-gitlab", { name: "GitLab", config: { connector: "greenhouse", slug: "gitlab" } }),
+      source("gh-gitlab", { name: "GitLab", config: { connector: "greenhouse", slug: "gitlab", geo: { scope: "anywhere" } } }),
     );
     expect(connector.id).toBe("gh-gitlab");
   });
 
   it("still throws fail-loud for an unknown connector key", () => {
-    expect(() => connectorForSource(source("mystery", { config: {} }))).toThrow(/No connector registered/);
+    expect(() => connectorForSource(source("mystery", { config: { geo: { scope: "restricted" } } }))).toThrow(
+      /No connector registered/,
+    );
+  });
+
+  it("throws fail-loud for a real-mode source missing its geo annotation (spec §9.2)", () => {
+    expect(() => connectorForSource(source("greenhouse", { config: { slug: "acme" } }))).toThrow(
+      /needs config.geo.scope/,
+    );
   });
 
   afterEach(() => {
