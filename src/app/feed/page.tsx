@@ -24,8 +24,9 @@ import type { Job, Persona, SummaryStripStats } from "@/types";
 
 const EMPTY_STATS: SummaryStripStats = { scanned: 0, worth: 0, ghosts: 0, flagged: 0, sinceLast: 0, excluded: 0 };
 
-// alreadyKnown names the job's actual scope (spec §3 step 6) — a pasted
-// job that resolved to an existing job can never itself be "pasted".
+// alreadyKnown names the job's actual scope (spec §3 step 6) — re-pasting a
+// URL that was previously pasted is the most common alreadyKnown case, so
+// "pasted" is a real scope here, not an impossible one.
 function scopeLabel(p: Persona): string {
   switch (p) {
     case "remote":
@@ -33,7 +34,7 @@ function scopeLabel(p: Persona): string {
     case "local":
       return "Malaysia · local";
     case "pasted":
-      throw new Error("alreadyKnown job cannot itself be in the Pasted scope");
+      return "Pasted";
   }
 }
 

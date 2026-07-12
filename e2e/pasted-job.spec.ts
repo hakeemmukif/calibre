@@ -44,6 +44,7 @@ async function pollUrlCheck(request: APIRequestContext, id: string): Promise<Url
 
 test("pasted job: check -> poll -> completed, blocked-fetch needsText, alreadyKnown, delete, re-check", async ({
   request,
+  page,
 }) => {
   const resumeRes = await request.post("/api/resume", { data: { text: SAMPLE_RESUME } });
   if (!resumeRes.ok()) throw new Error(`POST /api/resume failed: ${resumeRes.status()} ${await resumeRes.text()}`);
@@ -96,6 +97,16 @@ test("pasted job: check -> poll -> completed, blocked-fetch needsText, alreadyKn
   expect(dupe.status).toBe("completed");
   expect(dupe.alreadyKnown).toBe(true);
   expect(dupe.jobId).toBe(completed.jobId);
+
+  // --- Scenario 3 (rendered): same re-paste, but driven through the real
+  // UI — src/app/feed/page.tsx's scopeLabel('pasted') used to throw
+  // synchronously during render for exactly this alreadyKnown-pasted case,
+  // crashing the whole feed route with no error boundary. The API-only
+  // assertions above never caught it.
+  await page.goto("/feed");
+  await page.getByLabel("Job posting URL").fill(PASTE_URL);
+  await page.getByRole("button", { name: "Check" }).click();
+  await expect(page.getByText("Already tracked in your Pasted feed.")).toBeVisible();
 
   // --- Scenario 4: delete -> 204 -> gone from the pasted feed.
   const deleteRes = await request.delete(`/api/jobs/${completed.jobId}`);
