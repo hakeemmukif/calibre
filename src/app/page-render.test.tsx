@@ -55,4 +55,9 @@ describe("app page render smoke", () => {
     const html = await renders(() => import("./sources/page"));
     expect(html).toContain("Sources");
   });
+
+  it("/profile renders its initial (loading) state without throwing", async () => {
+    const html = await renders(() => import("./profile/page"));
+    expect(html).toContain("Profile &amp; targets"); // renderToStaticMarkup escapes the ampersand
+  });
 });
