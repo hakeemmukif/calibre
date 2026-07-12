@@ -40,6 +40,10 @@ describe("parseSourceGeo", () => {
     expect(() => parseSourceGeo({ id: "jobstreet", kind: "board", config: {} })).toThrow(SourceGeoConfigError);
   });
 
+  it("manual with empty config returns {}", () => {
+    expect(parseSourceGeo({ id: "manual", kind: "manual", config: {} })).toEqual({});
+  });
+
   it("ats with scope anywhere returns { scope }", () => {
     expect(parseSourceGeo({ id: "gh-gitlab", kind: "ats", config: { geo: { scope: "anywhere" } } })).toEqual({
       scope: "anywhere",

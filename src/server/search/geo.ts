@@ -123,6 +123,14 @@ export function parseSourceGeo(source: { id: string; kind: "ats" | "board" | "ma
     return { country: config.country };
   }
 
+  if (source.kind === "manual") {
+    // Manual (pasted-URL) source: geo Layers A/B are structurally absent
+    // (2026-07-12 pasted-job-ingestion spec §6) — no board country stamp, no
+    // operator geo prior. `{}` is the correct total value for this kind, not
+    // a fallback; ats/board misconfig below still throws (fail loud).
+    return {};
+  }
+
   const scope = config.geo?.scope;
   if (scope !== "anywhere" && scope !== "restricted") {
     throw new SourceGeoConfigError(source.id, 'ats source needs config.geo.scope: "anywhere" | "restricted"');
