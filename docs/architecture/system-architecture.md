@@ -1,6 +1,6 @@
 # Caliber MVP — System Architecture
 
-Scope: F1–F6 on Next.js 15 (App Router) + TS at `/Users/hakeem/calibre`. Honors spec §3 (UI → `features/*` → `server/*`; only `server/*` touches DB/LLM), §5 frozen contract, §6 clean rebuild, §11 persona/legitimacy wedge, §12 Zod-first contract. Donor = `careerops-web` (+ repo-root `scan.mjs`, `providers/*.mjs`, `role-matcher.mjs`).
+Scope: F1–F7 on Next.js 15 (App Router) + TS at `/Users/hakeem/calibre`. Honors spec §3 (UI → `features/*` → `server/*`; only `server/*` touches DB/LLM), §5 frozen contract, §6 clean rebuild, §11 persona/legitimacy wedge, §12 Zod-first contract. Donor = `careerops-web` (+ repo-root `scan.mjs`, `providers/*.mjs`, `role-matcher.mjs`).
 
 ## 1. Data model (Drizzle tables)
 
@@ -22,6 +22,8 @@ Scope: F1–F6 on Next.js 15 (App Router) + TS at `/Users/hakeem/calibre`. Honor
 
 **tailored_resumes** — `id uuid`, `jobId FK`, `baseResumeId FK`, `structured jsonb` (ResumeStore), `changes jsonb [{section,current,proposed,why}]` (donor `cv_changes` shape from `DeepBlocks`), `html text?`, `pdfPath text?`, `status 'draft'|'approved'`, `model, costUsd, createdAt`. Replaces donor `TailorArtifact` file quartet (`cv.html/cv-latex.json/changes.md/preview.pdf`) — LaTeX dropped.
 
+**url_checks** — `id uuid PK`, `url text NOT NULL`, `dedupeKey text NOT NULL`, `status 'queued'|'running'|'completed'|'failed'`, `stage text?`, `jobId uuid? FK → jobs ON DELETE SET NULL`, `alreadyKnown bool NOT NULL`, `needsText bool NOT NULL`, `error jsonb? {code, message}`, `costUsd numeric NOT NULL` (summed per LLM call), `raw jsonb NOT NULL` (stripped/pasted text + acquisition metadata), `createdAt`, `finishedAt?`. The async run backing **F7 — Manual URL check** (2026-07-12 pasted-job-ingestion spec §10); `urlChecksRepo` exposes `insert`, `updateStage`, `complete`, `fail`, `addCost`, `getById`, `markAllUnfinishedAsFailed`.
+
 All shapes are Zod schemas in `src/types` (→ OpenAPI per §12); Drizzle columns bind to them.
 
 ## 2. Service boundaries (`server/*`)
@@ -34,6 +36,7 @@ All shapes are Zod schemas in `src/types` (→ OpenAPI per §12); Drizzle column
 | `server/apply-assistant` | F4 | job → `FormField[]` → answered fields | `snapshotGreenhouseForm` / `extractFieldsInPage` DOM-walk selectors from `apply-form.ts`; `ApplyAnswers`/`FormField` types verbatim | Answering via OpenRouter template; no score-gate job queue — inline call |
 | `server/tailor` | F6 | (job, resume) → `tailored_resumes` | Prompt intent of `tailor-cv` mode; `renderCvHtml` (pure lift); changes-list shape | LLM emits tailored **ResumeStore JSON + changes[]** (not raw HTML) so render stays deterministic; PDF via in-process Playwright `lib/pdf.ts`; no needs-review job state — draft/approve rows |
 | `server/tracker` | F5 | CRUD applications | Behaviour of `store/applications.ts` + `/api/applications`, `/api/tracker` | DB rows, 4-stage map; markdown tracker parsing not ported |
+| `server/url-check` | F7 acquisition ladder + ghost-web check | url/text → `url_checks` row + upserted `jobs` row | Naming/gates/synthetic source row adopted verbatim from the superseded 07-11 spec | Fetch→sonar-search→paste-text escalation ladder; SSRF hardening (§7, un-deferred); `ghost-web` posting-history task; deterministic repost overlay in `server/score/legitimacy.ts` |
 | `server/persistence` | Drizzle client + repos | — | donor Drizzle patterns inform ours | single data-access layer |
 | `lib/llm` | OpenRouter client + `config/models.yml` + template registry | task → completion (json_schema) | prompt-block structure from `eval/prompts.ts` (fixed block order, candidate block last for caching) | OpenAI-compatible client, per-task routing |
 
@@ -65,7 +68,9 @@ interface SourceConnector {
 
 **F6 Tailor.** "Tailor for this job" → `POST /api/tailor {jobId}` → **`tailor`** template (strongest tier: ResumeStore + JdFacts + score gaps → tailored ResumeStore + `changes[]`) → `tailored_resumes` draft → UI diff view → `GET /api/tailor/:id/pdf` → `renderCvHtml` + Playwright PDF; "Use for application" links it into F5.
 
-Model tiers (`config/models.yml`): `resume-extract`, `jd-extract`, `match-score` = cheapest viable with `match-score` escalation; `question-answer` = mid; `tailor` = strong. `policyVersion` = template-file hash → score cache invalidation.
+**F7 Manual URL check.** `UrlEvalBar` "Check" → `POST /api/jobs/check` → sync admission (`resumesRepo.getActive()` → 409 before any spend; `text` > 40k → 422; dedupe hit → 200 `alreadyKnown`) → 202 `UrlCheck` → async `server/url-check/run.ts`: **stage fetching** `fetchPageText(url)` — SSRF-hardened per the 2026-07-12 pasted-job-ingestion spec §7 (scheme + resolved-IP denylist re-validated per redirect hop, ≤3 hops; 2MB streamed byte cap; 40k-char text cap; DNS-rebinding TOCTOU is a documented residual risk, hard blocker before any hosted deploy) — any failure or a thrown extract-gate escalates to tier 2, never fails outright → **stage searching** `url-check-search` (sonar) locates the specific posting; `found:false` fails `FETCH_BLOCKED` (`needsText`); `isJobPosting:false` on the found content fails terminal `NOT_A_JOB_POSTING` → **stage persisting** `jobsRepo.upsertByDedupeKey` (`sourceId:'manual'`, `persona:'pasted'`) + eligibility stamp from the precomputed `jdFacts` (Layer C available at ingest) → **stage ghost-check** `ghost-web` (sonar) posting-history sightings; a thrown call never fails the pipeline — `webEvidence:{status:'failed', reason}` and scoring proceeds → **stage scoring** `scoreJob({precomputedJdFacts, livenessOverride, webEvidence})`, with the deterministic repost/corroboration overlay in `resolveLegitimacyTier` (spec §9) → `url_checks` row completes with `jobId`. `UrlEvalBar` polls `GET /api/jobs/check/:id` (~1.5s) and streams stage text. **Boot sweep:** `urlChecksRepo.markAllUnfinishedAsFailed()` runs from `instrumentation.ts` `register()` beside the existing search-runs sweep — without it a restart leaves the poller hanging forever (the tailor path has the same latent gap, not fixed here). Pasted jobs are never `isNew` (no scan-run cutoff exists for the scope) and are exempt from the eligibility visibility predicate in their own feed scope (spec §2.10/§2.12).
+
+Model tiers (`config/models.yml`): `resume-extract`, `jd-extract`, `match-score` = cheapest viable with `match-score` escalation; `question-answer` = mid; `tailor` = strong; `url-check-search`, `ghost-web` = `perplexity/sonar` (F7 only). `policyVersion` = template-file hash → score cache invalidation (unaffected by F7 — `match-score.md` is untouched).
 
 ## 5. Hard problems
 

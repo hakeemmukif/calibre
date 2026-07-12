@@ -27,9 +27,9 @@ Eligibility mirrors the same pattern (2026-07-12 spec §8): `Job.eligibility { t
 
 | Component | Purpose | Key props (TS) | Composes | States/variants to story |
 |---|---|---|---|---|
-| **PersonaToggle** | Switch source-set/language presets | `{ value: Persona; onChange(v): void; disabled?: boolean }` | Chip×2 (segmented pill) | remote / local / disabled |
-| **UrlEvalBar** | Paste-URL front door (F2) | `{ onSubmit(url): void; status: 'idle'\|'evaluating'\|'error'; error?: string }` | Input (link icon), Button "Check" | idle / evaluating / invalid-URL error |
-| **EvalResultCard** | Single-URL verdict | `{ job: Job; onOpen(): void; onSave(): void }` | Card, ScoreBadge, FitBar, Tag (legitimacy foregrounded), Button | verified / suspicious / scam / low-fit-high-legit / loading skeleton |
+| **PersonaToggle** | Switch source-set/language presets | `{ value: Persona; onChange(v): void; disabled?: boolean }` | Chip×3 (segmented pill) | remote / local / pasted / disabled |
+| **UrlEvalBar** | Paste-URL front door (F2/F7) | `{ status: 'idle'\|'evaluating'\|'success'\|'error'; stageText?: string; error?: string; showPasteBox?: boolean; onSubmit(url: string, text?: string): void }` | Input (link icon), Button "Check", stage-text line, paste-textarea (needsText) | idle / evaluating (+ stage text) / success / invalid-URL error / needsText paste box |
+| **EvalResultCard** | Single-URL verdict (F7) | `{ job: Job; onOpen(): void; onSave(): void; onTailor(): void; onDismiss(): void; alreadyKnownScopeLabel?: string }` | Card, ScoreBadge, FitBar, Tag (legitimacy foregrounded), EligibilityTag, Button×3 | verified / suspicious / scam / low-fit-high-legit / alreadyKnown / web-check-unavailable / loading skeleton |
 | **SummaryStrip** | Hero stat row (§11.8) | `{ stats: ScanStats & { flagged: number; sinceLast: number } }` | Card (sunken), tabular numerals; flagged in `--accent-ink` | populated / zero-state / stale |
 | **FilterChips** | Real feed filters (§11.8) | `{ active: FeedFilter; counts: Record<FeedFilter, number>; onChange(f): void }` | Chip row | each filter active / empty-count disabled |
 | **JobRow** | The A·Signal-Pill row — hero unit | `{ job: Job; onOpen(): void; onSave(): void; onDismiss(): void }` | Card (hover lift) → ScoreBadge · title + Tag legitimacy + EligibilityTag (suppressed on `local`) + NewBadge · meta/why · IconButtons | 5 legitimacy tiers × isNew; eligibility anywhere/unverified/local-no-pill; saved; dismissing; ghost (muted) |

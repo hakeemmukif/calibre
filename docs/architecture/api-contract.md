@@ -22,6 +22,9 @@ Schema-first: Zod schemas in `src/types` are the single source of truth; OpenAPI
 | F6 | GET | `/api/tailor/:id` | Tailor status + result; SSE via `Accept: text/event-stream` | sync / SSE |
 | F6 | POST | `/api/tailor/:id/finalize` | Persist the accepted-only diff (renders an accepted-only résumé) | sync |
 | F6 | GET | `/api/tailor/:id/pdf` | Rendered PDF of the finalized (accepted-only) résumé | sync, binary |
+| F7 | POST | `/api/jobs/check` | Paste-URL front door: fetch→sonar-search→paste-text ladder, gate, persist, ghost-check, score | async, 202 |
+| F7 | GET | `/api/jobs/check/:id` | Poll a pasted-URL check's stage/result | sync |
+| F7 | DELETE | `/api/jobs/:id` | Delete a pasted job (persona `pasted` only; blocked if a tracked application exists) | sync |
 | — | GET | `/api/profile` | Operator profile (base country + relocation). 404 when unseeded | sync |
 | — | PUT | `/api/profile` | Full-replace the operator profile | sync |
 | — | GET | `/api/health` | Liveness check, unauthenticated | sync |
@@ -33,13 +36,29 @@ Search and tailor share one **run pattern**: `POST` returns `202` with the run e
 ## 2. Core Zod schemas (`src/types`)
 
 ```ts
-export const Persona = z.enum(['remote', 'local']);
+export const Persona = z.enum(['remote', 'local', 'pasted']);   // 'pasted' — 2026-07-12 pasted-job-ingestion spec §2.5
+export const ScanPersona = z.enum(['remote', 'local']);          // scan-only boundaries (POST /api/search, sourcesRepo, searchRunsRepo) — widening Persona alone does not propagate
 export const LegitimacyTier = z.enum(['verified','clear','suspicious','ghost','scam']);   // §11.8
 export const Tone = z.enum(['verified','good','warn','ghost','danger']);
+
+// Ghost posting-history web-search evidence (pasted jobs only, §8 of the
+// 2026-07-12 pasted-job-ingestion spec). Never enters the scoring prompt —
+// deterministic overlay + UI evidence line only.
+export const GhostWebEvidence = z.object({
+  sightings: z.array(z.object({ url: z.string().url(), source: z.string(), postedDate: z.string().optional() })),
+  companySignals: z.array(z.string()),
+  summary: z.string(),
+  confidence: z.number().min(0).max(1),
+});
+export const WebEvidence = z.discriminatedUnion('status', [
+  GhostWebEvidence.extend({ status: z.literal('ok') }),
+  z.object({ status: z.literal('failed'), reason: z.string() }),
+]);
 
 export const Legitimacy = z.object({
   tier: LegitimacyTier, tone: Tone, summary: z.string(),
   confidence: z.number().min(0).max(1).optional(),   // only if scorer emits a real number (§11.8 D/G)
+  webEvidence: WebEvidence.optional(),                // pasted-path repost/corroboration evidence (§9 overlay precedence)
 });
 
 // Eligibility — posting geography relative to the operator profile
@@ -54,7 +73,7 @@ export const Eligibility = z.object({
 });
 
 export const SourceRef = z.object({                  // Source entity, referenced from Job
-  id: z.string(), name: z.string(), kind: z.enum(['ats','board']), persona: Persona,
+  id: z.string(), name: z.string(), kind: z.enum(['ats','board','manual']), persona: Persona,
 });
 
 export const RelocationPref = z.enum(['stay', 'open']);
@@ -88,6 +107,21 @@ export const Job = z.object({                        // §5 frozen + §11.8 exte
   // gets a valid applyUrl from its own canonical listing URL.
   source: SourceRef, persona: Persona,
   firstSeen: z.string().datetime(), isNew: z.boolean(),
+});
+
+// F7 — async run backing "paste a URL" (2026-07-12 pasted-job-ingestion spec §5).
+export const UrlCheckRequest = z.object({
+  url: z.string().url(),              // always required — applyUrl + dedupe key
+  text: z.string().min(1).optional(), // paste-text fallback; skips fetch/search tiers
+});
+
+export const UrlCheck = z.object({
+  id: z.string().uuid(), url: z.string().url(), status: RunStatus,
+  stage: z.string().nullable(),       // fetching|searching|extracting|persisting|ghost-check|scoring — open string, Progress.stage precedent
+  jobId: z.string().uuid().nullable(),
+  alreadyKnown: z.boolean(), needsText: z.boolean(),  // needsText keys the paste-textarea UI, not error-code matching
+  error: z.object({ code: ErrorCode, message: z.string() }).nullable(),
+  createdAt: z.string().datetime(), finishedAt: z.string().datetime().nullable(),
 });
 
 export const Resume = z.object({                     // §5; `hasResume` is NOT a field — absence = 404
@@ -158,10 +192,18 @@ export const TailoredResume = z.object({
   model: z.string(), createdAt: z.string().datetime(), completedAt: z.string().datetime().nullable(),
 });
 
+export const ErrorCode = z.enum(['VALIDATION_ERROR','NOT_FOUND','CONFLICT','RUN_NOT_READY',
+  'PARSE_FAILED','EXTRACTION_FAILED','UPSTREAM_LLM_ERROR','PAYLOAD_TOO_LARGE',
+  'FETCH_BLOCKED','NOT_A_JOB_POSTING','INTERNAL']);   // +2, 2026-07-12 pasted-job-ingestion spec §5:
+                                                       // FETCH_BLOCKED (paste ladder: web search found nothing, needsText)
+                                                       // NOT_A_JOB_POSTING (terminal — the page isn't a posting, !needsText)
+                                                       // INTERNAL predates this spec (generic-bug fallback in url-check's
+                                                       // mapFailure and the boot-sweep markAllUnfinishedAsFailed) — carried
+                                                       // over faithfully from src/types/index.ts, not part of the F7 ripple.
+
 export const ErrorEnvelope = z.object({
   error: z.object({
-    code: z.enum(['VALIDATION_ERROR','NOT_FOUND','CONFLICT','RUN_NOT_READY',
-      'PARSE_FAILED','EXTRACTION_FAILED','UPSTREAM_LLM_ERROR','PAYLOAD_TOO_LARGE']),
+    code: ErrorCode,
     message: z.string(),
     details: z.unknown().optional(),                 // e.g. ZodIssue[] for VALIDATION_ERROR
   }),
@@ -184,7 +226,7 @@ Boundary rule everywhere: `Schema.parse(body)` at the route handler; `ZodError` 
 
 **GET /api/jobs** — query (all validated, unknown params rejected): `persona?`, `tier?` (repeatable), `minScore?` (0–5), `isNew?`, `q?`, `cursor?`, `limit?` (1–100, default 25). → `200 { items: Job[], nextCursor: string | null, stats: SummaryStripStats }`. `stats` is the Feed hero row's numbers (scanned/worth/ghosts/flagged/sinceLast/excluded) computed server-side over the full scoped result set, not derived client-side from the (paginated) `items` page. The eligibility predicate is **server-derived from the profile, not a wire param** (2026-07-12 spec §8): relocation `stay` admits `anywhere|eligible|local|unknown` and reports the hidden `abroad` count as `stats.excluded`; `open` applies no eligibility condition (`excluded: 0`). The former `remote?` boolean (persona-based) was removed with the "Work anywhere" chip swap (spec §2.7). `stats.excluded` deviates from the "full scoped result set" framing above in two ways: it counts every job the geo predicate hid, whether or not it has been scored yet (no `job_scores` join — a hidden-and-unscored row still counts), and it is scoped only by `persona`/`q`/`isNew`, deliberately ignoring `tier`/`minScore` (those are `job_scores` columns; this number answers "what did the geo predicate hide," not "what would also have passed your score filters").
 
-**Three axes — never conflate** (2026-07-12 spec §3): `Source.persona` = scan routing (which source-set a run fans out to); `Job.persona` = run provenance (stamped at upsert, immutable on re-sight); `Job.eligibility` = posting geography relative to the operator profile (`anywhere | eligible | local | abroad | unknown`), resolved deterministically (board country stamp → JD-stated facts → connector geo → source prior → unknown) and refreshed by the scoring path.
+**Three axes — never conflate** (2026-07-12 eligibility spec §3, amended by the 2026-07-12 pasted-job-ingestion spec §2.5): `Source.persona` = scan routing (which source-set a run fans out to); `Job.persona` = run provenance ∈ {remote-run, local-run, **pasted**} (stamped at upsert, immutable on re-sight — pasting IS the provenance; this amendment locally supersedes the eligibility spec's "Persona untouched" lock on this one point, recorded in `docs/architecture/README.md`); `Job.eligibility` = posting geography relative to the operator profile (`anywhere | eligible | local | abroad | unknown`), resolved deterministically (board country stamp → JD-stated facts → connector geo → source prior → unknown) and refreshed by the scoring path. The eligibility visibility predicate does not apply in the Pasted scope (§2.12 of the pasted-job-ingestion spec) — the operator pasted the job deliberately.
 
 **GET /api/jobs/:id** — → `200 Job` | `404`.
 
@@ -207,6 +249,12 @@ Boundary rule everywhere: `Schema.parse(body)` at the route handler; `ZodError` 
 **POST /api/tailor/:id/finalize** — `{ acceptedIndices: z.array(z.number().int()) }` (indices into `TailoredResume.diff`). → `200 TailoredResume`, server-rendered with only the accepted diff entries applied (`resume` reflects the accepted-only merge, not the full-tailor draft). `404` unknown id, `409 RUN_NOT_READY` while `status !== 'completed'`. The accept/reject mask never lives only in client state — the UI's ChangeList/ExportBar accept flags are indices passed here, and `GET /api/tailor/:id/pdf` renders whatever this route last finalized.
 
 **GET /api/tailor/:id/pdf** — → `200 application/pdf` | `404` | `409 RUN_NOT_READY` while the run hasn't been finalized (`POST .../finalize` not yet called, or `status !== 'completed'`).
+
+**POST /api/jobs/check** — `UrlCheckRequest`. → `202 UrlCheck` (`status:'queued'`, pipeline started) | `200 UrlCheck` (completed, `alreadyKnown:true` dedupe short-circuit — no spend). `409 CONFLICT` no active résumé, checked at admission before any spend. `422 VALIDATION_ERROR` bad body/URL. `422 PAYLOAD_TOO_LARGE` pasted `text` over the 40k-char cap. Admission errors are HTTP; pipeline failures land in `UrlCheck.error`, never as an HTTP error on this route once 202/200 has been returned (2026-07-12 pasted-job-ingestion spec §5–§6).
+
+**GET /api/jobs/check/:id** — → `200 UrlCheck` | `404`. Poll ~1.5s; `UrlCheck.stage` is an open string (`fetching|searching|extracting|persisting|ghost-check|scoring`).
+
+**DELETE /api/jobs/:id** — → `204` | `404` unknown job | `409 CONFLICT` `persona !== 'pasted'` | `409 CONFLICT` a tracked `applications` row exists ("tracked application — deletion blocked" — the lifelong-tracker promise wins over deletion). One transaction deletes `application_answers` → `tailored_resumes` → `job_scores` for the job, then the `jobs` row; `url_checks.job_id` nulls via `ON DELETE SET NULL` (spec §10).
 
 ## 4. Streaming (SSE)
 
