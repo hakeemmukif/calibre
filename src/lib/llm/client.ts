@@ -12,7 +12,9 @@ export type TaskName =
   | "match-score"
   | "question-extract"
   | "question-answer"
-  | "tailor";
+  | "tailor"
+  | "url-check-search"
+  | "ghost-web";
 
 export interface LlmMessage {
   role: "system" | "user" | "assistant";
@@ -62,7 +64,14 @@ function buildClient(transport: OpenAI): LlmClient {
         { signal },
       );
 
-      const content = completion.choices[0]?.message?.content;
+      const choice = completion.choices[0];
+      if (choice?.finish_reason === "length") {
+        throw new Error(
+          `Completion truncated (hit max_tokens=${config.maxTokens}) for task "${task}" — raise maxTokens in config/models.yml`,
+        );
+      }
+
+      const content = choice?.message?.content;
       if (!content) throw new Error(`Empty completion content for task "${task}"`);
 
       let parsed: unknown;

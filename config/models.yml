@@ -10,11 +10,15 @@
 tasks:
   resume-extract:
     model: openai/gpt-oss-120b
-    maxTokens: 2000
+    # gpt-oss-120b spends part of the max_tokens budget on reasoning tokens;
+    # a full résumé's structured JSON plus that overhead overflows 2000 and
+    # truncates mid-output, so the budget is sized for large résumés.
+    maxTokens: 6000
     temperature: 0.1
   jd-extract:
     model: openai/gpt-oss-120b
-    maxTokens: 1500
+    # Same reasoning-token overhead as resume-extract; long JDs overflow 1500.
+    maxTokens: 4000
     temperature: 0.1
   match-score:
     model: openai/gpt-oss-120b
@@ -22,7 +26,8 @@ tasks:
     temperature: 0.2
   question-extract:
     model: openai/gpt-oss-120b
-    maxTokens: 1500
+    # Same reasoning-token overhead as resume-extract; long forms overflow 1500.
+    maxTokens: 4000
     temperature: 0.1
   question-answer:
     model: openai/gpt-oss-120b
@@ -36,6 +41,17 @@ tasks:
     # 2026-07-12). ~10k output ≈ $0.0015 at this model's pricing.
     maxTokens: 10000
     temperature: 0.4
+  url-check-search:
+    model: perplexity/sonar
+    maxTokens: 4000
+    temperature: 0
+  ghost-web:
+    model: perplexity/sonar
+    maxTokens: 2000
+    temperature: 0
 
 prices:
   openai/gpt-oss-120b: { promptUsdPerMTok: 0.03, completionUsdPerMTok: 0.15 }
+  # perplexity/sonar per-token rate; sonar's per-request search fee is not
+  # modeled here (2026-07-12 spec §8 known unknown).
+  perplexity/sonar: { promptUsdPerMTok: 1, completionUsdPerMTok: 1 }

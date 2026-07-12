@@ -5,7 +5,7 @@ import { escalateModelFor, modelFor, priceFor } from "./models";
 describe("models", () => {
   it("modelFor reads model/maxTokens/temperature from config/models.yml", () => {
     const config = modelFor("resume-extract");
-    expect(config).toEqual({ model: "openai/gpt-oss-120b", maxTokens: 2000, temperature: 0.1 });
+    expect(config).toEqual({ model: "openai/gpt-oss-120b", maxTokens: 6000, temperature: 0.1 });
   });
 
   it("escalateModelFor returns null for match-score (no escalation valve configured)", () => {
@@ -26,5 +26,22 @@ describe("models", () => {
 
   it("throws when a model has no price entry", () => {
     expect(() => priceFor("openai/does-not-exist")).toThrow(/no price entry/i);
+  });
+
+  it("modelFor reads url-check-search (perplexity/sonar, temperature 0)", () => {
+    expect(modelFor("url-check-search")).toEqual({
+      model: "perplexity/sonar",
+      maxTokens: 4000,
+      temperature: 0,
+    });
+  });
+
+  it("priceFor reads the perplexity/sonar price entry", () => {
+    expect(priceFor("perplexity/sonar")).toEqual({ promptUsdPerMTok: 1, completionUsdPerMTok: 1 });
+  });
+
+  it("modelFor reads ghost-web task config", () => {
+    const config = modelFor("ghost-web");
+    expect(config).toEqual({ model: "perplexity/sonar", maxTokens: 2000, temperature: 0 });
   });
 });
