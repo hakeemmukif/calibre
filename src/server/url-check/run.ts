@@ -143,7 +143,16 @@ async function runPipeline(
     let tier1Live = false;
 
     if (pasteMode) {
-      const gate = await runGate(llm, req.text!);
+      // A thrown llm.complete here has no tier-2 to escalate to (pasted text
+      // IS the acquisition) — recoverable the same way as an "incomplete"
+      // gate outcome: EXTRACTION_FAILED, needsText:true (a fuller paste may
+      // fix it), not a generic INTERNAL.
+      let gate: Awaited<ReturnType<typeof runGate>>;
+      try {
+        gate = await runGate(llm, req.text!);
+      } catch {
+        throw new ExtractionIncompleteError();
+      }
       await urlChecksRepo.addCost(checkId, gate.costUsd);
       if (gate.outcome.kind === "not-a-posting") throw new NotAJobPostingError();
       if (gate.outcome.kind === "incomplete") throw new ExtractionIncompleteError();
