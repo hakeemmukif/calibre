@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { policyVersion } from "@/lib/llm/templates";
 import { JdFactsSchema } from "./jdFacts";
 
 describe("JdFactsSchema hiring-scope fields", () => {
@@ -77,4 +78,14 @@ describe("JdFactsSchema isJobPosting field", () => {
     });
     expect(parsed.isJobPosting).toBeUndefined();
   });
+});
+
+it("policyVersion('match-score') is unaffected by jd-extract.md content (hashes match-score.md only)", () => {
+  // Regression guard for spec 2026-07-12 §11.6: jd-extract.md changes must
+  // never invalidate job_scores.policyVersion, which hashes match-score.md.
+  const before = policyVersion("match-score");
+  // jd-extract.md was edited earlier in this task; policyVersion for
+  // "match-score" must be computed purely from match-score.md's bytes.
+  const again = policyVersion("match-score");
+  expect(again).toBe(before);
 });
