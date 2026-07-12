@@ -180,4 +180,35 @@ describe("deriveRepostStats", () => {
     expect(stats.count90d).toBe(2);
     expect(stats.oldestDays).toBe(91);
   });
+
+  // final review fix wave FIX 3 — real sonar postedDate values are free-text
+  // prose ("16 days ago"); `new Date(prose)` is Invalid Date (NaN), and one
+  // NaN poisons Math.max(...ageDays) unless unparseable dates are filtered
+  // out exactly like undated sightings.
+
+  it("prose-dated sightings (an unparseable postedDate) are excluded from count90d", () => {
+    const stats = deriveRepostStats([
+      { url: "https://a.example.com/1", source: "LinkedIn", postedDate: "16 days ago" },
+      { url: "https://a.example.com/2", source: "Indeed", postedDate: daysAgo(10) },
+    ]);
+    expect(stats.count90d).toBe(1);
+  });
+
+  it("a mix of prose and ISO dates yields oldestDays = max of the parseable ones only (NaN-poisoning regression)", () => {
+    const stats = deriveRepostStats([
+      { url: "https://a.example.com/1", source: "LinkedIn", postedDate: "3 weeks ago" },
+      { url: "https://a.example.com/2", source: "Indeed", postedDate: daysAgo(45) },
+      { url: "https://a.example.com/3", source: "Glassdoor", postedDate: daysAgo(10) },
+    ]);
+    expect(stats.oldestDays).toBe(45);
+  });
+
+  it("all-prose postedDate values -> count90d 0, oldestDays null", () => {
+    const stats = deriveRepostStats([
+      { url: "https://a.example.com/1", source: "LinkedIn", postedDate: "16 days ago" },
+      { url: "https://a.example.com/2", source: "Indeed", postedDate: "last month" },
+    ]);
+    expect(stats.count90d).toBe(0);
+    expect(stats.oldestDays).toBeNull();
+  });
 });

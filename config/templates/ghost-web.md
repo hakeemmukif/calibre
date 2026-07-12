@@ -17,15 +17,20 @@ for that literal company + title combination.
 List every distinct sighting of this posting (or an equivalent posting
 for the same role at the same company) that you find, each as a URL, the
 board/site name, and the posted date if stated — the citation IS the
-sighting, do not invent one. Note any company-level legitimacy signals
-you observe from the search (e.g. "layoffs announced May 2026",
-"careers page lists the role", "hiring freeze reported"). Write a single
-short, user-facing sentence summarizing what you found — this is shown
-directly to the operator. Set confidence (0-1) to how sure you are the
-sightings you found are genuinely this posting, not a same-titled role
-elsewhere. Do not compute or state repost counts or churn — return raw
-sightings only, dates and all; that arithmetic happens outside this
-call.
+sighting, do not invent one. When you give a posted date, write it as an
+ISO date (YYYY-MM-DD) whenever the source states one or clearly implies
+one (resolve a relative phrase like "16 days ago" against today's date
+to get the calendar date) — never write the relative phrase or other
+prose itself. If you cannot resolve a specific calendar date, omit the
+posted date field entirely rather than guessing. Note any company-level
+legitimacy signals you observe from the search (e.g. "layoffs announced
+May 2026", "careers page lists the role", "hiring freeze reported").
+Write a single short, user-facing sentence summarizing what you found —
+this is shown directly to the operator. Set confidence (0-1) to how sure
+you are the sightings you found are genuinely this posting, not a
+same-titled role elsewhere. Do not compute or state repost counts or
+churn — return raw sightings only, dates and all; that arithmetic
+happens outside this call.
 
 --- user:subject ---
 <<<COMPANY_START>>>

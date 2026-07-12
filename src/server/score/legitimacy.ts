@@ -53,9 +53,15 @@ export function deriveRepostStats(sightings: Sighting[]): { count90d: number; ol
 
   const DAY_MS = 24 * 60 * 60 * 1000;
   const now = Date.now();
+  // Real sonar postedDate values are sometimes free-text prose ("16 days
+  // ago") rather than a real date — `new Date(prose)` is Invalid Date, and
+  // one NaN would otherwise poison Math.max(...ageDays) below. Filtered out
+  // exactly like an undated sighting (final review fix wave FIX 3): an
+  // unparseable date cannot support a churn claim either.
   const ageDays = distinct
     .filter((sighting): sighting is Sighting & { postedDate: string } => sighting.postedDate !== undefined)
-    .map((sighting) => Math.floor((now - new Date(sighting.postedDate).getTime()) / DAY_MS));
+    .map((sighting) => Math.floor((now - new Date(sighting.postedDate).getTime()) / DAY_MS))
+    .filter((days) => Number.isFinite(days));
 
   return {
     count90d: ageDays.filter((days) => days <= 90).length,
