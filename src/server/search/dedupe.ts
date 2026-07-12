@@ -57,7 +57,7 @@ export function secondaryKey(input: { companySlug: string; roleTokensHash: strin
 }
 
 export interface CanonicalCandidate {
-  kind: "ats" | "board";
+  kind: "ats" | "board" | "manual";
   sourceId: string;
   url: string;
 }
