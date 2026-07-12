@@ -9,8 +9,10 @@ markdown, no commentary.
 Extract the following from the résumé text below: a one-line headline
 (current or target role), location, a short professional summary, work
 experience (title, company, dates, bullet points), and a flat list of
-skills. Preserve the candidate's own wording where possible; do not
-embellish.
+skills. Put the candidate's location (typically city and country from the
+contact line) in the top-level `location` field; omit the field entirely
+if the résumé states no location — never invent one. Preserve the
+candidate's own wording where possible; do not embellish.
 
 --- user:candidate ---
 Résumé text:

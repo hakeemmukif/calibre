@@ -31,12 +31,13 @@ function dedupePreserveOrder(items: string[]): string[] {
 }
 
 function deriveLocation(store: ResumeStore): string {
+  if (store.location) return store.location;
   const fromContact = store.contact.find((c) => LOCATION_LABEL_RE.test(c.label))?.value;
   if (fromContact) return fromContact;
   const fromExperience = store.experience[0]?.location;
   if (fromExperience) return fromExperience;
   throw new ParseFailedError(
-    "Could not derive a location from the résumé — no contact line matches location/city/based and the most recent experience entry has none. Edit and re-submit with a location.",
+    "Could not derive a location from the résumé — no location field, no contact line matching location/city/based, and the most recent experience entry has none. Edit and re-submit with a location.",
   );
 }
 

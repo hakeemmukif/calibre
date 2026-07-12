@@ -25,6 +25,10 @@ export const SkillGroupSchema = z.object({ label: z.string(), items: z.array(z.s
 
 export const ResumeStoreSchema = z.object({
   name: z.string(),
+  // Résumé-level location gets a dedicated slot: the model reliably omits it
+  // from `contact` (free-form labels are uninstructed), which made
+  // derive-view's location gate fail on real résumés.
+  location: z.string().optional(),
   contact: z.array(ContactLineSchema),
   summary: z.string(),
   experience: z.array(ExperienceEntrySchema),
