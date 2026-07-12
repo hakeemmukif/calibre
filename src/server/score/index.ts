@@ -12,11 +12,12 @@ import type { ProfileRow } from "@/server/persistence/repos/profile";
 import type { ResumeRow } from "@/server/persistence/repos/resumes";
 import type { SourceRow } from "@/server/persistence/repos/sources";
 import { parseSourceGeo } from "@/server/search/geo";
+import type { WebEvidence } from "@/types";
 import { resolveEligibility } from "./eligibility";
 import { scoreMatch } from "./evalScores";
-import { extractJdFacts } from "./jdFacts";
+import { extractJdFacts, type JdFacts } from "./jdFacts";
 import { legitimacyTone, resolveLegitimacyTier } from "./legitimacy";
-import { probeLivenessDeep } from "./liveness";
+import { probeLivenessDeep, type LivenessResult } from "./liveness";
 
 // Thrown when a job has no description to extract facts from — the caller
 // (server/search/run.ts) is expected to SKIP scoring and record the job as
@@ -35,14 +36,23 @@ export async function scoreJob(args: {
   profile: ProfileRow;
   resume: ResumeRow;
   llm: LlmClient;
+  // Pasted-job pipeline only (spec 2026-07-12-pasted-job-ingestion-design.md
+  // §6): the url-check ladder already ran extractJdFacts/fetchPageText —
+  // re-running them here would double-spend and, worse, re-probe a
+  // bot-walled URL into a false "expired" liveness read.
+  precomputedJdFacts?: JdFacts;
+  livenessOverride?: LivenessResult;
+  webEvidence?: WebEvidence;
 }): Promise<JobScoreRow> {
   const { job, source, profile, resume, llm } = args;
 
   if (!job.description) throw new EmptyJobDescriptionError(job.id);
 
-  const liveness = await probeLivenessDeep(job.applyUrl ?? job.url);
+  const liveness = args.livenessOverride ?? (await probeLivenessDeep(job.applyUrl ?? job.url));
 
-  const jdFactsResult = await extractJdFacts(llm, job.description);
+  const jdFactsResult = args.precomputedJdFacts
+    ? { data: args.precomputedJdFacts, model: "precomputed", costUsd: 0 }
+    : await extractJdFacts(llm, job.description);
 
   // Layer C (spec §5): re-resolve with JD-stated facts — the authoritative
   // eligibility write. POST /api/jobs/:id/evaluate inherits this for free.
@@ -72,6 +82,7 @@ export async function scoreJob(args: {
     tier: final.data.legitimacy.tier,
     liveness,
     corroborated: final.data.legitimacy.corroborated,
+    webEvidence: args.webEvidence,
   });
 
   const row: NewJobScore = {
@@ -86,6 +97,7 @@ export async function scoreJob(args: {
       summary: final.data.legitimacy.summary,
       confidence: final.data.legitimacy.confidence,
       signals: final.data.legitimacy.signals,
+      webEvidence: args.webEvidence,
     },
     liveness,
     breakdown: final.data.breakdown,

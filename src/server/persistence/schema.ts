@@ -14,6 +14,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import type { ResumeStore } from "../resume/resume-store";
+import type { WebEvidence } from "@/types";
 
 // ---- shared jsonb shapes (only where a precise contract shape exists) ----
 
@@ -31,6 +32,10 @@ type LegitimacyShape = {
   summary: string;
   confidence?: number;
   signals: unknown[];
+  // spec 2026-07-12-pasted-job-ingestion-design.md §6/§10 — pasted-path
+  // ghost-web evidence, persisted alongside the tier it fed into the
+  // overlay. Absent for scanned jobs.
+  webEvidence?: WebEvidence;
 };
 
 type PerSourceStat = { sourceId: string; found: number; errors: number };

@@ -6,6 +6,7 @@ import { insertJob, insertProfile, insertResume, insertSource } from "@/server/p
 import type { ProfileRow } from "@/server/persistence/repos/profile";
 import { jobs, jobScores, resumes, sources } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
+import type { WebEvidence } from "@/types";
 import type { EvalScores } from "./evalScores";
 import type { JdFacts } from "./jdFacts";
 
@@ -168,4 +169,65 @@ describe("scoreJob", () => {
       expect(rows).toHaveLength(0);
     },
   );
+
+  it("precomputedJdFacts (paste path, spec §6) skips extractJdFacts entirely", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id, { description: "Pasted JD text." });
+    const resume = await insertResume(state.testDb);
+    const llm: LlmClient = {
+      async complete(args) {
+        if (args.task === "jd-extract") {
+          throw new Error("extractJdFacts must not run when precomputedJdFacts is supplied");
+        }
+        return { data: args.responseSchema.parse(cheapEval), model: "cheap-match-model", costUsd: 0.002 };
+      },
+    };
+
+    const row = await scoreJob({ job, source, profile, resume, llm, precomputedJdFacts: jdFacts });
+
+    expect(row.jdFacts).toEqual(jdFacts);
+    expect(row.costUsd).toBeCloseTo(0.002); // jd-extract cost is 0 — already paid by the url-check ladder
+  });
+
+  it("livenessOverride (paste path) skips probeLivenessDeep and is honoured in job_scores.liveness", async () => {
+    vi.mocked(probeLivenessDeep).mockClear();
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id, { description: "Pasted JD text." });
+    const resume = await insertResume(state.testDb);
+    const llm = makeMockLlm({ "jd-extract": jdFacts, "match-score": cheapEval });
+
+    const row = await scoreJob({ job, source, profile, resume, llm, livenessOverride: "uncertain" });
+
+    expect(probeLivenessDeep).not.toHaveBeenCalled();
+    expect(row.liveness).toBe("uncertain");
+  });
+
+  it("threads webEvidence through to the legitimacy overlay and persists it in job_scores.legitimacy (spec §6/§9)", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id, { description: "Pasted JD text." });
+    const resume = await insertResume(state.testDb);
+    const verifiedEval: EvalScores = {
+      ...cheapEval,
+      legitimacy: { tier: "verified", summary: "Careers page confirms opening.", signals: [], corroborated: true },
+    };
+    const llm = makeMockLlm({ "jd-extract": jdFacts, "match-score": verifiedEval });
+    const webEvidence: WebEvidence = {
+      status: "ok",
+      sightings: [{ url: "https://www.linkedin.com/jobs/view/123", source: "LinkedIn" }],
+      companySignals: [],
+      summary: "Seen on LinkedIn only — no ATS-hosted posting found.",
+      confidence: 0.7,
+    };
+
+    const row = await scoreJob({ job, source, profile, resume, llm, livenessOverride: "active", webEvidence });
+
+    // §9 step 3b: self-certified corroboration from pasted (attacker-
+    // controlled) page text is not corroboration without an ATS-allowlisted
+    // sighting — differs from the pre-webEvidence 3a result ("verified").
+    expect(row.legitimacy.tier).toBe("clear");
+    expect(row.legitimacy.webEvidence).toEqual(webEvidence);
+
+    const [persisted] = await state.testDb.select().from(jobScores).where(eq(jobScores.jobId, job.id));
+    expect(persisted.legitimacy.webEvidence).toEqual(webEvidence);
+  });
 });
