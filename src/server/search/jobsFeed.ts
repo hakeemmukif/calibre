@@ -5,8 +5,9 @@
 import { assembleJob } from "@/features/feed/assemble";
 import type { JobsQuery } from "@/server/persistence/repos/jobs";
 import { jobsRepo } from "@/server/persistence/repos/jobs";
+import { profileRepo } from "@/server/persistence/repos/profile";
 import { searchRunsRepo } from "@/server/persistence/repos/searchRuns";
-import type { Job, Persona, SummaryStripStats } from "@/types";
+import type { EligibilityTier, Job, Persona, SummaryStripStats } from "@/types";
 
 export type FeedQuery = Omit<JobsQuery, "isNew"> & {
   // Wire boolean (api-contract.md §3 `isNew?`) — translated to the repo's
@@ -24,9 +25,14 @@ export async function resolveIsNewCutoff(persona?: Persona): Promise<Date | null
   return run?.finishedAt ?? null;
 }
 
+// The tiers admitted under relocation "stay" (spec §8): abroad is hidden,
+// unknown stays visible wearing its warn pill (operator decision §2.1).
+const STAY_TIERS: EligibilityTier[] = ["anywhere", "eligible", "local", "unknown"];
+
 export async function listJobsFeed(
   query: FeedQuery,
 ): Promise<{ items: Job[]; nextCursor: string | null; stats: SummaryStripStats }> {
+  const profile = await profileRepo.get(); // the predicate needs it — fail loud when unseeded
   const cutoff = await resolveIsNewCutoff(query.persona);
 
   // `isNew:true` with no prior completed run can't exclude anything (no
@@ -34,18 +40,26 @@ export async function listJobsFeed(
   // silently matching zero rows.
   const isNewFilter = query.isNew ? (cutoff ?? undefined) : undefined;
   const { isNew: _wireIsNew, cursor, limit, ...rest } = query;
-  const filterScope = { ...rest, isNew: isNewFilter };
+  // relocation "stay" hides abroad; "open" applies no eligibility condition.
+  const eligibility = profile.relocation === "stay" ? STAY_TIERS : undefined;
+  const filterScope = { ...rest, isNew: isNewFilter, eligibility };
 
   const { items, nextCursor } = await jobsRepo.listScored({ ...filterScope, cursor, limit });
   // `stats` is computed over the SAME filter scope (task-B6-brief.md: "the
   // full scoped result set"), just without cursor/limit — `sinceLast` always
   // uses the cutoff regardless of whether the caller applied the `isNew`
   // filter (redundant-but-consistent when they did).
-  const stats = await jobsRepo.statsForQuery(filterScope, cutoff);
+  const base = await jobsRepo.statsForQuery(filterScope, cutoff);
+  // The trust signal for what vanished (spec §8): scored jobs the predicate
+  // hid. 0 under "open" — nothing is hidden.
+  const excluded =
+    profile.relocation === "stay"
+      ? await jobsRepo.countScored({ ...rest, isNew: isNewFilter, eligibility: ["abroad"] })
+      : 0;
 
   return {
     items: items.map((joined) => assembleJob(joined, { isNewCutoff: cutoff })),
     nextCursor,
-    stats,
+    stats: { ...base, excluded },
   };
 }

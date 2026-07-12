@@ -16,8 +16,8 @@ type Story = StoryObj<typeof JobFeed>;
 const onRowAction = (id: string, action: string) => console.log(id, action);
 const onFilterChangeLog = (f: FeedFilter) => console.log("filter", f);
 
-const zeroStats: SummaryStripStats = { scanned: 0, worth: 0, ghosts: 0, flagged: 0, sinceLast: 0 };
-const populatedStats: SummaryStripStats = { scanned: jobs.length, worth: 4, ghosts: 1, flagged: 2, sinceLast: 2 };
+const zeroStats: SummaryStripStats = { scanned: 0, worth: 0, ghosts: 0, flagged: 0, sinceLast: 0, excluded: 0 };
+const populatedStats: SummaryStripStats = { scanned: jobs.length, worth: 4, ghosts: 1, flagged: 2, sinceLast: 2, excluded: 1 };
 
 export const Loading: Story = {
   args: { jobs: [], filter: "all", onFilterChange: onFilterChangeLog, stats: zeroStats, loading: true, onRowAction },

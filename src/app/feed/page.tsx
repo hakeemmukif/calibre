@@ -20,7 +20,7 @@ import { useScanRun } from "@/features/search/useScanRun";
 import { takeScanHandoff, type ScanHandoff } from "@/features/search/scanHandoff";
 import type { Job, Persona, SummaryStripStats } from "@/types";
 
-const EMPTY_STATS: SummaryStripStats = { scanned: 0, worth: 0, ghosts: 0, flagged: 0, sinceLast: 0 };
+const EMPTY_STATS: SummaryStripStats = { scanned: 0, worth: 0, ghosts: 0, flagged: 0, sinceLast: 0, excluded: 0 };
 
 export default function FeedPage() {
   const router = useRouter();

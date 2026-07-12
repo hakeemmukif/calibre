@@ -9,7 +9,7 @@ import type { SummaryStripStats } from '../../../types';
 // JobFeed's real `error+retry` state (JobFeed.tsx): `error?: string` +
 // `onRetry?(): void` render an Icon + message + a "Retry" Button when
 // `!loading && error`. Grounded directly in JobFeed.tsx, not the inventory doc.
-const zeroStats: SummaryStripStats = { scanned: 0, worth: 0, ghosts: 0, flagged: 0, sinceLast: 0 };
+const zeroStats: SummaryStripStats = { scanned: 0, worth: 0, ghosts: 0, flagged: 0, sinceLast: 0, excluded: 0 };
 
 // vitest.config.ts runs without `test.globals`, so @testing-library/react's
 // automatic afterEach(cleanup) never registers — clean up explicitly.

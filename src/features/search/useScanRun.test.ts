@@ -56,6 +56,7 @@ function job(overrides: Partial<Job> = {}): Job {
     fit: [],
     gaps: [],
     legitimacy: { tier: "clear", tone: "good", summary: "Looks fine" },
+    eligibility: { tier: "unknown", tone: "warn", summary: "test fixture" },
     applyUrl: "https://example.com/apply",
     source: { id: "src-1", name: "Acme Board", kind: "board", persona: "remote" },
     persona: "remote",

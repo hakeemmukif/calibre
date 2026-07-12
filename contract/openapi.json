@@ -320,6 +320,9 @@
           "company": {
             "type": "string"
           },
+          "eligibility": {
+            "$ref": "#/components/schemas/Eligibility"
+          },
           "firstSeen": {
             "format": "date-time",
             "type": "string"
@@ -435,6 +438,7 @@
           "fit",
           "gaps",
           "legitimacy",
+          "eligibility",
           "applyUrl",
           "source",
           "persona",
@@ -850,6 +854,9 @@
       },
       "SummaryStripStats": {
         "properties": {
+          "excluded": {
+            "type": "integer"
+          },
           "flagged": {
             "type": "integer"
           },
@@ -871,7 +878,8 @@
           "worth",
           "ghosts",
           "flagged",
-          "sinceLast"
+          "sinceLast",
+          "excluded"
         ],
         "type": "object"
       },
@@ -1646,14 +1654,6 @@
           {
             "in": "query",
             "name": "isNew",
-            "required": false,
-            "schema": {
-              "type": "boolean"
-            }
-          },
-          {
-            "in": "query",
-            "name": "remote",
             "required": false,
             "schema": {
               "type": "boolean"

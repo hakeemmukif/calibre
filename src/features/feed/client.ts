@@ -11,7 +11,6 @@ export interface GetJobsQuery {
   tier?: LegitimacyTier[];
   minScore?: number;
   isNew?: boolean;
-  remote?: boolean;
   q?: string;
   cursor?: string;
   limit?: number;
@@ -26,7 +25,6 @@ function buildQuery(query: GetJobsQuery): string {
   for (const tier of query.tier ?? []) params.append("tier", tier);
   if (query.minScore !== undefined) params.set("minScore", String(query.minScore));
   if (query.isNew !== undefined) params.set("isNew", String(query.isNew));
-  if (query.remote !== undefined) params.set("remote", String(query.remote));
   if (query.q !== undefined) params.set("q", query.q);
   if (query.cursor !== undefined) params.set("cursor", query.cursor);
   if (query.limit !== undefined) params.set("limit", String(query.limit));

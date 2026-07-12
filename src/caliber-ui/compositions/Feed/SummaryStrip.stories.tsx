@@ -9,13 +9,13 @@ export default meta;
 type Story = StoryObj<typeof SummaryStrip>;
 
 export const Populated: Story = {
-  args: { stats: { scanned: 214, worth: 38, ghosts: 12, flagged: 6, sinceLast: 9 } },
+  args: { stats: { scanned: 214, worth: 38, ghosts: 12, flagged: 6, sinceLast: 9, excluded: 12 } },
 };
 
 export const ZeroState: Story = {
-  args: { stats: { scanned: 0, worth: 0, ghosts: 0, flagged: 0, sinceLast: 0 } },
+  args: { stats: { scanned: 0, worth: 0, ghosts: 0, flagged: 0, sinceLast: 0, excluded: 0 } },
 };
 
 export const Stale: Story = {
-  args: { stats: { scanned: 214, worth: 38, ghosts: 12, flagged: 6, sinceLast: 0 } },
+  args: { stats: { scanned: 214, worth: 38, ghosts: 12, flagged: 6, sinceLast: 0, excluded: 12 } },
 };

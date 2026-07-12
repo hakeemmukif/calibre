@@ -1,4 +1,5 @@
 import { and, desc, eq, gt, gte, ilike, inArray, or, sql } from "drizzle-orm";
+import type { EligibilityTier } from "@/types";
 import { getDb } from "../db";
 import { jobs, jobScores, sources, type JobAlias } from "../schema";
 import { decodeCursorId, encodeCursorId } from "./cursor";
@@ -27,7 +28,10 @@ export type JobsQuery = {
   // that belongs to the caller (features/feed), not this single-table repo.
   // The caller resolves the wire `isNew?: boolean` into this cutoff.
   isNew?: Date;
-  remote?: boolean; // "Remote" filter chip (design spec §11.8) → persona = 'remote'
+  // Server-derived from the profile's relocation preference (spec §8), not a
+  // wire param: relocation "stay" passes the 4 admitted tiers, "open" omits
+  // the condition entirely.
+  eligibility?: EligibilityTier[];
   q?: string; // ILIKE over title/company
   cursor?: string;
   limit?: number;
@@ -55,7 +59,7 @@ function latestJobScores(db: Db) {
 function buildFilterConditions(q: Omit<JobsQuery, "cursor" | "limit">) {
   const conditions = [];
   if (q.persona) conditions.push(eq(jobs.persona, q.persona));
-  if (q.remote) conditions.push(eq(jobs.persona, "remote"));
+  if (q.eligibility && q.eligibility.length > 0) conditions.push(inArray(jobs.eligibility, q.eligibility));
   if (q.tier && q.tier.length > 0) {
     conditions.push(inArray(sql`(${jobScores.legitimacy}->>'tier')`, q.tier));
   }
@@ -159,6 +163,20 @@ export function createJobsRepo(db: Db) {
       return updated;
     },
 
+    // Excluded-count support (spec §8): jobs matching the scope that the
+    // eligibility predicate hid — same joins as statsForQuery, count only.
+    async countScored(q: Omit<JobsQuery, "cursor" | "limit">): Promise<number> {
+      const conditions = buildFilterConditions(q);
+      const latest = latestJobScores(db);
+      const rows = await db
+        .select({ id: jobs.id })
+        .from(jobs)
+        .innerJoin(jobScores, eq(jobScores.jobId, jobs.id))
+        .innerJoin(latest, eq(latest.id, jobScores.id))
+        .where(conditions.length > 0 ? and(...conditions) : undefined);
+      return rows.length;
+    },
+
     // Layer-C refresh (spec §5 write points): the scoring path re-resolves
     // with JD facts and overwrites the ingest-time stamp. Unknown id throws —
     // a refresh for a vanished row is a bug, not a no-op.
@@ -238,6 +256,7 @@ export const jobsRepo: ReturnType<typeof createJobsRepo> = {
   getRowWithSourceById: (id) => createJobsRepo(getDb()).getRowWithSourceById(id),
   updateDescription: (id, description) => createJobsRepo(getDb()).updateDescription(id, description),
   updateEligibility: (id, tier, evidence) => createJobsRepo(getDb()).updateEligibility(id, tier, evidence),
+  countScored: (q) => createJobsRepo(getDb()).countScored(q),
   existsById: (id) => createJobsRepo(getDb()).existsById(id),
   statsForQuery: (q, sinceLastCutoff) => createJobsRepo(getDb()).statsForQuery(q, sinceLastCutoff),
 };

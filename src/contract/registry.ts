@@ -213,7 +213,6 @@ registry.registerPath({
       tier: z.array(LegitimacyTier).optional().describe("repeatable"),
       minScore: z.number().min(0).max(5).optional(),
       isNew: z.boolean().optional(),
-      remote: z.boolean().optional(),
       q: z.string().optional(),
       cursor: z.string().optional(),
       limit: z.number().int().min(1).max(100).optional().describe("default 25"),

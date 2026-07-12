@@ -7,7 +7,7 @@ import { InvalidCursorError } from "@/server/persistence/repos/cursor";
 import { listJobsFeed } from "@/server/search/jobsFeed";
 import { LegitimacyTier, Persona, type ErrorEnvelope } from "@/types";
 
-const ALLOWED_PARAMS = new Set(["persona", "tier", "minScore", "isNew", "remote", "q", "cursor", "limit"]);
+const ALLOWED_PARAMS = new Set(["persona", "tier", "minScore", "isNew", "q", "cursor", "limit"]);
 
 // URLSearchParams values are always strings — `z.coerce.boolean()` treats any
 // non-empty string (including "false") as true, so booleans need an explicit
@@ -22,7 +22,6 @@ const QuerySchema = z.object({
   tier: z.array(LegitimacyTier).optional(),
   minScore: z.coerce.number().min(0).max(5).optional(),
   isNew: BooleanParam,
-  remote: BooleanParam,
   q: z.string().optional(),
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
@@ -48,7 +47,6 @@ export async function GET(request: NextRequest) {
       tier: tier.length > 0 ? tier : undefined,
       minScore: searchParams.get("minScore") ?? undefined,
       isNew: searchParams.get("isNew") ?? undefined,
-      remote: searchParams.get("remote") ?? undefined,
       q: searchParams.get("q") ?? undefined,
       cursor: searchParams.get("cursor") ?? undefined,
       limit: searchParams.get("limit") ?? undefined,

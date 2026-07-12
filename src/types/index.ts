@@ -87,6 +87,7 @@ export const Job = z.object({ // §5 frozen + §11.8 extensions
   fit: z.array(z.object({ k: z.string(), v: z.string() })),
   gaps: z.array(z.object({ tone: z.enum(["warn", "ok"]), k: z.string(), v: z.string() })),
   legitimacy: Legitimacy,
+  eligibility: Eligibility, // posting geography vs profile (spec 2026-07-12 §3)
   applyUrl: z.string().url(), // F3: the canonical posting URL
   source: SourceRef,
   persona: Persona,
@@ -252,5 +253,6 @@ export const SummaryStripStats = z.object({
   ghosts: z.number().int(),
   flagged: z.number().int(),
   sinceLast: z.number().int(),
+  excluded: z.number().int(), // hidden by the eligibility predicate (spec §8) — 0 under relocation "open"
 });
 export type SummaryStripStats = z.infer<typeof SummaryStripStats>;

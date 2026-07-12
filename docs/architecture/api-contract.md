@@ -79,6 +79,7 @@ export const Job = z.object({                        // §5 frozen + §11.8 exte
   fit: z.array(z.object({ k: z.string(), v: z.string() })),
   gaps: z.array(z.object({ tone: z.enum(['warn','ok']), k: z.string(), v: z.string() })),
   legitimacy: Legitimacy,
+  eligibility: Eligibility,                          // posting geography vs profile (2026-07-12 spec §3)
   applyUrl: z.string().url(),                        // F3: the canonical posting URL
   // Assembly rule (features/feed/assemble.ts, B6): applyUrl = jobs.applyUrl ?? jobs.url —
   // jobs.applyUrl is the nullable resolved-redirect (set on fetchDetail, F3 hard problem
@@ -117,6 +118,7 @@ export const SearchRun = z.object({
 export const SummaryStripStats = z.object({          // Feed hero row (§11.8); GET /api/jobs' `stats`
   scanned: z.number().int(), worth: z.number().int(), ghosts: z.number().int(),
   flagged: z.number().int(), sinceLast: z.number().int(),
+  excluded: z.number().int(),                        // hidden by the eligibility predicate; 0 under relocation 'open'
 });
 
 export const Application = z.object({                // §5 Applied, wire-normalised
@@ -180,7 +182,9 @@ Boundary rule everywhere: `Schema.parse(body)` at the route handler; `ZodError` 
 
 **GET /api/search/:id** — → `200 SearchRun` | `404`. With `Accept: text/event-stream` → SSE (§4).
 
-**GET /api/jobs** — query (all validated, unknown params rejected): `persona?`, `tier?` (repeatable), `minScore?` (0–5), `isNew?`, `remote?`, `q?`, `cursor?`, `limit?` (1–100, default 25). → `200 { items: Job[], nextCursor: string | null, stats: SummaryStripStats }`. Params map 1:1 to the §11.8 hero filter chips. `stats` is the Feed hero row's numbers (scanned/worth/ghosts/flagged/sinceLast) computed server-side over the full scoped result set, not derived client-side from the (paginated) `items` page.
+**GET /api/jobs** — query (all validated, unknown params rejected): `persona?`, `tier?` (repeatable), `minScore?` (0–5), `isNew?`, `q?`, `cursor?`, `limit?` (1–100, default 25). → `200 { items: Job[], nextCursor: string | null, stats: SummaryStripStats }`. `stats` is the Feed hero row's numbers (scanned/worth/ghosts/flagged/sinceLast/excluded) computed server-side over the full scoped result set, not derived client-side from the (paginated) `items` page. The eligibility predicate is **server-derived from the profile, not a wire param** (2026-07-12 spec §8): relocation `stay` admits `anywhere|eligible|local|unknown` and reports the hidden `abroad` count as `stats.excluded`; `open` applies no eligibility condition (`excluded: 0`). The former `remote?` boolean (persona-based) was removed with the "Work anywhere" chip swap (spec §2.7).
+
+**Three axes — never conflate** (2026-07-12 spec §3): `Source.persona` = scan routing (which source-set a run fans out to); `Job.persona` = run provenance (stamped at upsert, immutable on re-sight); `Job.eligibility` = posting geography relative to the operator profile (`anywhere | eligible | local | abroad | unknown`), resolved deterministically (board country stamp → JD-stated facts → connector geo → source prior → unknown) and refreshed by the scoring path.
 
 **GET /api/jobs/:id** — → `200 Job` | `404`.
 

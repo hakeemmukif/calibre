@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { insertJob, insertJobScore, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
+import { insertJob, insertJobScore, insertProfile, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
 import { jobs, jobScores, resumes, searchRuns, sources } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 
@@ -16,6 +16,7 @@ function req(query: string): NextRequest {
 describe("GET /api/jobs", () => {
   beforeAll(async () => {
     state.testDb = await createTestDb();
+    await insertProfile(state.testDb); // listJobsFeed derives the eligibility predicate from the profile
   });
 
   afterEach(async () => {
@@ -24,6 +25,41 @@ describe("GET /api/jobs", () => {
     await state.testDb.delete(searchRuns);
     await state.testDb.delete(sources);
     await state.testDb.delete(resumes);
+  });
+
+  it("relocation 'stay' hides abroad jobs and reports them in stats.excluded; 'open' reveals them (spec §8)", async () => {
+    const { profile } = await import("@/server/persistence/schema");
+    const { eq } = await import("drizzle-orm");
+    const source = await insertSource(state.testDb);
+    const resume = await insertResume(state.testDb);
+
+    const anywhereJob = await insertJob(state.testDb, source.id, {
+      dedupeKey: "dk-anywhere",
+      url: "https://example.com/anywhere",
+      eligibility: "anywhere",
+      eligibilityEvidence: "employer prior: hires anywhere",
+    });
+    await insertJobScore(state.testDb, anywhereJob.id, resume.id);
+    const abroadJob = await insertJob(state.testDb, source.id, {
+      dedupeKey: "dk-abroad",
+      url: "https://example.com/abroad",
+      eligibility: "abroad",
+      eligibilityEvidence: "location: New York, NY",
+    });
+    await insertJobScore(state.testDb, abroadJob.id, resume.id);
+
+    // Seeded profile is { relocation: "stay" } — abroad hidden, counted.
+    const stay = await (await GET(req(""))).json();
+    expect(stay.items).toHaveLength(1);
+    expect(stay.items[0].eligibility.tier).toBe("anywhere");
+    expect(stay.stats.excluded).toBe(1);
+
+    // Flip to "open": the same rows re-scope with zero rescan.
+    await state.testDb.update(profile).set({ relocation: "open" }).where(eq(profile.id, "default"));
+    const open = await (await GET(req(""))).json();
+    expect(open.items).toHaveLength(2);
+    expect(open.stats.excluded).toBe(0);
+    await state.testDb.update(profile).set({ relocation: "stay" }).where(eq(profile.id, "default"));
   });
 
   it("filters by tier + minScore and pages with a cursor", async () => {

@@ -472,4 +472,37 @@ describe("jobsRepo", () => {
 
     await expect(repo.updateEligibility(crypto.randomUUID(), "unknown", "x")).rejects.toThrow(/no job with id/);
   });
+
+  it("filters by eligibility[] and counts the excluded scope", async () => {
+    const db = await createTestDb();
+    const repo = createJobsRepo(db);
+    const source = await insertSource(db);
+    const resume = await insertResume(db);
+    const mk = async (eligibility: "anywhere" | "abroad" | "unknown") => {
+      const job = await repo.upsertByDedupeKey({
+        dedupeKey: `dk-elig-${eligibility}`,
+        url: `https://example.com/elig-${eligibility}`,
+        sourceId: source.id,
+        title: "Backend Engineer",
+        company: "Acme",
+        location: "Remote",
+        persona: "remote",
+        eligibility,
+        eligibilityEvidence: "t",
+        aliases: [],
+        raw: {},
+      });
+      await insertJobScore(db, job.id, resume.id);
+      return job;
+    };
+    await mk("anywhere");
+    await mk("abroad");
+    await mk("unknown");
+
+    const { items } = await repo.listScored({ eligibility: ["anywhere", "eligible", "local", "unknown"] });
+    expect(items).toHaveLength(2);
+
+    const excluded = await repo.countScored({ eligibility: ["abroad"] });
+    expect(excluded).toBe(1);
+  });
 });

@@ -66,7 +66,10 @@ describe("assembleJob", () => {
     expect(job.id).toBe("job-1");
     expect(job.role).toBe("Backend Engineer");
     expect(job.meta).toBe("Remote · $120k-$150k");
-    expect(job.tags).toEqual([{ tone: "good", label: "Looks legit" }]);
+    expect(job.tags).toEqual([
+      { tone: "good", label: "Looks legit" },
+      { tone: "warn", label: "Eligibility unverified" }, // fixture tier "unknown"
+    ]);
     expect(job.legitimacy).toEqual({ tier: "clear", tone: "good", summary: "Established company.", confidence: undefined });
     expect(job.source).toEqual({ id: "greenhouse", name: "Greenhouse", kind: "ats", persona: "remote" });
   });
@@ -91,7 +94,26 @@ describe("assembleJob", () => {
     joined.score.legitimacy = { tier: "ghost", tone: "ghost", summary: "Posting is stale.", signals: [] };
     const job = assembleJob(joined);
     expect(job.ghost).toBe(true);
-    expect(job.tags).toEqual([{ tone: "ghost", label: "Likely stale" }]);
+    expect(job.tags).toEqual([
+      { tone: "ghost", label: "Likely stale" },
+      { tone: "warn", label: "Eligibility unverified" },
+    ]);
+  });
+
+  it("emits eligibility from the job row and suppresses the tag for local (spec §8)", () => {
+    const anywhere = assembleJob(
+      baseJoined({ eligibility: "anywhere", eligibilityEvidence: "employer prior: hires anywhere" }),
+    );
+    expect(anywhere.eligibility).toEqual({
+      tier: "anywhere",
+      tone: "verified",
+      summary: "employer prior: hires anywhere",
+    });
+    expect(anywhere.tags).toContainEqual({ tone: "verified", label: "Work anywhere" });
+
+    const local = assembleJob(baseJoined({ eligibility: "local", eligibilityEvidence: "MY board source" }));
+    expect(local.eligibility.tier).toBe("local");
+    expect(local.tags).toHaveLength(1); // legitimacy tag only — no "Malaysia" noise
   });
 
   it("non-ghost tiers omit the `ghost` field entirely", () => {

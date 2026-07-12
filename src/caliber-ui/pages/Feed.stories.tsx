@@ -16,6 +16,7 @@ function statsFor(visibleJobs: typeof jobs): SummaryStripStats {
     ghosts: visibleJobs.filter((j) => j.ghost || j.legitimacy.tier === "ghost").length,
     flagged: visibleJobs.filter((j) => j.legitimacy.tier === "suspicious" || j.legitimacy.tier === "scam").length,
     sinceLast: visibleJobs.filter((j) => j.isNew).length,
+    excluded: 0,
   };
 }
 

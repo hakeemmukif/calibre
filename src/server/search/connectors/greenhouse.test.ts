@@ -158,6 +158,7 @@ describe("greenhouse connector", () => {
         fit: [],
         gaps: [],
         legitimacy: { tier: "clear", tone: "good", summary: "x" },
+        eligibility: { tier: "unknown", tone: "warn", summary: "test fixture" },
         applyUrl,
         source: { id: "greenhouse", name: "Greenhouse", kind: "ats", persona: "remote" },
         persona: "remote",
