@@ -58,6 +58,12 @@ export async function fetchPageText(url: string): Promise<FetchPageResult> {
       return { ok: false, reason: "error" };
     }
 
+    const contentType = res.headers.get("content-type") ?? "";
+    if (!/^text\/(html|plain)/i.test(contentType.trim())) {
+      clearTimeout(timer);
+      return { ok: false, reason: "blocked" };
+    }
+
     const body = await readBodyCapped(res, controller);
     clearTimeout(timer);
     if (!body.ok) return { ok: false, reason: "oversize" };

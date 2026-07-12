@@ -73,4 +73,20 @@ describe("fetchPageText", () => {
     expect(result).toEqual({ ok: false, reason: "oversize" });
     expect(cancel).toHaveBeenCalledTimes(1);
   });
+
+  it("rejects a non-html/plain content-type as blocked", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response("%PDF-1.4 binary junk. ".repeat(30), {
+          status: 200,
+          headers: { "content-type": "application/pdf" },
+        }),
+      ),
+    );
+
+    const result = await fetchPageText("https://example.com/job.pdf");
+
+    expect(result).toEqual({ ok: false, reason: "blocked" });
+  });
 });
