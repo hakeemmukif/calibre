@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { readAllSseEvents } from "@/app/api/__test-utils__/sse";
-import { insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
+import { insertProfile, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
 import type { SourceRow } from "@/server/persistence/repos/sources";
 import { jobs, resumes, searchRuns, sources } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
@@ -41,6 +41,7 @@ function getRequest(id: string, headers: Record<string, string> = {}): NextReque
 describe("GET /api/search/:id", () => {
   beforeAll(async () => {
     state.testDb = await createTestDb();
+    await insertProfile(state.testDb); // startSearch requires the operator profile (spec §4)
   });
 
   afterEach(async () => {

@@ -91,6 +91,27 @@ describe("jobstreet connector", () => {
     expect(posting?.company).toBe("Acme Sdn Bhd");
   });
 
+  it("joins ALL location labels instead of truncating to the first (spec §5 Layer A fix)", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      fixturePage([
+        {
+          id: "2",
+          title: "Platform Engineer",
+          companyName: "Multi Loc Sdn Bhd",
+          locations: [{ label: "Kuala Lumpur" }, { label: "Penang" }, { label: undefined }],
+        },
+      ]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const connector = createJobstreetConnector(source());
+    const [posting] = await collect(
+      connector.discover({ targets: [], since: new Date(0), signal: new AbortController().signal, onProgress: () => {} }),
+    );
+
+    expect(posting?.location).toBe("Kuala Lumpur / Penang");
+  });
+
   it("stops paginating once a page returns fewer than pageSize results", async () => {
     const fetchMock = vi
       .fn()

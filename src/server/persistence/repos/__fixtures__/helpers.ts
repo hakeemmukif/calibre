@@ -1,7 +1,7 @@
 // Minimal valid-row builders shared across repo tests — every column here is
 // NOT NULL in schema.ts, so each helper fills the full shape once instead of
 // every test file repeating it.
-import { jobs, jobScores, resumes, sources } from "../../schema";
+import { jobs, jobScores, profile, resumes, sources } from "../../schema";
 import type { Db } from "../db";
 
 let counter = 0;
@@ -19,9 +19,21 @@ export async function insertSource(db: Db, overrides: Partial<typeof sources.$in
       kind: "ats",
       persona: "remote",
       enabled: true,
-      config: {},
+      // Matches the default kind "ats" — parseSourceGeo (spec §6) requires an
+      // annotation on every real source; board overrides supply `country`.
+      config: { geo: { scope: "restricted" } },
       ...overrides,
     })
+    .returning();
+  return row;
+}
+
+// The operator-profile singleton every startSearch/feed path requires
+// (spec §4) — same shape seed.ts installs.
+export async function insertProfile(db: Db, overrides: Partial<typeof profile.$inferInsert> = {}) {
+  const [row] = await db
+    .insert(profile)
+    .values({ id: "default", baseCountry: "MY", relocation: "stay", ...overrides })
     .returning();
   return row;
 }
@@ -60,6 +72,8 @@ export async function insertJob(db: Db, sourceId: string, overrides: Partial<typ
       company: "Example Co",
       location: "Remote",
       persona: "remote",
+      eligibility: "unknown",
+      eligibilityEvidence: "test fixture",
       aliases: [],
       raw: {},
       ...overrides,

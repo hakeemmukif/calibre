@@ -21,6 +21,10 @@ export interface RawPosting {
   title: string;
   company: string;
   location?: string;
+  // Structured geo a connector can supply beyond the location string (e.g.
+  // a payload's explicit remote flag — none confirmed yet; see the capture
+  // task). Absent = derive from `location` via parseLocationGeo.
+  geo?: import("./geo").ParsedGeo;
   description?: string;
   postedAt?: string;
   salaryRaw?: string;

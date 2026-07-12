@@ -11,6 +11,7 @@ import { getLlm } from "@/lib/llm/client";
 import { assembleJob } from "@/features/feed/assemble";
 import { jobsRepo, type JobRow } from "@/server/persistence/repos/jobs";
 import { jobScoresRepo } from "@/server/persistence/repos/jobScores";
+import { profileRepo, type ProfileRow } from "@/server/persistence/repos/profile";
 import { resumesRepo, type ResumeRow } from "@/server/persistence/repos/resumes";
 import { searchRunsRepo, type SearchRunRow } from "@/server/persistence/repos/searchRuns";
 import { sourcesRepo, type SourceRow } from "@/server/persistence/repos/sources";
@@ -21,6 +22,8 @@ import { toSearchRun } from "./assemble-run";
 import type { RawPosting, SourceConnector } from "./connector";
 import { connectorForSource } from "./connectors";
 import { companySlugFor, dedupeKeyFor, resolveCanonicalCollision, roleTokensHash, secondaryKey } from "./dedupe";
+import { parseSourceGeo } from "./geo";
+import { resolveEligibility } from "@/server/score/eligibility";
 import { ensureDescription } from "./describe";
 import { resolveIsNewCutoff } from "./jobsFeed";
 import { deriveRoleTargets, roleFuzzyMatch } from "./roleMatch";
@@ -95,6 +98,10 @@ export async function startSearch(input: StartSearchInput, deps: StartSearchDeps
     const resumeRow = input.resumeId ? await resumesRepo.getById(input.resumeId) : await resumesRepo.getActive();
     if (!resumeRow) throw new NoActiveResumeError();
 
+    // Eligibility needs the operator profile (spec §5) — a missing row aborts
+    // the run before any fetch (ProfileMissingError, fail loud).
+    const profile = await profileRepo.get();
+
     const enabledSources = await sourcesRepo.listEnabledByPersona(input.persona);
     let scopedSources = enabledSources;
     if (input.sources) {
@@ -121,7 +128,7 @@ export async function startSearch(input: StartSearchInput, deps: StartSearchDeps
       },
     });
 
-    void runFanOut(row, scopedSources, resumeRow, input.persona, handle, deps).catch((err) => {
+    void runFanOut(row, scopedSources, resumeRow, input.persona, profile, handle, deps).catch((err) => {
       void failRun(row.id, input.persona, handle, err);
     });
 
@@ -159,6 +166,7 @@ async function runFanOut(
   sources: SourceRow[],
   resumeRow: ResumeRow,
   persona: Persona,
+  profile: ProfileRow,
   handle: RunHandle,
   deps: StartSearchDeps,
 ): Promise<void> {
@@ -238,12 +246,13 @@ async function runFanOut(
   await Promise.all(tasks);
   clearTimeout(hardCapTimer);
 
-  const upsertedJobs = await upsertMatchedPostings(matchedPostings, persona);
+  const upsertedJobs = await upsertMatchedPostings(matchedPostings, persona, profile);
   const { scored, worth, ghosts, unscored, capStopped } = await scoreTopCandidates(
     row,
     upsertedJobs,
     resumeRow,
     persona,
+    profile,
     handle,
     deps,
   );
@@ -313,10 +322,21 @@ function groupByCollision(matched: { posting: RawPosting; source: SourceRow }[])
 async function upsertMatchedPostings(
   matched: { posting: RawPosting; source: SourceRow }[],
   persona: Persona,
+  profile: ProfileRow,
 ): Promise<{ job: JobRow; source: SourceRow }[]> {
   const groups = groupByCollision(matched);
   const upserted: { job: JobRow; source: SourceRow }[] = [];
   for (const { canonical, canonicalSource, aliasUrls } of groups.values()) {
+    // Layers A+B stamp eligibility at first sight (spec §5 write points);
+    // the ON CONFLICT set stays lastSeenAt/aliases-only, so the stamp
+    // freezes until the scoring path's Layer-C refresh.
+    const { tier, evidence } = resolveEligibility({
+      baseCountry: profile.baseCountry,
+      sourceKind: canonicalSource.kind,
+      sourceGeo: parseSourceGeo(canonicalSource),
+      location: canonical.location,
+      connectorGeo: canonical.geo,
+    });
     const job = await jobsRepo.upsertByDedupeKey({
       dedupeKey: dedupeKeyFor(canonical.url),
       url: canonical.url,
@@ -332,6 +352,8 @@ async function upsertMatchedPostings(
       description: canonical.description,
       postedAt: canonical.postedAt ? new Date(canonical.postedAt) : undefined,
       persona,
+      eligibility: tier,
+      eligibilityEvidence: evidence,
       aliases: aliasUrls,
       raw: canonical,
     });
@@ -356,10 +378,14 @@ async function scoreTopCandidates(
   candidates: { job: JobRow; source: SourceRow }[],
   resume: ResumeRow,
   persona: Persona,
+  profile: ProfileRow,
   handle: RunHandle,
   deps: StartSearchDeps,
 ): Promise<{ scored: number; worth: number; ghosts: number; unscored: number; capStopped: boolean }> {
-  const topCandidates = candidates.slice(0, TOP_N_CANDIDATES);
+  // relocation "stay": provably-abroad postings don't consume scoring slots
+  // (spec §5 scan hardening — persisted, just not scored).
+  const pool = profile.relocation === "stay" ? candidates.filter((c) => c.job.eligibility !== "abroad") : candidates;
+  const topCandidates = pool.slice(0, TOP_N_CANDIDATES);
   let scored = 0;
   let worth = 0;
   let ghosts = 0;

@@ -36,6 +36,13 @@
       "when": 1783837368664,
       "tag": "0004_parched_vulcan",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1783838057740,
+      "tag": "0005_good_stellaris",
+      "breakpoints": true
     }
   ]
 }

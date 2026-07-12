@@ -28,6 +28,8 @@ describe("jobsRepo", () => {
       company: "Acme",
       location: "Remote",
       persona: "remote",
+      eligibility: "unknown",
+      eligibilityEvidence: "test fixture",
       aliases: [],
       raw: {},
     });
@@ -49,6 +51,8 @@ describe("jobsRepo", () => {
       company: "Acme",
       location: "Remote",
       persona: "remote",
+      eligibility: "unknown",
+      eligibilityEvidence: "test fixture",
       aliases: [],
       raw: {},
     });
@@ -63,6 +67,8 @@ describe("jobsRepo", () => {
       company: "Acme",
       location: "Remote",
       persona: "remote",
+      eligibility: "unknown",
+      eligibilityEvidence: "test fixture",
       aliases: [{ sourceId: "jobstreet", url: "https://jobstreet.com/2" }],
       raw: {},
     });
@@ -86,6 +92,8 @@ describe("jobsRepo", () => {
       company: "Acme",
       location: "Remote",
       persona: "remote",
+      eligibility: "unknown",
+      eligibilityEvidence: "test fixture",
       aliases: [{ sourceId: "jobstreet", url: "https://jobstreet.com/3" }],
       raw: {},
     });
@@ -101,6 +109,8 @@ describe("jobsRepo", () => {
       company: "Acme",
       location: "Remote",
       persona: "remote",
+      eligibility: "unknown",
+      eligibilityEvidence: "test fixture",
       aliases: [{ sourceId: "hiredly", url: "https://hiredly.com/3" }],
       raw: {},
     });
@@ -121,6 +131,8 @@ describe("jobsRepo", () => {
       company: "Acme",
       location: "Remote",
       persona: "remote",
+      eligibility: "unknown",
+      eligibilityEvidence: "test fixture",
       aliases: [{ sourceId: "hiredly", url: "https://hiredly.com/3" }],
       raw: {},
     });
@@ -143,6 +155,8 @@ describe("jobsRepo", () => {
         company: "Acme",
         location: "Remote",
         persona: "remote",
+        eligibility: "unknown",
+        eligibilityEvidence: "test fixture",
         aliases: [],
         raw: {},
       });
@@ -182,6 +196,8 @@ describe("jobsRepo", () => {
           company: "Acme",
           location: "Remote",
           persona: "remote",
+          eligibility: "unknown",
+          eligibilityEvidence: "test fixture",
           aliases: [],
           raw: {},
           firstSeenAt: collidingTimestamp(i) as unknown as Date,
@@ -220,6 +236,8 @@ describe("jobsRepo", () => {
       company: "Acme",
       location: "Remote",
       persona: "remote",
+      eligibility: "unknown",
+      eligibilityEvidence: "test fixture",
       aliases: [],
       raw: {},
     });
@@ -255,6 +273,8 @@ describe("jobsRepo", () => {
         company: "Acme",
         location: "Remote",
         persona: "remote",
+        eligibility: "unknown",
+        eligibilityEvidence: "test fixture",
         aliases: [],
         raw: {},
       });
@@ -293,6 +313,8 @@ describe("jobsRepo", () => {
       company: "Acme",
       location: "Remote",
       persona: "remote",
+      eligibility: "unknown",
+      eligibilityEvidence: "test fixture",
       aliases: [],
       raw: {},
       firstSeenAt: new Date("2026-01-01T00:00:00.000Z"),
@@ -307,6 +329,8 @@ describe("jobsRepo", () => {
       company: "Acme",
       location: "Remote",
       persona: "remote",
+      eligibility: "unknown",
+      eligibilityEvidence: "test fixture",
       aliases: [],
       raw: {},
       firstSeenAt: new Date("2026-06-01T00:00:00.000Z"),
@@ -333,6 +357,8 @@ describe("jobsRepo", () => {
       company: "Acme",
       location: "Remote",
       persona: "remote",
+      eligibility: "unknown",
+      eligibilityEvidence: "test fixture",
       aliases: [],
       raw: {},
     });
@@ -355,6 +381,8 @@ describe("jobsRepo", () => {
       company: "Acme",
       location: "Remote",
       persona: "remote",
+      eligibility: "unknown",
+      eligibilityEvidence: "test fixture",
       aliases: [],
       raw: {},
     });
@@ -383,6 +411,8 @@ describe("jobsRepo", () => {
       company: "Acme",
       location: "Remote",
       persona: "remote",
+      eligibility: "unknown",
+      eligibilityEvidence: "test fixture",
       aliases: [],
       raw: {},
     });
@@ -404,6 +434,8 @@ describe("jobsRepo", () => {
       company: "Acme",
       location: "Remote",
       persona: "remote",
+      eligibility: "unknown",
+      eligibilityEvidence: "test fixture",
       aliases: [],
       raw: {},
     });

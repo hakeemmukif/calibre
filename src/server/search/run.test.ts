@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { LlmClient } from "@/lib/llm/client";
 import { makeMockLlm } from "@/lib/llm/mock";
-import { insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
+import { insertProfile, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
 import { createSearchRunsRepo, type SearchRunRow } from "@/server/persistence/repos/searchRuns";
 import { jobs, jobScores, resumes, searchRuns, sources } from "@/server/persistence/schema";
 import type { SourceRow } from "@/server/persistence/repos/sources";
@@ -136,6 +136,7 @@ const resumeFixture = {
 describe("startSearch", () => {
   beforeAll(async () => {
     state.testDb = await createTestDb();
+    await insertProfile(state.testDb); // startSearch requires the operator profile (spec §4)
   });
 
   afterEach(async () => {
@@ -155,7 +156,7 @@ describe("startSearch", () => {
     await insertResume(state.testDb, { ...resumeFixture, isActive: true });
 
     const good = await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
-    await insertSource(state.testDb, { id: "src-bad", kind: "board", persona: "remote" });
+    await insertSource(state.testDb, { id: "src-bad", kind: "board", persona: "remote", config: { country: "MY" } });
 
     const matching: RawPosting = {
       sourceId: good.id,
@@ -215,7 +216,7 @@ describe("startSearch", () => {
   it("board-kind sources bypass the role matcher; ats-kind sources still require a match (task-7b)", async () => {
     const runsRepo = createSearchRunsRepo(state.testDb);
     await insertResume(state.testDb, { ...resumeFixture, isActive: true });
-    const board = await insertSource(state.testDb, { id: "src-board", kind: "board", persona: "remote" });
+    const board = await insertSource(state.testDb, { id: "src-board", kind: "board", persona: "remote", config: { country: "MY" } });
     const ats = await insertSource(state.testDb, { id: "src-ats", kind: "ats", persona: "remote" });
 
     // "Warehouse Associate" shares zero tokens with the résumé's "Senior Data
@@ -355,7 +356,7 @@ describe("startSearch", () => {
   it("alias-merge preserves a previously-recorded cross-source alias across separate runs (regression)", async () => {
     await insertResume(state.testDb, { ...resumeFixture, isActive: true });
     const ats = await insertSource(state.testDb, { id: "src-ats", kind: "ats", persona: "remote" });
-    const board = await insertSource(state.testDb, { id: "src-board", kind: "board", persona: "remote" });
+    const board = await insertSource(state.testDb, { id: "src-board", kind: "board", persona: "remote", config: { country: "MY" } });
     const runsRepo = createSearchRunsRepo(state.testDb);
 
     const atsPosting: RawPosting = {

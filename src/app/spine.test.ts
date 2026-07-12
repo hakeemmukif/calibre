@@ -16,7 +16,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { waitFor } from "@/app/api/__test-utils__/poll";
 import { makeMockLlm } from "@/lib/llm/mock";
 import { JD_FACTS, MATCH_SCORE, QUESTION_ANSWER, QUESTION_EXTRACT, RESUME_STORE, TAILOR_RESULT } from "@/lib/llm/scripted-fixtures";
-import { insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
+import { insertProfile, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
 import {
   applicationAnswers,
   applications,
@@ -137,6 +137,7 @@ const { startTailor, getTailor, finalizeTailor, tailorPdfUrl } = await import("@
 describe("F1–F6 spine (route-level, mocked externals)", () => {
   beforeAll(async () => {
     state.testDb = await createTestDb();
+    await insertProfile(state.testDb); // startSearch requires the operator profile (spec §4)
   });
 
   afterEach(async () => {
@@ -155,8 +156,14 @@ describe("F1–F6 spine (route-level, mocked externals)", () => {
   });
 
   it("drives upload -> dual-persona search -> feed -> detail -> questions -> answers -> mark-applied -> tailor -> finalize -> pdf", async () => {
-    await insertSource(state.testDb, { id: "greenhouse", kind: "ats", persona: "remote", enabled: true });
-    await insertSource(state.testDb, { id: "jobstreet", kind: "board", persona: "local", enabled: true });
+    await insertSource(state.testDb, {
+      id: "greenhouse",
+      kind: "ats",
+      persona: "remote",
+      enabled: true,
+      config: { geo: { scope: "anywhere" } }, // bare-"Remote" posting -> `anywhere` (spec §6 prior)
+    });
+    await insertSource(state.testDb, { id: "jobstreet", kind: "board", persona: "local", enabled: true, config: { country: "MY" } });
     llm.scripted = { "resume-extract": RESUME_STORE, "jd-extract": JD_FACTS, "match-score": MATCH_SCORE };
 
     // --- F1: upload (features/resume/client -> POST/GET /api/resume) ---
@@ -193,6 +200,12 @@ describe("F1–F6 spine (route-level, mocked externals)", () => {
     expect(job.company).toBe("Grab");
     expect(job.legitimacy.tier).toBe("clear");
     expect(job.applyUrl).toBe(POSTINGS.greenhouse.url);
+
+    // Eligibility stamped at ingest (spec §5 Layers A+B): bare "Remote" on an
+    // anywhere-prior source -> anywhere; MY-board posting -> local.
+    const jobRows = await state.testDb.select().from(jobs);
+    expect(jobRows.find((j) => j.company === "Grab")?.eligibility).toBe("anywhere");
+    expect(jobRows.find((j) => j.company === "Local Fintech Sdn Bhd")?.eligibility).toBe("local");
 
     // --- F3: job detail (features/feed/client -> GET /api/jobs/:id) ---
     const detail = await getJob(job.id);

@@ -32,6 +32,8 @@ describe("ensureDescription", () => {
       company: "Tech Corp",
       location: "Remote",
       persona: "local",
+      eligibility: "unknown",
+      eligibilityEvidence: "test fixture",
       aliases: [],
       raw: {},
       description: "Already has a JD.",
@@ -58,6 +60,8 @@ describe("ensureDescription", () => {
       company: "acme",
       location: "Remote",
       persona: "remote",
+      eligibility: "unknown",
+      eligibilityEvidence: "test fixture",
       aliases: [],
       raw: {},
     });
@@ -79,6 +83,8 @@ describe("ensureDescription", () => {
       company: "Tech Corp",
       location: "Kuala Lumpur",
       persona: "local",
+      eligibility: "unknown",
+      eligibilityEvidence: "test fixture",
       aliases: [],
       raw: {},
     });
@@ -112,6 +118,8 @@ describe("ensureDescription", () => {
       company: "Tech Corp",
       location: "Kuala Lumpur",
       persona: "local",
+      eligibility: "unknown",
+      eligibilityEvidence: "test fixture",
       aliases: [],
       raw: {},
     });
@@ -143,6 +151,8 @@ describe("ensureDescription", () => {
       company: "Tech Corp",
       location: "Kuala Lumpur",
       persona: "local",
+      eligibility: "unknown",
+      eligibilityEvidence: "test fixture",
       aliases: [],
       raw: {},
     });

@@ -109,7 +109,13 @@ export function createJobstreetConnector(source: SourceRow): SourceConnector {
             url: `${baseUrl}/job/${item.id}`,
             title,
             company: (item.companyName || item.advertiser?.description || "").trim(),
-            location: item.locations?.[0]?.label?.trim() || undefined,
+            // ALL location labels, not just the first — multi-location
+            // listings were silently truncated (spec §5 Layer A fix).
+            location:
+              item.locations
+                ?.map((l) => l.label?.trim())
+                .filter((l): l is string => Boolean(l))
+                .join(" / ") || undefined,
             postedAt: item.listingDate || undefined,
           };
           yield posting;

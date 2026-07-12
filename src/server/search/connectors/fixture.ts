@@ -22,6 +22,17 @@ const POSTINGS: Record<string, RawPosting> = {
     location: "Kuala Lumpur, Malaysia",
     description: "Build the merchant payments platform. Stack: Node.js, Postgres. Payments domain experience valued.",
   },
+  // The e2e abroad case (spec §8 journey): New York onsite on a
+  // restricted-prior source classifies `abroad` — hidden under relocation
+  // "stay", revealed under "open".
+  lever: {
+    sourceId: "lever",
+    url: "https://jobs.lever.co/acme/senior-backend-engineer-payments",
+    title: "Senior Backend Engineer, Payments",
+    company: "Acme US",
+    location: "New York, NY",
+    description: "Payments platform team. Stack: Node.js, Postgres. Onsite in New York. Payments domain experience valued.",
+  },
 };
 
 export function createFixtureConnector(source: SourceRow): SourceConnector {

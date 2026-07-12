@@ -19,6 +19,8 @@ function baseJoined(overrides: Partial<JobJoinScore["job"]> = {}): JobJoinScore 
     firstSeenAt: new Date("2026-07-01T00:00:00.000Z"),
     lastSeenAt: new Date("2026-07-01T00:00:00.000Z"),
     persona: "remote",
+    eligibility: "unknown",
+    eligibilityEvidence: "test fixture",
     aliases: [],
     raw: {},
     ...overrides,

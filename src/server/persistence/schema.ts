@@ -122,6 +122,11 @@ export const jobs = pgTable("jobs", {
   firstSeenAt: timestamp("first_seen_at").notNull().defaultNow(),
   lastSeenAt: timestamp("last_seen_at").notNull().defaultNow(),
   persona: text("persona", { enum: ["remote", "local"] }).notNull(),
+  // Spec 2026-07-12 §4: eligibility tier relative to the profile, stamped at
+  // ingest (Layers A+B), refreshed by the scoring path (Layer C). Facts stay
+  // in `raw` + job_scores.jd_facts — the tier is recomputable, pure, no LLM.
+  eligibility: text("eligibility", { enum: ["anywhere", "eligible", "local", "abroad", "unknown"] }).notNull(),
+  eligibilityEvidence: text("eligibility_evidence").notNull(),
   aliases: jsonb("aliases").$type<JobAlias[]>().notNull(),
   raw: jsonb("raw").$type<unknown>().notNull(),
 });
