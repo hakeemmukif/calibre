@@ -40,3 +40,29 @@ export async function extractJdFacts(
     responseSchema: JdFactsSchema,
   });
 }
+
+// Gate-only variant (url-check's runGate, run.ts) — NOT used by the scanned
+// path above. Live testing (2026-07-13) found gpt-oss-120b reliably omits
+// `.optional()` fields from json_schema structured output regardless of
+// prompt wording, because client.ts's response_format derives `required`
+// from the Zod schema and runs with `strict: false`. Making isJobPosting
+// required and company required-but-nullable forces the model to emit both
+// explicitly (verified 3/3 live calls); JdFactsSchema itself stays optional
+// so the scanned path (scoreTopCandidates) never fails to parse a cheap
+// model's omission.
+export const JdFactsGateSchema = JdFactsSchema.extend({
+  isJobPosting: z.boolean(),
+  company: z.string().nullable(),
+});
+export type JdFactsGate = z.infer<typeof JdFactsGateSchema>;
+
+export async function extractJdFactsForGate(
+  llm: LlmClient,
+  description: string,
+): Promise<{ data: JdFactsGate; model: string; costUsd: number }> {
+  return llm.complete({
+    task: "jd-extract",
+    messages: renderTemplate("jd-extract", { jobDescription: description }),
+    responseSchema: JdFactsGateSchema,
+  });
+}

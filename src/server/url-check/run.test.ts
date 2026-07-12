@@ -258,7 +258,7 @@ describe("runPipeline — needsText truth table", () => {
     const { check } = await startUrlCheck(
       { url: "https://example.com/not-a-posting" },
       {
-        llm: jdExtractLlm({ title: "n/a", isJobPosting: false, mustHaves: [], niceToHaves: [], responsibilities: [], redFlags: [] }),
+        llm: jdExtractLlm({ title: "n/a", isJobPosting: false, company: null, mustHaves: [], niceToHaves: [], responsibilities: [], redFlags: [] }),
         fetchPageText: async () => ({ ok: false, reason: "blocked" }),
         searchForPosting: async () => ({ found: true, content: "This is a marketing landing page.", sourceNote: "found via search", costUsd: 0.01 }),
       },
@@ -278,7 +278,7 @@ describe("runPipeline — needsText truth table", () => {
     const { check } = await startUrlCheck(
       { url: "https://example.com/incomplete" },
       {
-        llm: jdExtractLlm({ title: "Backend Engineer", isJobPosting: true, mustHaves: [], niceToHaves: [], responsibilities: [], redFlags: [] }), // no company
+        llm: jdExtractLlm({ title: "Backend Engineer", isJobPosting: true, company: null, mustHaves: [], niceToHaves: [], responsibilities: [], redFlags: [] }), // no company
         fetchPageText: async () => ({ ok: false, reason: "empty" }),
         searchForPosting: async () => ({ found: true, content: "Some thin posting text.", sourceNote: "found via search", costUsd: 0.01 }),
       },
@@ -297,12 +297,32 @@ describe("runPipeline — needsText truth table", () => {
 
     const { check } = await startUrlCheck(
       { url: "https://example.com/pasted-not-a-posting", text: "Just some random article text." },
-      { llm: jdExtractLlm({ title: "n/a", isJobPosting: false, mustHaves: [], niceToHaves: [], responsibilities: [], redFlags: [] }) },
+      { llm: jdExtractLlm({ title: "n/a", isJobPosting: false, company: null, mustHaves: [], niceToHaves: [], responsibilities: [], redFlags: [] }) },
     );
 
     const finalRow = await waitForTerminal(db, check.id);
     expect(finalRow.error?.code).toBe("NOT_A_JOB_POSTING");
     expect(finalRow.needsText).toBe(false);
+  });
+
+  it("paste mode: LLM omits isJobPosting entirely (mock schema-rejects, mirroring the live gpt-oss-120b bug) -> EXTRACTION_FAILED, needsText:true", async () => {
+    const db = await createTestDb();
+    state.testDb = db;
+    await setUpForPipeline(db);
+
+    const { check } = await startUrlCheck(
+      { url: "https://example.com/pasted-omitted-field", text: "Company: Front\n\nSenior Engineer..." },
+      // No isJobPosting key at all — under JdFactsSchema (optional) this
+      // used to parse fine and silently produce "incomplete"; under
+      // JdFactsGateSchema (required) makeMockLlm's own responseSchema.parse
+      // throws, which runGate's paste-mode caller maps to
+      // ExtractionIncompleteError just like a real upstream failure.
+      { llm: jdExtractLlm({ title: "Senior Engineer", company: "Front", mustHaves: [], niceToHaves: [], responsibilities: [], redFlags: [] }) },
+    );
+
+    const finalRow = await waitForTerminal(db, check.id);
+    expect(finalRow.error?.code).toBe("EXTRACTION_FAILED");
+    expect(finalRow.needsText).toBe(true);
   });
 
   it("paste mode: gate throws -> EXTRACTION_FAILED, needsText:true (fuller paste may fix it)", async () => {

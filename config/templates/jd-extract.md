@@ -8,7 +8,9 @@ schema — no markdown, no commentary.
 From the job description below, first determine whether this text is
 actually a job posting (set isJobPosting: true) or something else — a
 blog post, a company homepage, a login/paywall page, an error page, a
-list of multiple postings, etc. (set isJobPosting: false). Then extract:
+list of multiple postings, etc. (set isJobPosting: false). Always include
+isJobPosting; always include company, using null only when no company is
+identifiable. Then extract:
 role title, company, seniority level, employment type, location and
 remote policy, must-have skills,
 nice-to-have skills, salary range if stated, key responsibilities,

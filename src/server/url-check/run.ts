@@ -14,7 +14,7 @@ import { dedupeKeyFor } from "@/server/search/dedupe";
 import { NoActiveResumeError } from "@/server/search/run";
 import { resolveEligibility } from "@/server/score/eligibility";
 import { fetchGhostWebEvidence } from "@/server/score/ghost-web";
-import { extractJdFacts, type JdFacts } from "@/server/score/jdFacts";
+import { extractJdFactsForGate, type JdFacts } from "@/server/score/jdFacts";
 import type { LivenessResult } from "@/server/score/liveness";
 import { scoreJob } from "@/server/score";
 import { UrlCheck, type ErrorCode, type UrlCheckRequest } from "@/types";
@@ -101,13 +101,16 @@ type GateOutcome = { kind: "ok"; facts: PostingFacts } | { kind: "not-a-posting"
 
 // Shared by all three call sites (tier-1 fetched text, tier-2 search
 // content, paste-mode text) — spec §6's extract-gate: isJobPosting:false is
-// terminal-not-a-posting, undefined/no-company is incomplete (fail-loud: no
-// `?? ""` default lets an empty company through as "ok").
+// terminal-not-a-posting, null/empty company is incomplete (fail-loud: no
+// `?? ""` default lets an empty company through as "ok"). Uses
+// JdFactsGateSchema (jdFacts.ts) — isJobPosting required, company
+// required-but-nullable — so the model must explicitly emit both rather
+// than silently omitting them (see JdFactsGateSchema's comment).
 async function runGate(llm: LlmClient, text: string): Promise<{ outcome: GateOutcome; costUsd: number }> {
-  const { data, costUsd } = await extractJdFacts(llm, text);
+  const { data, costUsd } = await extractJdFactsForGate(llm, text);
   if (data.isJobPosting === false) return { outcome: { kind: "not-a-posting" }, costUsd };
   const company = data.company;
-  if (data.isJobPosting === undefined || !company) return { outcome: { kind: "incomplete" }, costUsd };
+  if (!company) return { outcome: { kind: "incomplete" }, costUsd };
   return { outcome: { kind: "ok", facts: { ...data, company } }, costUsd };
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { policyVersion } from "@/lib/llm/templates";
-import { JdFactsSchema } from "./jdFacts";
+import { JdFactsGateSchema, JdFactsSchema } from "./jdFacts";
 
 describe("JdFactsSchema hiring-scope fields", () => {
   it("accepts hiringScope + hiringCountries when stated", () => {
@@ -77,6 +77,33 @@ describe("JdFactsSchema isJobPosting field", () => {
       redFlags: [],
     });
     expect(parsed.isJobPosting).toBeUndefined();
+  });
+});
+
+describe("JdFactsGateSchema (url-check gate only — JdFactsSchema itself stays optional)", () => {
+  const base = { title: "Engineer", mustHaves: [], niceToHaves: [], responsibilities: [], redFlags: [] };
+
+  it("rejects when isJobPosting is omitted (required, unlike JdFactsSchema)", () => {
+    expect(() => JdFactsGateSchema.parse({ ...base, company: "Acme" })).toThrow();
+  });
+
+  it("rejects when company is omitted (required, unlike JdFactsSchema)", () => {
+    expect(() => JdFactsGateSchema.parse({ ...base, isJobPosting: true })).toThrow();
+  });
+
+  it("accepts company: null (explicit no-company, distinct from omission)", () => {
+    const parsed = JdFactsGateSchema.parse({ ...base, isJobPosting: true, company: null });
+    expect(parsed.company).toBeNull();
+  });
+
+  it("accepts isJobPosting: false + company: null", () => {
+    const parsed = JdFactsGateSchema.parse({ ...base, isJobPosting: false, company: null });
+    expect(parsed.isJobPosting).toBe(false);
+  });
+
+  it("accepts isJobPosting: true + a real company string", () => {
+    const parsed = JdFactsGateSchema.parse({ ...base, isJobPosting: true, company: "Acme" });
+    expect(parsed.company).toBe("Acme");
   });
 });
 
