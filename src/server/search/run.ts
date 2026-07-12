@@ -431,7 +431,7 @@ async function scoreTopCandidates(
             console.error(`search run ${row.id}: detail fetch for job ${job.id} failed:`, err);
             return job; // scoreJob will throw EmptyJobDescriptionError -> counted unscored
           });
-          const scoreRow = await scoreJob({ job: jobToScore, resume, llm });
+          const scoreRow = await scoreJob({ job: jobToScore, source, profile, resume, llm });
           spentToday += scoreRow.costUsd;
           scored += 1;
           if (scoreRow.verdict === "Apply" || scoreRow.verdict === "Consider") worth += 1;

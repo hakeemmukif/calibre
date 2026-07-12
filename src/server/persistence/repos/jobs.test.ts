@@ -446,4 +446,30 @@ describe("jobsRepo", () => {
 
     expect(await repo.getRowWithSourceById(crypto.randomUUID())).toBeUndefined();
   });
+
+  it("updateEligibility overwrites tier + evidence and throws on unknown id", async () => {
+    const db = await createTestDb();
+    const repo = createJobsRepo(db);
+    const source = await insertSource(db);
+    const job = await repo.upsertByDedupeKey({
+      dedupeKey: "dk-eligibility",
+      url: "https://example.com/eligibility",
+      sourceId: source.id,
+      title: "Eligibility Job",
+      company: "Acme",
+      location: "Remote",
+      persona: "remote",
+      eligibility: "unknown",
+      eligibilityEvidence: "test fixture",
+      aliases: [],
+      raw: {},
+    });
+
+    await repo.updateEligibility(job.id, "eligible", "JD: hires in APAC");
+    const after = await repo.getRowWithSourceById(job.id);
+    expect(after?.job.eligibility).toBe("eligible");
+    expect(after?.job.eligibilityEvidence).toBe("JD: hires in APAC");
+
+    await expect(repo.updateEligibility(crypto.randomUUID(), "unknown", "x")).rejects.toThrow(/no job with id/);
+  });
 });

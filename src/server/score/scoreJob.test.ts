@@ -2,7 +2,8 @@ import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { LlmClient } from "@/lib/llm/client";
 import { makeMockLlm } from "@/lib/llm/mock";
-import { insertJob, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
+import { insertJob, insertProfile, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
+import type { ProfileRow } from "@/server/persistence/repos/profile";
 import { jobs, jobScores, resumes, sources } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import type { EvalScores } from "./evalScores";
@@ -36,8 +37,11 @@ const cheapEval: EvalScores = {
 };
 
 describe("scoreJob", () => {
+  let profile: ProfileRow;
+
   beforeAll(async () => {
     state.testDb = await createTestDb();
+    profile = await insertProfile(state.testDb); // afterEach never wipes the profile singleton
   });
 
   afterEach(async () => {
@@ -54,7 +58,7 @@ describe("scoreJob", () => {
     const resume = await insertResume(state.testDb);
     const llm = makeMockLlm({ "jd-extract": jdFacts, "match-score": cheapEval });
 
-    const row = await scoreJob({ job, resume, llm });
+    const row = await scoreJob({ job, source, profile, resume, llm });
 
     expect(row.jobId).toBe(job.id);
     expect(row.resumeId).toBe(resume.id);
@@ -79,7 +83,7 @@ describe("scoreJob", () => {
     const resume = await insertResume(state.testDb);
     const llm = makeMockLlm({ "jd-extract": jdFacts, "match-score": cheapEval });
 
-    const row = await scoreJob({ job, resume, llm });
+    const row = await scoreJob({ job, source, profile, resume, llm });
     expect(row.legitimacy.tier).toBe("ghost");
     expect(row.legitimacy.tone).toBe("ghost");
   });
@@ -103,7 +107,7 @@ describe("scoreJob", () => {
       },
     };
 
-    const row = await scoreJob({ job, resume, llm });
+    const row = await scoreJob({ job, source, profile, resume, llm });
 
     expect(row.escalated).toBe(false);
     expect(row.model).toBe("cheap-match-model");
@@ -116,11 +120,11 @@ describe("scoreJob", () => {
     const resume = await insertResume(state.testDb);
     const llm = makeMockLlm({ "jd-extract": jdFacts, "match-score": cheapEval });
 
-    const first = await scoreJob({ job, resume, llm });
+    const first = await scoreJob({ job, source, profile, resume, llm });
 
     const updatedEval: EvalScores = { ...cheapEval, score: 2.1, verdict: "Skip" };
     const llm2 = makeMockLlm({ "jd-extract": jdFacts, "match-score": updatedEval });
-    const second = await scoreJob({ job, resume, llm: llm2 });
+    const second = await scoreJob({ job, source, profile, resume, llm: llm2 });
 
     expect(second.id).toBe(first.id);
     expect(second.score).toBeCloseTo(2.1);
@@ -128,6 +132,22 @@ describe("scoreJob", () => {
 
     const rows = await state.testDb.select().from(jobScores);
     expect(rows.filter((r) => r.jobId === job.id)).toHaveLength(1);
+  });
+
+  it("refreshes jobs.eligibility from JD-stated hiring scope (Layer C, spec §5)", async () => {
+    const source = await insertSource(state.testDb); // default prior: restricted
+    const job = await insertJob(state.testDb, source.id, { description: "Backend role.", location: "Remote" });
+    const resume = await insertResume(state.testDb);
+    const usOnly: JdFacts = { ...jdFacts, hiringScope: "restricted", hiringCountries: ["United States"] };
+    const llm = makeMockLlm({ "jd-extract": usOnly, "match-score": cheapEval });
+
+    expect(job.eligibility).toBe("unknown"); // fixture's ingest-time stamp
+
+    await scoreJob({ job, source, profile, resume, llm });
+
+    const [after] = await state.testDb.select().from(jobs).where(eq(jobs.id, job.id));
+    expect(after.eligibility).toBe("abroad");
+    expect(after.eligibilityEvidence).toBe("JD: hires only in United States");
   });
 
   it.each([null, ""])(
@@ -141,7 +161,7 @@ describe("scoreJob", () => {
       });
       const llm: LlmClient = { complete };
 
-      await expect(scoreJob({ job, resume, llm })).rejects.toThrow(EmptyJobDescriptionError);
+      await expect(scoreJob({ job, source, profile, resume, llm })).rejects.toThrow(EmptyJobDescriptionError);
       expect(complete).not.toHaveBeenCalled();
 
       const rows = await state.testDb.select().from(jobScores).where(eq(jobScores.jobId, job.id));

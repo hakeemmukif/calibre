@@ -4,6 +4,7 @@
 import { getLlm, type LlmClient } from "@/lib/llm/client";
 import { assembleJob } from "@/features/feed/assemble";
 import { jobsRepo } from "@/server/persistence/repos/jobs";
+import { profileRepo } from "@/server/persistence/repos/profile";
 import { resumesRepo } from "@/server/persistence/repos/resumes";
 import { ensureDescription } from "@/server/search/describe";
 import { resolveIsNewCutoff } from "@/server/search/jobsFeed";
@@ -23,12 +24,13 @@ export async function evaluateJob(jobId: string, deps: { llm?: LlmClient } = {})
   if (!found) throw new UnknownJobError(jobId);
   const resume = await resumesRepo.getActive();
   if (!resume) throw new NoActiveResumeError();
+  const profile = await profileRepo.get();
   const job = await ensureDescription(found.job, found.source).catch((err) => {
     console.error(`evaluateJob ${jobId}: detail fetch failed:`, err);
     return found.job;
   });
   const llm = deps.llm ?? getLlm();
-  const score = await scoreJob({ job, resume, llm });
+  const score = await scoreJob({ job, source: found.source, profile, resume, llm });
   const isNewCutoff = await resolveIsNewCutoff(found.job.persona);
   return assembleJob({ job, score, source: found.source }, { isNewCutoff });
 }

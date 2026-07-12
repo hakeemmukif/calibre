@@ -7,8 +7,12 @@ import type { LlmClient } from "@/lib/llm/client";
 import { escalateModelFor } from "@/lib/llm/models";
 import { policyVersion } from "@/lib/llm/templates";
 import { jobScoresRepo, type JobScoreRow, type NewJobScore } from "@/server/persistence/repos/jobScores";
-import type { JobRow } from "@/server/persistence/repos/jobs";
+import { jobsRepo, type JobRow } from "@/server/persistence/repos/jobs";
+import type { ProfileRow } from "@/server/persistence/repos/profile";
 import type { ResumeRow } from "@/server/persistence/repos/resumes";
+import type { SourceRow } from "@/server/persistence/repos/sources";
+import { parseSourceGeo } from "@/server/search/geo";
+import { resolveEligibility } from "./eligibility";
 import { scoreMatch } from "./evalScores";
 import { extractJdFacts } from "./jdFacts";
 import { legitimacyTone, resolveLegitimacyTier } from "./legitimacy";
@@ -25,14 +29,31 @@ export class EmptyJobDescriptionError extends Error {
   }
 }
 
-export async function scoreJob(args: { job: JobRow; resume: ResumeRow; llm: LlmClient }): Promise<JobScoreRow> {
-  const { job, resume, llm } = args;
+export async function scoreJob(args: {
+  job: JobRow;
+  source: SourceRow;
+  profile: ProfileRow;
+  resume: ResumeRow;
+  llm: LlmClient;
+}): Promise<JobScoreRow> {
+  const { job, source, profile, resume, llm } = args;
 
   if (!job.description) throw new EmptyJobDescriptionError(job.id);
 
   const liveness = await probeLivenessDeep(job.applyUrl ?? job.url);
 
   const jdFactsResult = await extractJdFacts(llm, job.description);
+
+  // Layer C (spec §5): re-resolve with JD-stated facts — the authoritative
+  // eligibility write. POST /api/jobs/:id/evaluate inherits this for free.
+  const eligibility = resolveEligibility({
+    baseCountry: profile.baseCountry,
+    sourceKind: source.kind,
+    sourceGeo: parseSourceGeo(source),
+    location: job.location || undefined,
+    jdFacts: jdFactsResult.data,
+  });
+  await jobsRepo.updateEligibility(job.id, eligibility.tier, eligibility.evidence);
 
   const cheap = await scoreMatch(llm, { jdFacts: jdFactsResult.data, resume: resume.structured });
 

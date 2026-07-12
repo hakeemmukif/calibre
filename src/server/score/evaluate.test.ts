@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { MATCH_SCORE } from "@/lib/llm/scripted-fixtures";
-import { insertJob, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
+import { insertJob, insertProfile, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
 import { jobs, jobScores, resumes, sources } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import { Job } from "@/types";
@@ -17,6 +17,7 @@ const { NoActiveResumeError } = await import("@/server/search/run");
 describe("evaluateJob", () => {
   beforeAll(async () => {
     state.testDb = await createTestDb();
+    await insertProfile(state.testDb); // scoreJob's Layer-C refresh requires the operator profile
   });
 
   afterEach(async () => {

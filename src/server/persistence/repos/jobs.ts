@@ -159,6 +159,18 @@ export function createJobsRepo(db: Db) {
       return updated;
     },
 
+    // Layer-C refresh (spec §5 write points): the scoring path re-resolves
+    // with JD facts and overwrites the ingest-time stamp. Unknown id throws —
+    // a refresh for a vanished row is a bug, not a no-op.
+    async updateEligibility(id: string, tier: JobRow["eligibility"], evidence: string): Promise<void> {
+      const [row] = await db
+        .update(jobs)
+        .set({ eligibility: tier, eligibilityEvidence: evidence })
+        .where(eq(jobs.id, id))
+        .returning({ id: jobs.id });
+      if (!row) throw new Error(`jobsRepo.updateEligibility: no job with id "${id}"`);
+    },
+
     // Job+source only (no job_scores join) — Task 6's per-job evaluate
     // endpoint needs a job regardless of whether it's been scored before
     // (unlike `getById`, which requires an existing job_scores row).
@@ -225,6 +237,7 @@ export const jobsRepo: ReturnType<typeof createJobsRepo> = {
   getById: (id) => createJobsRepo(getDb()).getById(id),
   getRowWithSourceById: (id) => createJobsRepo(getDb()).getRowWithSourceById(id),
   updateDescription: (id, description) => createJobsRepo(getDb()).updateDescription(id, description),
+  updateEligibility: (id, tier, evidence) => createJobsRepo(getDb()).updateEligibility(id, tier, evidence),
   existsById: (id) => createJobsRepo(getDb()).existsById(id),
   statsForQuery: (q, sinceLastCutoff) => createJobsRepo(getDb()).statsForQuery(q, sinceLastCutoff),
 };
