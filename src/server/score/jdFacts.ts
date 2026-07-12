@@ -14,6 +14,9 @@ export const JdFactsSchema = z.object({
   employmentType: z.string().optional(),
   location: z.string().optional(),
   remotePolicy: z.string().optional(),
+  // Spec 2026-07-12 §5 Layer C: STATED hiring geography only — never guessed.
+  hiringScope: z.enum(["anywhere", "restricted"]).optional(),
+  hiringCountries: z.array(z.string()).optional(), // countries/regions verbatim as the JD states them
   mustHaves: z.array(z.string()),
   niceToHaves: z.array(z.string()),
   salaryRange: z.string().optional(),
