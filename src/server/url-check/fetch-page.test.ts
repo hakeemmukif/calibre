@@ -89,4 +89,23 @@ describe("fetchPageText", () => {
 
     expect(result).toEqual({ ok: false, reason: "blocked" });
   });
+
+  it("captures the <title> tag as pageTitle alongside the stripped text", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(htmlPage("Job description content. ".repeat(20), "Senior Engineer &amp; Lead"), {
+          status: 200,
+          headers: { "content-type": "text/html; charset=utf-8" },
+        }),
+      ),
+    );
+
+    const result = await fetchPageText("https://example.com/job");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok:true");
+    expect(result.pageTitle).toBe("Senior Engineer & Lead");
+    expect(result.text).toContain("Job description content.");
+  });
 });

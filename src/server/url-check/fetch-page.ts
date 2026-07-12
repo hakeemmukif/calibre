@@ -5,7 +5,7 @@
 // a private address after the first check passes). Any {ok:false} is a soft
 // failure for the caller (server/url-check/run.ts escalates to the sonar
 // search tier); only a non-SsrfBlockedError bug propagates (fail-loud).
-import { htmlToText } from "@/server/search/connectors/_html";
+import { htmlToText, unescapeEntities } from "@/server/search/connectors/_html";
 import { assertPublicHttpUrl, SsrfBlockedError } from "./ssrf";
 
 export type FetchPageResult =
@@ -69,10 +69,11 @@ export async function fetchPageText(url: string): Promise<FetchPageResult> {
     if (!body.ok) return { ok: false, reason: "oversize" };
 
     const raw = new TextDecoder().decode(body.bytes);
+    const pageTitle = extractTitle(raw);
     const text = htmlToText(raw);
     if (text.length < MIN_TEXT_CHARS) return { ok: false, reason: text.length === 0 ? "empty" : "blocked" };
     if (text.length > MAX_TEXT_CHARS) return { ok: false, reason: "oversize" };
-    return { ok: true, text };
+    return { ok: true, text, pageTitle };
   }
 
   return { ok: false, reason: "error" };
@@ -107,4 +108,11 @@ async function readBodyCapped(
     offset += chunk.byteLength;
   }
   return { ok: true, bytes: merged };
+}
+
+function extractTitle(html: string): string | undefined {
+  const match = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html);
+  if (!match) return undefined;
+  const title = unescapeEntities(match[1]).replace(/\s+/g, " ").trim();
+  return title.length > 0 ? title : undefined;
 }
