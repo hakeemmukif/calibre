@@ -113,7 +113,7 @@ export class SourceGeoConfigError extends Error {
   }
 }
 
-export function parseSourceGeo(source: { id: string; kind: "ats" | "board"; config: unknown }): SourceGeo {
+export function parseSourceGeo(source: { id: string; kind: "ats" | "board" | "manual"; config: unknown }): SourceGeo {
   const config = (source.config ?? {}) as { country?: unknown; geo?: { scope?: unknown; regions?: unknown } };
 
   if (source.kind === "board") {

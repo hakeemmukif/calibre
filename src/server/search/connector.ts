@@ -54,7 +54,7 @@ export interface FormField {
 
 export interface SourceConnector {
   id: string;
-  kind: "ats" | "board";
+  kind: "ats" | "board" | "manual";
   persona: ConnectorPersona;
   discover(ctx: {
     targets: RoleTarget[];

@@ -24,7 +24,11 @@ export function eligibilityTone(tier: EligibilityTier): Tone {
 
 export interface ResolveEligibilityArgs {
   baseCountry: string; // ISO-3166-1 alpha-2 (profile.baseCountry)
-  sourceKind: "ats" | "board";
+  // "manual" (url-check §6 persisting stage) never satisfies the `=== "board"`
+  // Layer-A branch below, and the caller passes `sourceGeo: {}` for it
+  // (Layers A/B are structurally absent for a pasted job) — no other branch
+  // reads `sourceKind` directly.
+  sourceKind: "ats" | "board" | "manual";
   sourceGeo: SourceGeo; // parseSourceGeo(source)
   location?: string; // connector location string (jobs.location; "" treated as absent)
   connectorGeo?: ParsedGeo; // structured connector geo when a connector supplies it (RawPosting.geo)
