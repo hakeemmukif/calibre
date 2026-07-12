@@ -12,6 +12,7 @@ export interface PersonaToggleProps {
 const OPTIONS: { value: Persona; label: string }[] = [
   { value: "remote", label: "Remote · global" },
   { value: "local", label: "Malaysia · local" },
+  { value: "pasted", label: "Pasted" },
 ];
 
 // PersonaToggle — segmented pill switching the active source-set/language
