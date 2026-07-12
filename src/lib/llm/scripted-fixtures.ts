@@ -21,6 +21,7 @@ export const RESUME_STORE = {
 export const JD_FACTS = {
   title: "Senior Backend Engineer, Payments",
   isJobPosting: true,
+  company: "Acme Payments",
   mustHaves: ["Node.js", "Postgres"],
   niceToHaves: ["Kafka"],
   responsibilities: ["Own the payments ledger service"],
