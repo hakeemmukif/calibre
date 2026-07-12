@@ -78,3 +78,77 @@ describe("getUrlCheck", () => {
     expect(await getUrlCheck(crypto.randomUUID())).toBeNull();
   });
 });
+
+describe("startUrlCheck admission", () => {
+  it("rejects with NoActiveResumeError before any LLM call when no résumé is active", async () => {
+    const db = await createTestDb();
+    state.testDb = db;
+    const calls: string[] = [];
+
+    await expect(
+      startUrlCheck({ url: "https://example.com/job" }, { llm: noCallLlm(calls) }),
+    ).rejects.toThrow(NoActiveResumeError);
+
+    expect(calls).toEqual([]);
+  });
+
+  it("rejects PayloadTooLargeError for pasted text over the 40k cap, before any LLM call", async () => {
+    const db = await createTestDb();
+    state.testDb = db;
+    await insertResume(db, { isActive: true });
+    const calls: string[] = [];
+
+    await expect(
+      startUrlCheck({ url: "https://example.com/job", text: "x".repeat(40_001) }, { llm: noCallLlm(calls) }),
+    ).rejects.toThrow(PayloadTooLargeError);
+
+    expect(calls).toEqual([]);
+  });
+
+  it("dedupe short-circuit: existing job -> 200-shaped alreadyKnown, no LLM call, no pipeline started", async () => {
+    const db = await createTestDb();
+    state.testDb = db;
+    await insertResume(db, { isActive: true });
+    const source = await insertSource(db);
+    const existing = await insertJob(db, source.id, {
+      dedupeKey: "example.com/already-known",
+      url: "https://example.com/already-known",
+    });
+    const calls: string[] = [];
+
+    const { check, started } = await startUrlCheck(
+      { url: "https://example.com/already-known" },
+      { llm: noCallLlm(calls) },
+    );
+
+    expect(started).toBe(false);
+    expect(check.status).toBe("completed");
+    expect(check.alreadyKnown).toBe(true);
+    expect(check.jobId).toBe(existing.id);
+    expect(calls).toEqual([]);
+  });
+
+  it("no existing job -> queued row returned immediately, started true", async () => {
+    const db = await createTestDb();
+    state.testDb = db;
+    await insertResume(db, { isActive: true });
+    await insertProfile(db);
+    const calls: string[] = [];
+
+    const { check, started } = await startUrlCheck(
+      { url: "https://example.com/brand-new" },
+      {
+        llm: noCallLlm(calls), // pipeline will fail fast (no "manual" source seeded) — fine, this test only asserts the synchronous admission return
+        fetchPageText: async () => ({ ok: false, reason: "blocked" }),
+        searchForPosting: async () => ({ found: false, content: "", sourceNote: "", costUsd: 0 }),
+      },
+    );
+
+    expect(started).toBe(true);
+    expect(check.status).toBe("queued");
+    expect(check.alreadyKnown).toBe(false);
+
+    const finalRow = await waitForTerminal(db, check.id);
+    expect(finalRow.status).toBe("failed"); // ManualSourceMissingError -> INTERNAL, confirms the pipeline actually ran
+  });
+});
