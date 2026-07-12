@@ -34,6 +34,16 @@ function check(overrides: Partial<UrlCheck> = {}): UrlCheck {
   };
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 function job(overrides: Partial<Job> = {}): Job {
   return {
     id: "job-1",
@@ -203,5 +213,73 @@ describe("useUrlCheck", () => {
     });
 
     expect(result.current.state).toEqual({ status: "failed", stage: null, check: null, job: null });
+  });
+
+  // final-review fix wave FIX 1b: every async resume must be caught and
+  // routed to a generation-guarded "failed" instead of hanging in "running".
+
+  it("a getJob rejection after a completed check sets status failed instead of hanging forever", async () => {
+    startCheck.mockResolvedValue(check({ status: "running", stage: "scoring" }));
+    getCheck.mockResolvedValueOnce(check({ status: "completed", stage: "scoring", jobId: "job-1" }));
+    getJob.mockRejectedValue(new Error("job fetch failed"));
+    const { result } = renderHook(() => useUrlCheck());
+
+    await act(async () => {
+      await result.current.submit("https://example.com/job");
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+
+    expect(result.current.state.status).toBe("failed");
+    expect(result.current.state.job).toBeNull();
+  });
+
+  it("a getCheck poll rejection mid-run sets status failed instead of hanging forever", async () => {
+    startCheck.mockResolvedValue(check({ status: "running", stage: "fetching" }));
+    getCheck.mockRejectedValueOnce(new Error("network blip"));
+    const { result } = renderHook(() => useUrlCheck());
+
+    await act(async () => {
+      await result.current.submit("https://example.com/job");
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+
+    expect(result.current.state.status).toBe("failed");
+  });
+
+  it("a stale poll rejection from a superseded generation does not clobber the fresh run's state", async () => {
+    const stalePoll = deferred<UrlCheck>();
+    startCheck.mockResolvedValueOnce(check({ id: "check-1", status: "running", stage: "fetching" }));
+    getCheck.mockImplementationOnce(() => stalePoll.promise);
+    const { result } = renderHook(() => useUrlCheck());
+
+    await act(async () => {
+      await result.current.submit("https://example.com/job");
+    });
+    // Fires the poll timer, which invokes getCheck() — still pending.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+
+    // A second submit supersedes generation #1 before the first poll settles.
+    startCheck.mockResolvedValueOnce(check({ id: "check-2", status: "running", stage: "searching" }));
+    await act(async () => {
+      await result.current.submit("https://example.com/job2");
+    });
+    expect(result.current.state.check?.id).toBe("check-2");
+    expect(result.current.state.stage).toBe("searching");
+
+    // The stale generation's poll now rejects — it must be a silent no-op.
+    await act(async () => {
+      stalePoll.reject(new Error("stale network failure"));
+      await Promise.resolve().then(() => Promise.resolve());
+    });
+
+    expect(result.current.state.status).toBe("running");
+    expect(result.current.state.check?.id).toBe("check-2");
+    expect(result.current.state.stage).toBe("searching");
   });
 });

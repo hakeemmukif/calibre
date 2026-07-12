@@ -44,20 +44,34 @@ export function useUrlCheck(): UseUrlCheck {
 
   settleRef.current = async (check, generation) => {
     if (generation !== generationRef.current) return;
-    if (check.status === "completed") {
-      const job = check.jobId ? await getJob(check.jobId) : null;
+    // Every async resume below (getJob, and the poll's getCheck routed in
+    // via .catch) must never hang the UI in "running" on a throw — caught
+    // here and, generation-guarded, turned into a "failed" transition
+    // (final review fix wave FIX 1b).
+    try {
+      if (check.status === "completed") {
+        const job = check.jobId ? await getJob(check.jobId) : null;
+        if (generation !== generationRef.current) return;
+        setState({ status: "done", stage: check.stage, check, job });
+        return;
+      }
+      if (check.status === "failed") {
+        setState({ status: check.needsText ? "needsText" : "failed", stage: check.stage, check, job: null });
+        return;
+      }
+      setState({ status: "running", stage: check.stage, check, job: null });
+      timerRef.current = setTimeout(() => {
+        void getCheck(check.id)
+          .then((next) => settleRef.current!(next, generation))
+          .catch(() => {
+            if (generation !== generationRef.current) return;
+            setState({ status: "failed", stage: check.stage, check, job: null });
+          });
+      }, POLL_MS);
+    } catch {
       if (generation !== generationRef.current) return;
-      setState({ status: "done", stage: check.stage, check, job });
-      return;
+      setState({ status: "failed", stage: check.stage, check, job: null });
     }
-    if (check.status === "failed") {
-      setState({ status: check.needsText ? "needsText" : "failed", stage: check.stage, check, job: null });
-      return;
-    }
-    setState({ status: "running", stage: check.stage, check, job: null });
-    timerRef.current = setTimeout(() => {
-      void getCheck(check.id).then((next) => settleRef.current!(next, generation));
-    }, POLL_MS);
   };
 
   const clearTimer = useCallback(() => {
