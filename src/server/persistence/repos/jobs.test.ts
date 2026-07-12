@@ -79,6 +79,32 @@ describe("jobsRepo", () => {
     expect(second.aliases).toEqual([{ sourceId: "jobstreet", url: "https://jobstreet.com/2" }]);
   });
 
+  it("getByDedupeKey finds an existing row, null for an unknown key", async () => {
+    const db = await createTestDb();
+    const repo = createJobsRepo(db);
+    const source = await insertSource(db);
+
+    await repo.upsertByDedupeKey({
+      dedupeKey: "dk-getbykey",
+      url: "https://example.com/getbykey",
+      sourceId: source.id,
+      title: "Backend Engineer",
+      company: "Acme",
+      location: "Remote",
+      persona: "remote",
+      eligibility: "unknown",
+      eligibilityEvidence: "test fixture",
+      aliases: [],
+      raw: {},
+    });
+
+    const found = await repo.getByDedupeKey("dk-getbykey");
+    expect(found?.dedupeKey).toBe("dk-getbykey");
+
+    const missing = await repo.getByDedupeKey("dk-does-not-exist");
+    expect(missing).toBeNull();
+  });
+
   it("upsertByDedupeKey merges aliases across re-sightings instead of replacing them (regression)", async () => {
     const db = await createTestDb();
     const repo = createJobsRepo(db);

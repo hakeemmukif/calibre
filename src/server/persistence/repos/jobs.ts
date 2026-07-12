@@ -111,6 +111,16 @@ export function createJobsRepo(db: Db) {
       return upserted;
     },
 
+    // url-check admission (spec 2026-07-12-pasted-job-ingestion-design.md §6
+    // step 4): a pasted URL's normalized dedupe key may already own a job
+    // (scanned or previously pasted) — the admission short-circuit needs a
+    // direct lookup, not `getById` (needs a `job_scores` join) or
+    // `upsertByDedupeKey` (which would spend a write to answer a read).
+    async getByDedupeKey(dedupeKey: string): Promise<JobRow | null> {
+      const [row] = await db.select().from(jobs).where(eq(jobs.dedupeKey, dedupeKey)).limit(1);
+      return row ?? null;
+    },
+
     async listScored(q: JobsQuery): Promise<{ items: JobJoinScore[]; nextCursor: string | null }> {
       const limit = q.limit ?? DEFAULT_LIMIT;
       const conditions = buildFilterConditions(q);
@@ -256,6 +266,7 @@ export function createJobsRepo(db: Db) {
 
 export const jobsRepo: ReturnType<typeof createJobsRepo> = {
   upsertByDedupeKey: (row) => createJobsRepo(getDb()).upsertByDedupeKey(row),
+  getByDedupeKey: (dedupeKey) => createJobsRepo(getDb()).getByDedupeKey(dedupeKey),
   listScored: (q) => createJobsRepo(getDb()).listScored(q),
   getById: (id) => createJobsRepo(getDb()).getById(id),
   getRowWithSourceById: (id) => createJobsRepo(getDb()).getRowWithSourceById(id),
