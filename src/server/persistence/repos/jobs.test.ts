@@ -473,7 +473,7 @@ describe("jobsRepo", () => {
     await expect(repo.updateEligibility(crypto.randomUUID(), "unknown", "x")).rejects.toThrow(/no job with id/);
   });
 
-  it("filters by eligibility[] and counts the excluded scope", async () => {
+  it("filters by eligibility[]", async () => {
     const db = await createTestDb();
     const repo = createJobsRepo(db);
     const source = await insertSource(db);
@@ -501,8 +501,41 @@ describe("jobsRepo", () => {
 
     const { items } = await repo.listScored({ eligibility: ["anywhere", "eligible", "local", "unknown"] });
     expect(items).toHaveLength(2);
+  });
 
-    const excluded = await repo.countScored({ eligibility: ["abroad"] });
-    expect(excluded).toBe(1);
+  it("countHiddenByEligibility counts everything the predicate hid, scored or not, scoped by persona", async () => {
+    const db = await createTestDb();
+    const repo = createJobsRepo(db);
+    const source = await insertSource(db);
+    const resume = await insertResume(db);
+    const mk = async (
+      eligibility: "anywhere" | "abroad" | "unknown",
+      opts: { key: string; persona?: "remote" | "local"; scored?: boolean },
+    ) => {
+      const job = await repo.upsertByDedupeKey({
+        dedupeKey: `dk-hidden-${opts.key}`,
+        url: `https://example.com/hidden-${opts.key}`,
+        sourceId: source.id,
+        title: "Backend Engineer",
+        company: "Acme",
+        location: "Remote",
+        persona: opts.persona ?? "remote",
+        eligibility,
+        eligibilityEvidence: "t",
+        aliases: [],
+        raw: {},
+      });
+      if (opts.scored ?? true) await insertJobScore(db, job.id, resume.id);
+      return job;
+    };
+
+    await mk("anywhere", { key: "anywhere" }); // admitted tier — never hidden
+    await mk("unknown", { key: "unknown" }); // admitted tier — never hidden
+    await mk("abroad", { key: "abroad-scored", scored: true }); // hidden, scored
+    await mk("abroad", { key: "abroad-unscored", scored: false }); // hidden, gated out of scoring entirely
+    await mk("abroad", { key: "abroad-other-persona", persona: "local" }); // hidden but wrong persona scope
+
+    const hidden = await repo.countHiddenByEligibility({ persona: "remote", eligibility: ["abroad"] });
+    expect(hidden).toBe(2);
   });
 });

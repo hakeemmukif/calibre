@@ -69,7 +69,7 @@ export function JobRow({ job, onOpen, onSave, onDismiss }: JobRowProps) {
             {job.role}
           </span>
           <LegitimacyTag legitimacy={job.legitimacy} />
-          {job.eligibility.tier !== "local" && <EligibilityTag eligibility={job.eligibility} />}
+          <EligibilityTag eligibility={job.eligibility} />
           {job.isNew && <NewBadge />}
         </div>
         <div style={{ font: "var(--type-caption)", color: "var(--text-muted)", marginTop: 3 }}>

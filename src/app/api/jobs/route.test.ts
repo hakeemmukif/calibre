@@ -47,17 +47,26 @@ describe("GET /api/jobs", () => {
       eligibilityEvidence: "location: New York, NY",
     });
     await insertJobScore(state.testDb, abroadJob.id, resume.id);
+    // Unscored — the dominant real path: relocation "stay" gates abroad rows
+    // out of the scoring pool entirely (spec §5 scan hardening), so most
+    // hidden jobs never reach job_scores. excluded must count this one too.
+    await insertJob(state.testDb, source.id, {
+      dedupeKey: "dk-abroad-unscored",
+      url: "https://example.com/abroad-unscored",
+      eligibility: "abroad",
+      eligibilityEvidence: "location: San Francisco, CA",
+    });
 
     // Seeded profile is { relocation: "stay" } — abroad hidden, counted.
     const stay = await (await GET(req(""))).json();
     expect(stay.items).toHaveLength(1);
     expect(stay.items[0].eligibility.tier).toBe("anywhere");
-    expect(stay.stats.excluded).toBe(1);
+    expect(stay.stats.excluded).toBe(2);
 
     // Flip to "open": the same rows re-scope with zero rescan.
     await state.testDb.update(profile).set({ relocation: "open" }).where(eq(profile.id, "default"));
     const open = await (await GET(req(""))).json();
-    expect(open.items).toHaveLength(2);
+    expect(open.items).toHaveLength(2); // the unscored abroad job stays unlisted (listScored requires a score)
     expect(open.stats.excluded).toBe(0);
     await state.testDb.update(profile).set({ relocation: "stay" }).where(eq(profile.id, "default"));
   });

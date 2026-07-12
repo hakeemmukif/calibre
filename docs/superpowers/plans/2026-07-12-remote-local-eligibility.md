@@ -2257,6 +2257,6 @@ git commit -m "feat(ops): eligibility recompute + distribution scripts; connecto
 
 ## Plan-wide notes for implementers
 
-- **The excluded count only counts scored-but-hidden jobs** (it joins `job_scores`) — under `stay`, abroad jobs are gated out of scoring, so the count moves mainly after scans that ran under `open`. This is by design (spec §8 + scan hardening); don't "fix" it by counting unscored rows.
+- **The excluded count counts everything the predicate hid, scored or not** (`jobsRepo.countHiddenByEligibility` — `jobs` alone, no `job_scores` join). It used to join `job_scores` and undercount, since under `stay` abroad jobs are gated out of scoring entirely (live run evidence: 14 real abroad jobs, count read 0). Reversed at the operator's request — don't revert to scored-only.
 - If `npm run db:generate` names migrations differently than `0004`/`0005`, keep drizzle's names — the plan's numbers are ordinals, not literals.
 - Where a plan snippet's prop/field names collide with reality (e.g. `Select`'s API), reality wins — adjust the snippet's names, keep its substance, and say so in the commit body.

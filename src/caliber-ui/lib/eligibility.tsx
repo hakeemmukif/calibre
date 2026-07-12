@@ -28,9 +28,11 @@ export function eligibilityLabel(tier: EligibilityTier): string {
 }
 
 // EligibilityTag — the eligibility pill beside the legitimacy pill.
-// Suppressed by CALLERS when tier === "local" (stamping "Malaysia" on every
-// JobStreet row is noise) — the component itself stays unconditional.
+// Suppresses itself for tier === "local" (spec §8: stamping "Malaysia" on
+// every JobStreet row is noise) — this is the component's own rule, so no
+// caller needs to (or can forget to) guard it.
 export function EligibilityTag({ eligibility }: { eligibility: Eligibility }) {
+  if (eligibility.tier === "local") return null;
   return (
     <Tag tone={eligibility.tone} title={eligibility.summary}>
       {eligibilityLabel(eligibility.tier)}

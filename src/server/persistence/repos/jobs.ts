@@ -163,16 +163,21 @@ export function createJobsRepo(db: Db) {
       return updated;
     },
 
-    // Excluded-count support (spec §8): jobs matching the scope that the
-    // eligibility predicate hid — same joins as statsForQuery, count only.
-    async countScored(q: Omit<JobsQuery, "cursor" | "limit">): Promise<number> {
+    // Excluded-count support (spec §8): everything the predicate hid for the
+    // scope, scored or not. `jobs` alone — no job_scores/sources join — since
+    // relocation "stay" gates abroad rows out of the scoring pool entirely
+    // (spec §5 scan hardening); a scored-only count undercounts (live run: 14
+    // real abroad jobs, count read 0). `tier`/`minScore` are Omit'd at the
+    // type level, not just unused: they're job_scores columns and
+    // buildFilterConditions would emit conditions against a table this query
+    // never joins — an unscored row has no score to filter on.
+    async countHiddenByEligibility(
+      q: Omit<JobsQuery, "cursor" | "limit" | "tier" | "minScore">,
+    ): Promise<number> {
       const conditions = buildFilterConditions(q);
-      const latest = latestJobScores(db);
       const rows = await db
         .select({ id: jobs.id })
         .from(jobs)
-        .innerJoin(jobScores, eq(jobScores.jobId, jobs.id))
-        .innerJoin(latest, eq(latest.id, jobScores.id))
         .where(conditions.length > 0 ? and(...conditions) : undefined);
       return rows.length;
     },
@@ -256,7 +261,7 @@ export const jobsRepo: ReturnType<typeof createJobsRepo> = {
   getRowWithSourceById: (id) => createJobsRepo(getDb()).getRowWithSourceById(id),
   updateDescription: (id, description) => createJobsRepo(getDb()).updateDescription(id, description),
   updateEligibility: (id, tier, evidence) => createJobsRepo(getDb()).updateEligibility(id, tier, evidence),
-  countScored: (q) => createJobsRepo(getDb()).countScored(q),
+  countHiddenByEligibility: (q) => createJobsRepo(getDb()).countHiddenByEligibility(q),
   existsById: (id) => createJobsRepo(getDb()).existsById(id),
   statsForQuery: (q, sinceLastCutoff) => createJobsRepo(getDb()).statsForQuery(q, sinceLastCutoff),
 };

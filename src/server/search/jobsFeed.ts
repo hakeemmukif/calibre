@@ -7,7 +7,8 @@ import type { JobsQuery } from "@/server/persistence/repos/jobs";
 import { jobsRepo } from "@/server/persistence/repos/jobs";
 import { profileRepo } from "@/server/persistence/repos/profile";
 import { searchRunsRepo } from "@/server/persistence/repos/searchRuns";
-import type { EligibilityTier, Job, Persona, SummaryStripStats } from "@/types";
+import { EligibilityTier } from "@/types";
+import type { Job, Persona, SummaryStripStats } from "@/types";
 
 export type FeedQuery = Omit<JobsQuery, "isNew"> & {
   // Wire boolean (api-contract.md §3 `isNew?`) — translated to the repo's
@@ -28,6 +29,8 @@ export async function resolveIsNewCutoff(persona?: Persona): Promise<Date | null
 // The tiers admitted under relocation "stay" (spec §8): abroad is hidden,
 // unknown stays visible wearing its warn pill (operator decision §2.1).
 const STAY_TIERS: EligibilityTier[] = ["anywhere", "eligible", "local", "unknown"];
+// Complement derived (not hardcoded) so the predicate and the trust-count cannot drift.
+const HIDDEN_TIERS: EligibilityTier[] = EligibilityTier.options.filter((t) => !STAY_TIERS.includes(t));
 
 export async function listJobsFeed(
   query: FeedQuery,
@@ -50,11 +53,14 @@ export async function listJobsFeed(
   // uses the cutoff regardless of whether the caller applied the `isNew`
   // filter (redundant-but-consistent when they did).
   const base = await jobsRepo.statsForQuery(filterScope, cutoff);
-  // The trust signal for what vanished (spec §8): scored jobs the predicate
-  // hid. 0 under "open" — nothing is hidden.
+  // The trust signal for what vanished (spec §8): all jobs the predicate hid,
+  // scored or not. 0 under "open" — nothing is hidden. Deliberately NOT
+  // spreading `rest` — tier/minScore are job_scores columns and this answers
+  // "what did the geo predicate hide", not "what would also have passed your
+  // score filters".
   const excluded =
     profile.relocation === "stay"
-      ? await jobsRepo.countScored({ ...rest, isNew: isNewFilter, eligibility: ["abroad"] })
+      ? await jobsRepo.countHiddenByEligibility({ persona: rest.persona, q: rest.q, isNew: isNewFilter, eligibility: HIDDEN_TIERS })
       : 0;
 
   return {

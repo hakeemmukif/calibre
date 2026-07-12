@@ -8,6 +8,7 @@ import { Button } from "../../components/Button";
 import { Icon } from "../../components/Icon";
 import { AppliedButton } from "../Apply/AppliedButton";
 import { LegitimacyTag } from "../../lib/legitimacy";
+import { EligibilityTag } from "../../lib/eligibility";
 import { agoLabel, toFitBarTone } from "../../lib/format";
 import type { Job, Application } from "../../../types";
 
@@ -69,6 +70,7 @@ export function JobDetail({
         {job.tags.map((t) => (
           <Tag key={t.label} tone={t.tone}>{t.label}</Tag>
         ))}
+        <EligibilityTag eligibility={job.eligibility} />
       </div>
 
       <p style={{ font: "var(--type-body)", color: "var(--text-body)", marginTop: 12 }}>{job.verdict}</p>

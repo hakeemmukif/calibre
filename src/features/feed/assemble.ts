@@ -3,7 +3,7 @@
 // everything it needs arrives already loaded on `JobJoinScore`.
 import type { JobJoinScore } from "@/server/persistence/repos/jobs";
 import { eligibilityTone } from "@/server/score/eligibility";
-import { Job, type EligibilityTier, type LegitimacyTier } from "@/types";
+import { Job, type LegitimacyTier } from "@/types";
 
 // Locked interface is `assembleJob(joined: JobJoinScore): Job`; the second,
 // OPTIONAL argument is an addition this task needed — `Job.isNew` depends on
@@ -25,16 +25,6 @@ const TIER_LABEL: Record<LegitimacyTier, string> = {
   suspicious: "Use caution",
   ghost: "Likely stale",
   scam: "Flagged: scam",
-};
-
-// Presentation-only eligibility labels (spec §8). Tone comes from
-// eligibilityTone (server/score) — never a second tone table.
-const ELIGIBILITY_LABEL: Record<EligibilityTier, string> = {
-  anywhere: "Work anywhere",
-  eligible: "Hires from Malaysia",
-  local: "Malaysia",
-  abroad: "Relocation",
-  unknown: "Eligibility unverified",
 };
 
 export function assembleJob(joined: JobJoinScore, opts: AssembleJobOptions = {}): Job {
@@ -66,12 +56,9 @@ export function assembleJob(joined: JobJoinScore, opts: AssembleJobOptions = {})
     meta: `${job.location} · ${job.salaryRaw ?? "—"}`,
     verdict: score.verdict,
     why: score.why,
-    // Legitimacy tag + eligibility tag (suppressed on `local` — stamping
-    // "Malaysia" on every JobStreet row is noise, spec §8).
-    tags: [
-      { tone, label: TIER_LABEL[tier] },
-      ...(eligibility.tier !== "local" ? [{ tone: eligibility.tone, label: ELIGIBILITY_LABEL[eligibility.tier] }] : []),
-    ],
+    // Legitimacy tag only — eligibility renders as its own EligibilityTag
+    // pill (with hover evidence, spec §8) alongside `tags[]`, not inside it.
+    tags: [{ tone, label: TIER_LABEL[tier] }],
     breakdown: score.breakdown,
     fit: score.fit,
     gaps: score.gaps,
