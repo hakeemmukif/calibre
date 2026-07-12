@@ -223,6 +223,35 @@
         ],
         "type": "object"
       },
+      "Eligibility": {
+        "properties": {
+          "summary": {
+            "type": "string"
+          },
+          "tier": {
+            "$ref": "#/components/schemas/EligibilityTier"
+          },
+          "tone": {
+            "$ref": "#/components/schemas/Tone"
+          }
+        },
+        "required": [
+          "tier",
+          "tone",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "EligibilityTier": {
+        "enum": [
+          "anywhere",
+          "eligible",
+          "local",
+          "abroad",
+          "unknown"
+        ],
+        "type": "string"
+      },
       "ErrorEnvelope": {
         "properties": {
           "error": {

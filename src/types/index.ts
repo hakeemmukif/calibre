@@ -21,6 +21,19 @@ export const Legitimacy = z.object({
 });
 export type Legitimacy = z.infer<typeof Legitimacy>;
 
+// Eligibility — posting geography relative to the operator profile (spec
+// 2026-07-12-remote-local-eligibility-design.md §3). Third axis, distinct
+// from Source.persona (scan routing) and Job.persona (run provenance).
+export const EligibilityTier = z.enum(["anywhere", "eligible", "local", "abroad", "unknown"]);
+export type EligibilityTier = z.infer<typeof EligibilityTier>;
+
+export const Eligibility = z.object({
+  tier: EligibilityTier,
+  tone: Tone,
+  summary: z.string(), // the resolver's evidence string
+});
+export type Eligibility = z.infer<typeof Eligibility>;
+
 export const SourceRef = z.object({ // Source entity, referenced from Job
   id: z.string(),
   name: z.string(),

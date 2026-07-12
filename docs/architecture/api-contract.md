@@ -42,6 +42,17 @@ export const Legitimacy = z.object({
   confidence: z.number().min(0).max(1).optional(),   // only if scorer emits a real number (§11.8 D/G)
 });
 
+// Eligibility — posting geography relative to the operator profile
+// (2026-07-12-remote-local-eligibility-design.md §3): anywhere = work-from-
+// anywhere (best tier) · eligible = remote, hireable from baseCountry ·
+// local = onsite/hybrid in baseCountry · abroad = located elsewhere (onsite
+// OR geo-fenced remote; hidden under relocation 'stay') · unknown = posting
+// states nothing decidable (honest tier, never silently eligible).
+export const EligibilityTier = z.enum(['anywhere','eligible','local','abroad','unknown']);
+export const Eligibility = z.object({
+  tier: EligibilityTier, tone: Tone, summary: z.string(),   // summary = resolver evidence
+});
+
 export const SourceRef = z.object({                  // Source entity, referenced from Job
   id: z.string(), name: z.string(), kind: z.enum(['ats','board']), persona: Persona,
 });
