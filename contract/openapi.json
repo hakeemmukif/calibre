@@ -455,6 +455,28 @@
         ],
         "type": "string"
       },
+      "Profile": {
+        "properties": {
+          "baseCountry": {
+            "maxLength": 2,
+            "minLength": 2,
+            "type": "string"
+          },
+          "relocation": {
+            "$ref": "#/components/schemas/RelocationPref"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "baseCountry",
+          "relocation",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
       "Progress": {
         "properties": {
           "current": {
@@ -477,6 +499,13 @@
           "label"
         ],
         "type": "object"
+      },
+      "RelocationPref": {
+        "enum": [
+          "stay",
+          "open"
+        ],
+        "type": "string"
       },
       "Resume": {
         "properties": {
@@ -1779,6 +1808,91 @@
           }
         },
         "summary": "On-demand re-score of a single job — F2 (Task 6)"
+      }
+    },
+    "/api/profile": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            },
+            "description": "The singleton profile"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Profile row missing (unseeded install)"
+          }
+        },
+        "summary": "Operator profile — base country + relocation preference"
+      },
+      "put": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "baseCountry": {
+                    "maxLength": 2,
+                    "minLength": 2,
+                    "type": "string"
+                  },
+                  "relocation": {
+                    "$ref": "#/components/schemas/RelocationPref"
+                  }
+                },
+                "required": [
+                  "baseCountry",
+                  "relocation"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            },
+            "description": "The updated profile"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Profile row missing"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Invalid body"
+          }
+        },
+        "summary": "Full-replace the operator profile"
       }
     },
     "/api/resume": {

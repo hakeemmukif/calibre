@@ -72,6 +72,17 @@ export const sources = pgTable("sources", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// Operator profile — singleton row, id is the constant "default". Seeded by
+// seed.ts (the seed is the install step); repos/profile.ts throws
+// ProfileMissingError when absent — no runtime default.
+export const profile = pgTable("profile", {
+  id: text("id").primaryKey(),
+  baseCountry: text("base_country").notNull(),
+  relocation: text("relocation", { enum: ["stay", "open"] }).notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 export const resumes = pgTable("resumes", {
   id: uuid("id").primaryKey().defaultRandom(),
   rawText: text("raw_text").notNull(),

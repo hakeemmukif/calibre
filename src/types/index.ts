@@ -40,6 +40,19 @@ export const Source = z.object({
 });
 export type Source = z.infer<typeof Source>;
 
+export const RelocationPref = z.enum(["stay", "open"]);
+export type RelocationPref = z.infer<typeof RelocationPref>;
+
+// Operator profile — singleton (single-operator MVP). `baseCountry` is
+// ISO-3166-1 alpha-2 ("MY" at launch). The seed row IS the install step
+// (seed.ts precedent); a missing row is an error, never defaulted.
+export const Profile = z.object({
+  baseCountry: z.string().length(2),
+  relocation: RelocationPref,
+  updatedAt: z.string().datetime(),
+});
+export type Profile = z.infer<typeof Profile>;
+
 export const Job = z.object({ // §5 frozen + §11.8 extensions
   id: z.string(),
   score: z.number().min(0).max(5),

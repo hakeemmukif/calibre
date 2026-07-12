@@ -30,6 +30,8 @@ import {
   Legitimacy,
   SourceRef,
   Source,
+  RelocationPref,
+  Profile,
   Job,
   Resume,
   RunStatus,
@@ -52,6 +54,8 @@ const entitySchemas: Record<string, z.ZodType> = {
   Legitimacy,
   SourceRef,
   Source,
+  RelocationPref,
+  Profile,
   Job,
   Resume,
   RunStatus,
@@ -86,6 +90,28 @@ registry.registerPath({
         },
       },
     },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/profile",
+  summary: "Operator profile — base country + relocation preference",
+  responses: {
+    200: { description: "The singleton profile", content: { "application/json": { schema: Profile } } },
+    404: { description: "Profile row missing (unseeded install)", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/profile",
+  summary: "Full-replace the operator profile",
+  request: { body: { content: { "application/json": { schema: Profile.omit({ updatedAt: true }) } } } },
+  responses: {
+    200: { description: "The updated profile", content: { "application/json": { schema: Profile } } },
+    404: { description: "Profile row missing", content: { "application/json": { schema: ErrorEnvelope } } },
+    422: { description: "Invalid body", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
 

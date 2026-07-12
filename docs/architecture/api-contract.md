@@ -22,6 +22,8 @@ Schema-first: Zod schemas in `src/types` are the single source of truth; OpenAPI
 | F6 | GET | `/api/tailor/:id` | Tailor status + result; SSE via `Accept: text/event-stream` | sync / SSE |
 | F6 | POST | `/api/tailor/:id/finalize` | Persist the accepted-only diff (renders an accepted-only résumé) | sync |
 | F6 | GET | `/api/tailor/:id/pdf` | Rendered PDF of the finalized (accepted-only) résumé | sync, binary |
+| — | GET | `/api/profile` | Operator profile (base country + relocation). 404 when unseeded | sync |
+| — | PUT | `/api/profile` | Full-replace the operator profile | sync |
 | — | GET | `/api/health` | Liveness check, unauthenticated | sync |
 
 `GET /api/jobs/:id` returns the frozen `Job` entity verbatim — there is no separate detail/`MatchDetail` entity in MVP; `JobDetail`'s Fit/Legitimacy/Breakdown tabs are derived entirely from `Job.fit`/`Job.legitimacy`/`Job.breakdown`. An `archetype` field (e.g. "Global remote — APAC-friendly") was drafted during component design but is **deferred** — not part of `Job`, not returned by this route.
@@ -42,6 +44,18 @@ export const Legitimacy = z.object({
 
 export const SourceRef = z.object({                  // Source entity, referenced from Job
   id: z.string(), name: z.string(), kind: z.enum(['ats','board']), persona: Persona,
+});
+
+export const RelocationPref = z.enum(['stay', 'open']);
+
+// Operator profile — singleton (single-operator MVP). baseCountry is
+// ISO-3166-1 alpha-2 ('MY' at launch). The seed row IS the install step
+// (seed.ts precedent); a missing row is a 404, never a runtime default.
+// (2026-07-12-remote-local-eligibility-design.md §3.)
+export const Profile = z.object({
+  baseCountry: z.string().length(2),
+  relocation: RelocationPref,
+  updatedAt: z.string().datetime(),
 });
 
 export const Job = z.object({                        // §5 frozen + §11.8 extensions
@@ -148,6 +162,8 @@ Boundary rule everywhere: `Schema.parse(body)` at the route handler; `ZodError` 
 **POST /api/resume** — `multipart/form-data` (`file`: PDF/DOCX, ≤10 MB) **or** `application/json` `{ text: z.string().min(100) }`. → `200 Resume`. Errors: `413 PAYLOAD_TOO_LARGE`, `422` (bad mime/empty text), `502 PARSE_FAILED` (unpdf/LLM extraction failed — no partial résumé is ever persisted). Idempotent-by-replacement: v1 holds exactly one résumé; a new upload atomically supersedes it.
 
 **GET /api/resume** — → `200 Resume` | `404 NOT_FOUND`. No `{hasResume:false}` sentinel — absence is a 404 and the kit's `hasResume` flag is derived client-side.
+
+**GET /api/profile** — → `200 Profile` | `404 NOT_FOUND` (unseeded install — the seed is the install step; no runtime default). **PUT /api/profile** — `Profile.omit({ updatedAt })` full replace. → `200 Profile` | `404` | `422`.
 
 **POST /api/search** — `{ persona: Persona, sources?: z.array(z.string()).min(1).optional() }` (omitted `sources` = persona's full configured set — an explicit empty array is a 422, not a silent all). → `202 SearchRun` (`status:'queued'`). `409 CONFLICT` if a run is already active for that persona (`details: { activeRunId }`). `409` also if no résumé exists (search scores against it).
 

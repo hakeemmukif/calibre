@@ -8,7 +8,7 @@
 // connector (persona 'local'), live-verified in Step 8 of task-2-brief.md.
 import { fileURLToPath } from "node:url";
 import { getDb } from "./db";
-import { sources } from "./schema";
+import { profile, sources } from "./schema";
 import type { Db } from "./repos/db";
 
 export const sourceSeeds: (typeof sources.$inferInsert)[] = [
@@ -40,10 +40,24 @@ export async function seedSources(db: Db) {
   return db.insert(sources).values(sourceSeeds).onConflictDoNothing().returning();
 }
 
+// The operator profile singleton — the seed IS the install step (spec
+// 2026-07-12-remote-local-eligibility-design.md §4); runtime never defaults.
+export const profileSeed: typeof profile.$inferInsert = {
+  id: "default",
+  baseCountry: "MY",
+  relocation: "stay",
+};
+
+export async function seedProfile(db: Db) {
+  return db.insert(profile).values(profileSeed).onConflictDoNothing().returning();
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  seedSources(getDb())
-    .then((rows) => {
-      console.log(`Seeded ${rows.length} source(s)`);
+  const db = getDb();
+  seedSources(db)
+    .then(async (rows) => {
+      const prof = await seedProfile(db);
+      console.log(`Seeded ${rows.length} source(s), ${prof.length} profile row(s)`);
       // The postgres-js pool otherwise keeps the tsx process alive forever.
       process.exit(0);
     })
