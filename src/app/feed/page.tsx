@@ -11,16 +11,31 @@ import { useRouter } from "next/navigation";
 import { PersonaToggle } from "@/caliber-ui/compositions/Shell/PersonaToggle";
 import { UrlEvalBar } from "@/caliber-ui/compositions/Shell/UrlEvalBar";
 import { NotificationBell } from "@/caliber-ui/compositions/Shell/NotificationBell";
+import { EvalResultCard } from "@/caliber-ui/compositions/Eval/EvalResultCard";
 import { JobFeed, type JobRowAction } from "@/caliber-ui/compositions/Feed/JobFeed";
 import { ScanProgress } from "@/caliber-ui/compositions/Feed/ScanProgress";
 import { Button } from "@/caliber-ui/components/Button";
 import type { FeedFilter } from "@/caliber-ui/compositions/Feed/FilterChips";
-import { getJobs } from "@/features/feed/client";
+import { getJobs, deleteJob } from "@/features/feed/client";
 import { useScanRun } from "@/features/search/useScanRun";
 import { takeScanHandoff, type ScanHandoff } from "@/features/search/scanHandoff";
+import { useUrlCheck } from "@/features/url-check/useUrlCheck";
 import type { Job, Persona, SummaryStripStats } from "@/types";
 
 const EMPTY_STATS: SummaryStripStats = { scanned: 0, worth: 0, ghosts: 0, flagged: 0, sinceLast: 0, excluded: 0 };
+
+// alreadyKnown names the job's actual scope (spec §3 step 6) — a pasted
+// job that resolved to an existing job can never itself be "pasted".
+function scopeLabel(p: Persona): string {
+  switch (p) {
+    case "remote":
+      return "Remote · global";
+    case "local":
+      return "Malaysia · local";
+    case "pasted":
+      throw new Error("alreadyKnown job cannot itself be in the Pasted scope");
+  }
+}
 
 export default function FeedPage() {
   const router = useRouter();
@@ -75,9 +90,44 @@ export default function FeedPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const urlCheck = useUrlCheck();
+
+  // Feed refreshes on completion only while the Pasted segment is active
+  // (spec §12) — a paste made while viewing Remote/Local shouldn't yank
+  // the visible list.
+  React.useEffect(() => {
+    if (urlCheck.state.status === "done" && persona === "pasted") void load();
+  }, [urlCheck.state.status, persona, load]);
+
+  const urlEvalStatus: "idle" | "evaluating" | "success" | "error" =
+    urlCheck.state.status === "running"
+      ? "evaluating"
+      : urlCheck.state.status === "done"
+        ? "success"
+        : urlCheck.state.status === "needsText" || urlCheck.state.status === "failed"
+          ? "error"
+          : "idle";
+
   function handleRowAction(id: string, action: JobRowAction) {
-    if (action === "open") router.push(`/jobs/${id}`);
-    // "save"/"dismiss": no backend route in api-contract.md v1 — deferred.
+    if (action === "open") {
+      router.push(`/jobs/${id}`);
+      return;
+    }
+    if (action === "dismiss" && persona === "pasted") {
+      void handleDeleteJob(id);
+      return;
+    }
+    // "save"/scanned-job "dismiss": no backend route in api-contract.md v1 — deferred.
+  }
+
+  async function handleDeleteJob(id: string) {
+    if (!window.confirm("Delete this pasted job? This can't be undone.")) return;
+    try {
+      await deleteJob(id);
+      void load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't delete the job.");
+    }
   }
 
   // Dismissing while the run is still "running"/"starting": unsubscribe
@@ -102,20 +152,42 @@ export default function FeedPage() {
         <div style={{ display: "flex", alignItems: "center", gap: 20, marginBottom: 16 }}>
           <PersonaToggle value={persona} onChange={setPersona} />
           <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
-            <UrlEvalBar status="idle" onSubmit={() => {}} />
+            <UrlEvalBar
+              status={urlEvalStatus}
+              stageText={urlCheck.state.stage ?? undefined}
+              error={urlCheck.state.check?.error?.message ?? (urlCheck.state.status === "failed" ? "Couldn't check that URL." : undefined)}
+              showPasteBox={urlCheck.state.status === "needsText"}
+              onSubmit={(url, text) => void urlCheck.submit(url, text)}
+            />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <NotificationBell count={0} />
-            <Button
-              variant="primary"
-              iconLeft="search"
-              onClick={() => void scan.start(persona)}
-              disabled={scan.state.status === "starting" || scan.state.status === "running"}
-            >
-              Scan now
-            </Button>
+            {persona !== "pasted" && (
+              <Button
+                variant="primary"
+                iconLeft="search"
+                onClick={() => void scan.start(persona)}
+                disabled={scan.state.status === "starting" || scan.state.status === "running"}
+              >
+                Scan now
+              </Button>
+            )}
           </div>
         </div>
+        {urlCheck.state.status === "done" && urlCheck.state.job && (
+          <div style={{ marginBottom: 16, display: "flex", justifyContent: "center" }}>
+            <EvalResultCard
+              job={urlCheck.state.job}
+              onOpen={() => router.push(`/jobs/${urlCheck.state.job!.id}`)}
+              onSave={() => {}}
+              onTailor={() => router.push(`/jobs/${urlCheck.state.job!.id}/tailor`)}
+              onDismiss={() => urlCheck.dismiss()}
+              alreadyKnownScopeLabel={
+                urlCheck.state.check?.alreadyKnown ? scopeLabel(urlCheck.state.job.persona) : undefined
+              }
+            />
+          </div>
+        )}
         <JobFeed
           jobs={jobs}
           filter={filter}
