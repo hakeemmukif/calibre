@@ -127,6 +127,26 @@ describe("GET /api/jobs", () => {
     expect((await res.json()).error.code).toBe("VALIDATION_ERROR");
   });
 
+  it("persona=pasted is accepted and scopes to pasted jobs (spec §11.3)", async () => {
+    const source = await insertSource(state.testDb);
+    const resume = await insertResume(state.testDb);
+    const pastedJob = await insertJob(state.testDb, source.id, {
+      dedupeKey: "dk-pasted",
+      url: "https://example.com/pasted",
+      // jobs.persona is TEXT with no DB-level CHECK — the enum widening to
+      // admit "pasted" is Task 4's schema.ts change, not landed yet.
+      persona: "pasted" as unknown as "remote" | "local",
+    });
+    await insertJobScore(state.testDb, pastedJob.id, resume.id);
+    await insertJob(state.testDb, source.id, { dedupeKey: "dk-remote-other", url: "https://example.com/other" });
+
+    const res = await GET(req("?persona=pasted"));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.items).toHaveLength(1);
+    expect(body.items[0].id).toBe(pastedJob.id);
+  });
+
   it("isNew=false and isNew=true are parsed as real booleans, not string truthiness", async () => {
     const source = await insertSource(state.testDb);
     const resume = await insertResume(state.testDb);
