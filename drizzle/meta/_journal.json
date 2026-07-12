@@ -43,6 +43,13 @@
       "when": 1783838057740,
       "tag": "0005_good_stellaris",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1783868644217,
+      "tag": "0006_abnormal_raider",
+      "breakpoints": true
     }
   ]
 }

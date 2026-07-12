@@ -65,9 +65,7 @@ describe("listJobsFeed — Pasted scope eligibility predicate skip (spec §2.12)
     const abroadPasted = await insertJob(state.testDb, source.id, {
       dedupeKey: "dk-abroad-pasted",
       url: "https://example.com/abroad-pasted",
-      // jobs.persona is TEXT with no DB-level CHECK — the enum widening to
-      // admit "pasted" is Task 4's schema.ts change, not landed yet.
-      persona: "pasted" as unknown as "remote" | "local",
+      persona: "pasted",
       eligibility: "abroad",
       eligibilityEvidence: "location: New York, NY",
     });

@@ -133,9 +133,7 @@ describe("GET /api/jobs", () => {
     const pastedJob = await insertJob(state.testDb, source.id, {
       dedupeKey: "dk-pasted",
       url: "https://example.com/pasted",
-      // jobs.persona is TEXT with no DB-level CHECK — the enum widening to
-      // admit "pasted" is Task 4's schema.ts change, not landed yet.
-      persona: "pasted" as unknown as "remote" | "local",
+      persona: "pasted",
     });
     await insertJobScore(state.testDb, pastedJob.id, resume.id);
     await insertJob(state.testDb, source.id, { dedupeKey: "dk-remote-other", url: "https://example.com/other" });

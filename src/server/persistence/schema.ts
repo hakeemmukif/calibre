@@ -65,7 +65,7 @@ type TailoredResumeDiffEntry = {
 export const sources = pgTable("sources", {
   id: text("id").primaryKey(), // natural key: 'greenhouse' | 'lever' | 'ashby' | 'jobstreet' | ...
   name: text("name").notNull(), // display label for Job.source.name (SourceRef) — B6 addition, no prior home
-  kind: text("kind", { enum: ["ats", "board"] }).notNull(),
+  kind: text("kind", { enum: ["ats", "board", "manual"] }).notNull(),
   persona: text("persona", { enum: ["remote", "local", "both"] }).notNull(),
   enabled: boolean("enabled").notNull(),
   config: jsonb("config").$type<Record<string, unknown>>().notNull(),
@@ -121,7 +121,7 @@ export const jobs = pgTable("jobs", {
   postedAt: timestamp("posted_at"),
   firstSeenAt: timestamp("first_seen_at").notNull().defaultNow(),
   lastSeenAt: timestamp("last_seen_at").notNull().defaultNow(),
-  persona: text("persona", { enum: ["remote", "local"] }).notNull(),
+  persona: text("persona", { enum: ["remote", "local", "pasted"] }).notNull(),
   // Spec 2026-07-12 §4: eligibility tier relative to the profile, stamped at
   // ingest (Layers A+B), refreshed by the scoring path (Layer C). Facts stay
   // in `raw` + job_scores.jd_facts — the tier is recomputable, pure, no LLM.
@@ -195,6 +195,29 @@ export const tailoredResumes = pgTable("tailored_resumes", {
   costUsd: numeric("cost_usd", { precision: 8, scale: 4, mode: "number" }), // null until the run completes
   createdAt: timestamp("created_at").notNull().defaultNow(),
   completedAt: timestamp("completed_at"), // B8: frozen `TailoredResume.completedAt` — set when analyze/rewrite/render finishes, distinct from `finalizedAt` (the later accept-subset action)
+});
+
+// Spec 2026-07-12-pasted-job-ingestion-design.md §10: async paste-a-URL
+// pipeline state. `dedupeKey` mirrors jobs.dedupeKey's normalization for
+// run.ts's admission short-circuit (best-effort, not a DB unique
+// constraint — §10 "concurrent duplicate pastes" accepts double-spend).
+// job_id nulls on delete: url_checks is a log of an action, not a foreign
+// owner of the job — deleting a pasted job must not cascade into its own
+// audit trail.
+export const urlChecks = pgTable("url_checks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  url: text("url").notNull(),
+  dedupeKey: text("dedupe_key").notNull(),
+  status: text("status", { enum: ["queued", "running", "completed", "failed"] }).notNull(),
+  stage: text("stage"),
+  jobId: uuid("job_id").references(() => jobs.id, { onDelete: "set null" }),
+  alreadyKnown: boolean("already_known").notNull(),
+  needsText: boolean("needs_text").notNull(),
+  error: jsonb("error").$type<{ code: string; message: string }>(),
+  costUsd: numeric("cost_usd", { precision: 8, scale: 4, mode: "number" }).notNull(),
+  raw: jsonb("raw").$type<unknown>().notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  finishedAt: timestamp("finished_at"),
 });
 
 export const applications = pgTable("applications", {

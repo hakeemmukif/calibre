@@ -58,10 +58,7 @@ function latestJobScores(db: Db) {
 // set, not the page") — same filters, no cursor/limit (those are page-only).
 function buildFilterConditions(q: Omit<JobsQuery, "cursor" | "limit">) {
   const conditions = [];
-  // jobs.persona is a TEXT column with no DB-level CHECK (schema.ts's
-  // "remote"|"local" enum is TS-only) — the cast lets the "pasted" scope
-  // query correctly ahead of Task 4's schema.ts enum widening.
-  if (q.persona) conditions.push(eq(jobs.persona, q.persona as "remote" | "local"));
+  if (q.persona) conditions.push(eq(jobs.persona, q.persona));
   if (q.eligibility && q.eligibility.length > 0) conditions.push(inArray(jobs.eligibility, q.eligibility));
   if (q.tier && q.tier.length > 0) {
     conditions.push(inArray(sql`(${jobScores.legitimacy}->>'tier')`, q.tier));
