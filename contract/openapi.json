@@ -266,6 +266,8 @@
                   "EXTRACTION_FAILED",
                   "UPSTREAM_LLM_ERROR",
                   "PAYLOAD_TOO_LARGE",
+                  "FETCH_BLOCKED",
+                  "NOT_A_JOB_POSTING",
                   "INTERNAL"
                 ],
                 "type": "string"
@@ -462,6 +464,82 @@
           },
           "tone": {
             "$ref": "#/components/schemas/Tone"
+          },
+          "webEvidence": {
+            "oneOf": [
+              {
+                "properties": {
+                  "companySignals": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "confidence": {
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "sightings": {
+                    "items": {
+                      "properties": {
+                        "postedDate": {
+                          "type": "string"
+                        },
+                        "source": {
+                          "type": "string"
+                        },
+                        "url": {
+                          "format": "uri",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "url",
+                        "source"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "status": {
+                    "enum": [
+                      "ok"
+                    ],
+                    "type": "string"
+                  },
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "sightings",
+                  "companySignals",
+                  "summary",
+                  "confidence",
+                  "status"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "reason": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "enum": [
+                      "failed"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "status",
+                  "reason"
+                ],
+                "type": "object"
+              }
+            ]
           }
         },
         "required": [
@@ -484,7 +562,8 @@
       "Persona": {
         "enum": [
           "remote",
-          "local"
+          "local",
+          "pasted"
         ],
         "type": "string"
       },
@@ -716,7 +795,8 @@
           "kind": {
             "enum": [
               "ats",
-              "board"
+              "board",
+              "manual"
             ],
             "type": "string"
           },
@@ -750,7 +830,8 @@
           "kind": {
             "enum": [
               "ats",
-              "board"
+              "board",
+              "manual"
             ],
             "type": "string"
           },
@@ -1736,6 +1817,44 @@
       }
     },
     "/api/jobs/{id}": {
+      "delete": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unknown job id"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Job is not persona 'pasted', or a tracked application exists"
+          }
+        },
+        "summary": "Delete a pasted job — persona 'pasted' only, blocked by a tracked application (spec §10, Task 14)"
+      },
       "get": {
         "parameters": [
           {

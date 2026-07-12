@@ -243,6 +243,21 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "delete",
+  path: "/api/jobs/{id}",
+  summary: "Delete a pasted job — persona 'pasted' only, blocked by a tracked application (spec §10, Task 14)",
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    204: { description: "Deleted" },
+    404: { description: "Unknown job id", content: { "application/json": { schema: ErrorEnvelope } } },
+    409: {
+      description: "Job is not persona 'pasted', or a tracked application exists",
+      content: { "application/json": { schema: ErrorEnvelope } },
+    },
+  },
+});
+
+registry.registerPath({
   method: "post",
   path: "/api/jobs/{id}/evaluate",
   summary: "On-demand re-score of a single job — F2 (Task 6)",
