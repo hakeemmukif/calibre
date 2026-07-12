@@ -3,26 +3,37 @@ import * as React from "react";
 import { Input } from "../../components/Input";
 import { Button } from "../../components/Button";
 import { Icon } from "../../components/Icon";
+import { Textarea } from "../../components/Textarea";
 
 export type UrlEvalStatus = "idle" | "evaluating" | "success" | "error";
 
 export interface UrlEvalBarProps {
-  onSubmit(url: string): void;
+  onSubmit(url: string, text?: string): void;
   status: UrlEvalStatus;
   stageText?: string;
   error?: string;
+  showPasteBox?: boolean;
 }
 
 // UrlEvalBar — the header omnibox front door for F2 (paste a URL to eval a
 // role). Composes Input (link icon) + Button "Check".
-export function UrlEvalBar({ onSubmit, status, stageText, error }: UrlEvalBarProps) {
+export function UrlEvalBar({ onSubmit, status, stageText, error, showPasteBox }: UrlEvalBarProps) {
   const [url, setUrl] = React.useState("");
+  const [text, setText] = React.useState("");
   const evaluating = status === "evaluating";
+  const pasteMode = Boolean(showPasteBox);
 
   function submit() {
     if (!url.trim() || evaluating) return;
+    if (pasteMode) {
+      if (!text.trim()) return;
+      onSubmit(url.trim(), text.trim());
+      return;
+    }
     onSubmit(url.trim());
   }
+
+  const submitDisabled = evaluating || !url.trim() || (pasteMode && !text.trim());
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6, width: "100%", maxWidth: 480 }}>
@@ -37,10 +48,20 @@ export function UrlEvalBar({ onSubmit, status, stageText, error }: UrlEvalBarPro
           onKeyDown={(e) => e.key === "Enter" && submit()}
           style={{ flex: 1 }}
         />
-        <Button variant="primary" onClick={submit} disabled={evaluating || !url.trim()}>
+        <Button variant="primary" onClick={submit} disabled={submitDisabled}>
           {evaluating ? "Checking…" : "Check"}
         </Button>
       </div>
+      {pasteMode && (
+        <Textarea
+          aria-label="Paste the job posting text"
+          label="Paste the job posting text"
+          placeholder="Paste the full job posting text here…"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          rows={6}
+        />
+      )}
       {status === "evaluating" && stageText && (
         <div style={{ display: "flex", alignItems: "center", gap: 5, font: "var(--type-caption)", color: "var(--text-muted)" }}>
           {stageText}

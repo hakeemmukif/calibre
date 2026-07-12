@@ -30,3 +30,34 @@ describe('UrlEvalBar idle/evaluating/success', () => {
     expect(screen.queryByText(/./, { selector: '[role="alert"]' })).not.toBeInTheDocument();
   });
 });
+
+describe('UrlEvalBar paste-box (needsText)', () => {
+  it('shows no textarea when showPasteBox is falsy/omitted', () => {
+    render(<UrlEvalBar status="error" error="Could not read that page." onSubmit={vi.fn()} />);
+    expect(screen.queryByRole('textbox', { name: /paste/i })).not.toBeInTheDocument();
+  });
+
+  it('reveals a textarea when showPasteBox is true, and re-submit sends {url, text}', () => {
+    const onSubmit = vi.fn();
+    render(
+      <UrlEvalBar
+        status="error"
+        error="Could not read that page — paste the posting text instead."
+        showPasteBox
+        onSubmit={onSubmit}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('Job posting URL'), { target: { value: 'https://example.com/job/1' } });
+    const textarea = screen.getByLabelText(/paste the job posting text/i);
+    fireEvent.change(textarea, { target: { value: 'Senior Engineer — Acme Corp — full JD text…' } });
+    fireEvent.click(screen.getByRole('button', { name: /check/i }));
+
+    expect(onSubmit).toHaveBeenCalledWith('https://example.com/job/1', 'Senior Engineer — Acme Corp — full JD text…');
+  });
+
+  it('re-submit button stays disabled until both url and pasted text are non-empty', () => {
+    render(<UrlEvalBar status="error" error="needs text" showPasteBox onSubmit={vi.fn()} />);
+    expect(screen.getByRole('button', { name: /check/i })).toBeDisabled();
+  });
+});
