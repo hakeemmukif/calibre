@@ -1132,6 +1132,111 @@
           "danger"
         ],
         "type": "string"
+      },
+      "UrlCheck": {
+        "properties": {
+          "alreadyKnown": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "error": {
+            "properties": {
+              "code": {
+                "enum": [
+                  "VALIDATION_ERROR",
+                  "NOT_FOUND",
+                  "CONFLICT",
+                  "RUN_NOT_READY",
+                  "PARSE_FAILED",
+                  "EXTRACTION_FAILED",
+                  "UPSTREAM_LLM_ERROR",
+                  "PAYLOAD_TOO_LARGE",
+                  "FETCH_BLOCKED",
+                  "NOT_A_JOB_POSTING",
+                  "INTERNAL"
+                ],
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "finishedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "jobId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "needsText": {
+            "type": "boolean"
+          },
+          "stage": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "url": {
+            "format": "uri",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "url",
+          "status",
+          "stage",
+          "jobId",
+          "alreadyKnown",
+          "needsText",
+          "error",
+          "createdAt",
+          "finishedAt"
+        ],
+        "type": "object"
+      },
+      "UrlCheckRequest": {
+        "properties": {
+          "text": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "url": {
+            "format": "uri",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "type": "object"
       }
     }
   },
@@ -1814,6 +1919,99 @@
           }
         },
         "summary": "Scored feed — filterable, cursored — F2 (B6)"
+      }
+    },
+    "/api/jobs/check": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UrlCheckRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UrlCheck"
+                }
+              }
+            },
+            "description": "Already-known job — completed short-circuit, zero spend"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UrlCheck"
+                }
+              }
+            },
+            "description": "Pipeline queued"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No active résumé to score against"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Invalid body/URL, or pasted text exceeds the 40k-character cap"
+          }
+        },
+        "summary": "Check a pasted job URL/text — F7 pasted-job ingestion"
+      }
+    },
+    "/api/jobs/check/{id}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UrlCheck"
+                }
+              }
+            },
+            "description": "The UrlCheck row"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unknown check id"
+          }
+        },
+        "summary": "URL-check status — poll — F7"
       }
     },
     "/api/jobs/{id}": {

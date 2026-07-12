@@ -47,6 +47,8 @@ import {
   ErrorEnvelope,
   SummaryStripStats,
   SseEvent,
+  UrlCheck,
+  UrlCheckRequest,
 } from "@/types";
 
 const entitySchemas: Record<string, z.ZodType> = {
@@ -73,6 +75,8 @@ const entitySchemas: Record<string, z.ZodType> = {
   ErrorEnvelope,
   SummaryStripStats,
   SseEvent,
+  UrlCheck,
+  UrlCheckRequest,
 };
 
 for (const [name, schema] of Object.entries(entitySchemas)) {
@@ -268,6 +272,42 @@ registry.registerPath({
     409: { description: "No active résumé to score against", content: { "application/json": { schema: ErrorEnvelope } } },
     422: { description: "No job description obtainable — nothing to extract facts from", content: { "application/json": { schema: ErrorEnvelope } } },
     500: { description: "Unexpected failure", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/jobs/check",
+  summary: "Check a pasted job URL/text — F7 pasted-job ingestion",
+  request: {
+    body: {
+      content: {
+        "application/json": { schema: UrlCheckRequest },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Already-known job — completed short-circuit, zero spend",
+      content: { "application/json": { schema: UrlCheck } },
+    },
+    202: { description: "Pipeline queued", content: { "application/json": { schema: UrlCheck } } },
+    409: { description: "No active résumé to score against", content: { "application/json": { schema: ErrorEnvelope } } },
+    422: {
+      description: "Invalid body/URL, or pasted text exceeds the 40k-character cap",
+      content: { "application/json": { schema: ErrorEnvelope } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/jobs/check/{id}",
+  summary: "URL-check status — poll — F7",
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: { description: "The UrlCheck row", content: { "application/json": { schema: UrlCheck } } },
+    404: { description: "Unknown check id", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
 
