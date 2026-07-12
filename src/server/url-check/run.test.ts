@@ -6,6 +6,7 @@ import { insertProfile, insertResume, insertSource, insertJob } from "@/server/p
 import { createJobsRepo } from "@/server/persistence/repos/jobs";
 import { createUrlChecksRepo, type UrlCheckRow } from "@/server/persistence/repos/urlChecks";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
+import { scoreJob } from "@/server/score";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
@@ -150,5 +151,134 @@ describe("startUrlCheck admission", () => {
 
     const finalRow = await waitForTerminal(db, check.id);
     expect(finalRow.status).toBe("failed"); // ManualSourceMissingError -> INTERNAL, confirms the pipeline actually ran
+  });
+});
+
+async function setUpForPipeline(db: TestDb) {
+  await insertResume(db, { isActive: true });
+  await insertProfile(db);
+  await insertSource(db, { id: "manual", kind: "manual", persona: "both", enabled: false, config: {} });
+}
+
+const jdExtractLlm = (data: Record<string, unknown>) => makeMockLlm({ "jd-extract": data });
+
+describe("runPipeline — needsText truth table", () => {
+  it("tier-1 fetch ok + gate ok -> completed, no tier-2 search call", async () => {
+    const db = await createTestDb();
+    state.testDb = db;
+    await setUpForPipeline(db);
+    const searchSpy = vi.fn();
+
+    const { check } = await startUrlCheck(
+      { url: "https://example.com/tier1-ok" },
+      {
+        llm: jdExtractLlm({ title: "Backend Engineer", company: "Acme", isJobPosting: true, mustHaves: [], niceToHaves: [], responsibilities: [], redFlags: [] }),
+        fetchPageText: async () => ({ ok: true, text: "Acme is hiring a Backend Engineer.", pageTitle: "Acme Careers" }),
+        searchForPosting: searchSpy,
+        fetchGhostWebEvidence: async () => ({ webEvidence: { status: "ok", sightings: [], companySignals: [], summary: "Looks fine.", confidence: 0.6 }, costUsd: 0 }),
+        scoreJob: async () => ({ costUsd: 0.02 }) as unknown as ReturnType<typeof scoreJob> extends Promise<infer T> ? T : never,
+      },
+    );
+
+    const finalRow = await waitForTerminal(db, check.id);
+    expect(finalRow.status).toBe("completed");
+    expect(finalRow.needsText).toBe(false);
+    expect(searchSpy).not.toHaveBeenCalled();
+  });
+
+  it("tier-1 gate throws -> escalates -> tier-2 found:false -> FETCH_BLOCKED, needsText:true", async () => {
+    const db = await createTestDb();
+    state.testDb = db;
+    await setUpForPipeline(db);
+
+    const { check } = await startUrlCheck(
+      { url: "https://example.com/tier1-throws" },
+      {
+        llm: makeMockLlm(() => {
+          throw new Error("authwall garbage");
+        }),
+        fetchPageText: async () => ({ ok: true, text: "log in to continue", pageTitle: undefined }),
+        searchForPosting: async () => ({ found: false, content: "", sourceNote: "", costUsd: 0.01 }),
+      },
+    );
+
+    const finalRow = await waitForTerminal(db, check.id);
+    expect(finalRow.status).toBe("failed");
+    expect(finalRow.error).toEqual({ code: "FETCH_BLOCKED", message: expect.any(String) });
+    expect(finalRow.needsText).toBe(true);
+  });
+
+  it("tier-1 fetch blocked -> tier-2 found:true, isJobPosting:false -> NOT_A_JOB_POSTING, needsText:false", async () => {
+    const db = await createTestDb();
+    state.testDb = db;
+    await setUpForPipeline(db);
+
+    const { check } = await startUrlCheck(
+      { url: "https://example.com/not-a-posting" },
+      {
+        llm: jdExtractLlm({ title: "n/a", isJobPosting: false, mustHaves: [], niceToHaves: [], responsibilities: [], redFlags: [] }),
+        fetchPageText: async () => ({ ok: false, reason: "blocked" }),
+        searchForPosting: async () => ({ found: true, content: "This is a marketing landing page.", sourceNote: "found via search", costUsd: 0.01 }),
+      },
+    );
+
+    const finalRow = await waitForTerminal(db, check.id);
+    expect(finalRow.status).toBe("failed");
+    expect(finalRow.error?.code).toBe("NOT_A_JOB_POSTING");
+    expect(finalRow.needsText).toBe(false);
+  });
+
+  it("tier-2 found:true, gate incomplete (no company) -> EXTRACTION_FAILED, needsText:true", async () => {
+    const db = await createTestDb();
+    state.testDb = db;
+    await setUpForPipeline(db);
+
+    const { check } = await startUrlCheck(
+      { url: "https://example.com/incomplete" },
+      {
+        llm: jdExtractLlm({ title: "Backend Engineer", isJobPosting: true, mustHaves: [], niceToHaves: [], responsibilities: [], redFlags: [] }), // no company
+        fetchPageText: async () => ({ ok: false, reason: "empty" }),
+        searchForPosting: async () => ({ found: true, content: "Some thin posting text.", sourceNote: "found via search", costUsd: 0.01 }),
+      },
+    );
+
+    const finalRow = await waitForTerminal(db, check.id);
+    expect(finalRow.status).toBe("failed");
+    expect(finalRow.error?.code).toBe("EXTRACTION_FAILED");
+    expect(finalRow.needsText).toBe(true);
+  });
+
+  it("paste mode: isJobPosting:false -> NOT_A_JOB_POSTING", async () => {
+    const db = await createTestDb();
+    state.testDb = db;
+    await setUpForPipeline(db);
+
+    const { check } = await startUrlCheck(
+      { url: "https://example.com/pasted-not-a-posting", text: "Just some random article text." },
+      { llm: jdExtractLlm({ title: "n/a", isJobPosting: false, mustHaves: [], niceToHaves: [], responsibilities: [], redFlags: [] }) },
+    );
+
+    const finalRow = await waitForTerminal(db, check.id);
+    expect(finalRow.error?.code).toBe("NOT_A_JOB_POSTING");
+    expect(finalRow.needsText).toBe(false);
+  });
+
+  it("paste mode: gate throws -> EXTRACTION_FAILED, needsText:true (fuller paste may fix it)", async () => {
+    const db = await createTestDb();
+    state.testDb = db;
+    await setUpForPipeline(db);
+
+    const { check } = await startUrlCheck(
+      { url: "https://example.com/pasted-throws", text: "garbled text" },
+      {
+        llm: makeMockLlm(() => {
+          throw new Error("model didn't answer");
+        }),
+      },
+    );
+
+    const finalRow = await waitForTerminal(db, check.id);
+    expect(finalRow.error?.code).toBe("EXTRACTION_FAILED");
+    expect(finalRow.needsText).toBe(true);
   });
 });
