@@ -74,6 +74,18 @@ describe("fetchPageText", () => {
     expect(cancel).toHaveBeenCalledTimes(1);
   });
 
+  it("returns error after exhausting every redirect hop when every response redirects", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 302, headers: { location: "https://example.com/next" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await fetchPageText("https://example.com/job");
+
+    expect(result).toEqual({ ok: false, reason: "error" });
+    expect(fetchMock).toHaveBeenCalledTimes(4); // MAX_REDIRECTS (3) + 1
+  });
+
   it("rejects a non-html/plain content-type as blocked", async () => {
     vi.stubGlobal(
       "fetch",
