@@ -4,6 +4,7 @@ import { Card } from "../../components/Card";
 import { ScoreBadge } from "../../components/ScoreBadge";
 import { IconButton } from "../../components/IconButton";
 import { NewBadge } from "./NewBadge";
+import { EligibilityTag } from "../../lib/eligibility";
 import { LegitimacyTag } from "../../lib/legitimacy";
 import type { Job } from "../../../types";
 
@@ -68,6 +69,7 @@ export function JobRow({ job, onOpen, onSave, onDismiss }: JobRowProps) {
             {job.role}
           </span>
           <LegitimacyTag legitimacy={job.legitimacy} />
+          {job.eligibility.tier !== "local" && <EligibilityTag eligibility={job.eligibility} />}
           {job.isNew && <NewBadge />}
         </div>
         <div style={{ font: "var(--type-caption)", color: "var(--text-muted)", marginTop: 3 }}>

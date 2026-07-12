@@ -34,8 +34,8 @@ function matchesFilter(job: Job, filter: FeedFilter): boolean {
       return job.legitimacy.tier === "verified";
     case "suspicious":
       return job.legitimacy.tier === "suspicious";
-    case "remote":
-      return job.persona === "remote";
+    case "anywhere":
+      return job.eligibility.tier === "anywhere";
     case "fit4":
       return job.score >= 4;
   }

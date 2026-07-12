@@ -9,8 +9,8 @@ const meta: Meta<typeof FilterChips> = {
 export default meta;
 type Story = StoryObj<typeof FilterChips>;
 
-const fullCounts: Record<FeedFilter, number> = { all: 6, new: 2, verified: 2, suspicious: 1, remote: 3, fit4: 3 };
-const emptyCounts: Record<FeedFilter, number> = { all: 6, new: 0, verified: 2, suspicious: 0, remote: 3, fit4: 3 };
+const fullCounts: Record<FeedFilter, number> = { all: 6, new: 2, verified: 2, suspicious: 1, anywhere: 1, fit4: 3 };
+const emptyCounts: Record<FeedFilter, number> = { all: 6, new: 0, verified: 2, suspicious: 0, anywhere: 1, fit4: 3 };
 
 function Controlled({ counts }: { counts: Record<FeedFilter, number> }) {
   const [active, setActive] = React.useState<FeedFilter>("all");

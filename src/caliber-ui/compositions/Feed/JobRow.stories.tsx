@@ -37,6 +37,20 @@ export const IsNew: Story = {
   args: { job: jobs.find((j) => j.isNew)!, onOpen: noop, onSave: noop, onDismiss: noop },
 };
 
+// Eligibility pill variants (spec 2026-07-12 §8): best tier, warn-unverified,
+// and the suppressed local case (no pill on MY rows).
+export const WorkAnywhere: Story = {
+  args: { job: jobs.find((j) => j.eligibility.tier === "anywhere")!, onOpen: noop, onSave: noop, onDismiss: noop },
+};
+
+export const EligibilityUnverified: Story = {
+  args: { job: jobs.find((j) => j.eligibility.tier === "unknown")!, onOpen: noop, onSave: noop, onDismiss: noop },
+};
+
+export const LocalNoPill: Story = {
+  args: { job: jobs.find((j) => j.eligibility.tier === "local")!, onOpen: noop, onSave: noop, onDismiss: noop },
+};
+
 // "Saved" and "dismissing" aren't part of JobRow's props (see component-inventory
 // §1 — the composition only takes job/onOpen/onSave/onDismiss); these stories
 // layer the visual state on top via a decorator, without adding props to JobRow.

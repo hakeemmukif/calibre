@@ -51,3 +51,28 @@ describe('JobFeed error+retry state', () => {
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("JobFeed 'Work anywhere' chip (spec §8, §11.8 chip swap)", () => {
+  it("filters to eligibility.tier === 'anywhere' rows only", async () => {
+    const { jobs } = await import('../../fixtures');
+    const anywhereCount = jobs.filter((j) => j.eligibility.tier === 'anywhere').length;
+    const anywhereJob = jobs.find((j) => j.eligibility.tier === 'anywhere');
+    const otherJob = jobs.find((j) => j.eligibility.tier !== 'anywhere');
+    if (!anywhereJob || !otherJob) throw new Error('fixtures must cover anywhere + non-anywhere tiers');
+
+    render(
+      <JobFeed
+        jobs={jobs}
+        filter="anywhere"
+        onFilterChange={vi.fn()}
+        stats={zeroStats}
+        loading={false}
+        onRowAction={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(`Work anywhere · ${anywhereCount}`)).toBeInTheDocument();
+    expect(screen.getByText(anywhereJob.role)).toBeInTheDocument();
+    expect(screen.queryByText(otherJob.role)).not.toBeInTheDocument();
+  });
+});

@@ -17,6 +17,9 @@ export function SummaryStrip({ stats }: SummaryStripProps) {
     { label: "Scanned today", value: stats.scanned },
     { label: "Worth your time", value: stats.worth },
     { label: "Flagged ghost/scam", value: stats.flagged, tone: "var(--accent-ink)" },
+    // The eligibility predicate's trust signal (spec §8): what vanished, not
+    // silently — 0 under relocation "open".
+    { label: "Not eligible · hidden", value: stats.excluded },
     { label: "Since last scan", value: stats.sinceLast },
   ];
   return (

@@ -246,7 +246,7 @@ Chosen from the 8-treatment exploration (artifact: `claude.ai/code/artifact/b691
 
 **Summary strip:** Scanned today · Worth your time · **Flagged ghost/scam** (rendered in `--accent-ink` to draw the eye) · Since last scan. Tabular numerals.
 
-**Filter chips (real, not decorative):** All · New · Verified · Suspicious · Remote · Fit ≥ 4. Each actually filters the feed.
+**Filter chips (real, not decorative):** All · New · Verified · Suspicious · Work anywhere · Fit ≥ 4. Each actually filters the feed. *(Chip updated 2026-07-12: eligibility-based "Work anywhere" — `Job.eligibility.tier === 'anywhere'` — replaces the persona-based "Remote" chip, which was tautological inside the remote lens; see 2026-07-12-remote-local-eligibility-design.md §2.7.)*
 
 **Feed row (the composition):** `Card` (hover lift) → [ `ScoreBadge` fit ring, left ] · [ role title + `Tag` legitimacy pill + `NewBadge` · company/location/comp sub · why-you-fit snippet ] · [ `Open` / `Save` / `Skip`·`Dismiss` actions ].
 
