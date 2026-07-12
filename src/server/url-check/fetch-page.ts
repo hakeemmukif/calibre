@@ -58,8 +58,11 @@ export async function fetchPageText(url: string): Promise<FetchPageResult> {
       return { ok: false, reason: "error" };
     }
 
-    const raw = await res.text();
+    const body = await readBodyCapped(res, controller);
     clearTimeout(timer);
+    if (!body.ok) return { ok: false, reason: "oversize" };
+
+    const raw = new TextDecoder().decode(body.bytes);
     const text = htmlToText(raw);
     if (text.length < MIN_TEXT_CHARS) return { ok: false, reason: text.length === 0 ? "empty" : "blocked" };
     if (text.length > MAX_TEXT_CHARS) return { ok: false, reason: "oversize" };
@@ -67,4 +70,35 @@ export async function fetchPageText(url: string): Promise<FetchPageResult> {
   }
 
   return { ok: false, reason: "error" };
+}
+
+async function readBodyCapped(
+  res: Response,
+  controller: AbortController,
+): Promise<{ ok: true; bytes: Uint8Array } | { ok: false }> {
+  const reader = res.body?.getReader();
+  if (!reader) {
+    const buf = new Uint8Array(await res.arrayBuffer());
+    return buf.byteLength > MAX_BYTES ? { ok: false } : { ok: true, bytes: buf };
+  }
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_BYTES) {
+      controller.abort();
+      await reader.cancel().catch(() => {});
+      return { ok: false };
+    }
+    chunks.push(value);
+  }
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return { ok: true, bytes: merged };
 }

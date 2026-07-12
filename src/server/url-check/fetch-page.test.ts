@@ -48,4 +48,29 @@ describe("fetchPageText", () => {
     expect(assertPublicHttpUrl).toHaveBeenNthCalledWith(2, new URL("https://example.com/hop2"));
     expect(assertPublicHttpUrl).toHaveBeenNthCalledWith(3, new URL("https://example.com/hop3"));
   });
+
+  it("aborts the stream and reports oversize once the body exceeds MAX_BYTES", async () => {
+    const chunk = new Uint8Array(1_500_000).fill(97);
+    let reads = 0;
+    const cancel = vi.fn().mockResolvedValue(undefined);
+    const reader = {
+      read: vi.fn().mockImplementation(async () => {
+        reads += 1;
+        if (reads > 2) return { done: true, value: undefined };
+        return { done: false, value: chunk };
+      }),
+      cancel,
+    };
+    const res = {
+      status: 200,
+      headers: new Headers({ "content-type": "text/html" }),
+      body: { getReader: () => reader },
+    } as unknown as Response;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(res));
+
+    const result = await fetchPageText("https://example.com/job");
+
+    expect(result).toEqual({ ok: false, reason: "oversize" });
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
 });
