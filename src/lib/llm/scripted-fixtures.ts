@@ -27,6 +27,21 @@ export const JD_FACTS = {
   redFlags: [],
 };
 
+export const URL_SEARCH_RESULT = {
+  found: false,
+  content: "",
+  sourceNote: "No independent corroboration found for this posting.",
+};
+
+export const GHOST_WEB_EVIDENCE = {
+  sightings: [
+    { url: "https://boards.greenhouse.io/acme/jobs/999001", source: "Greenhouse", postedDate: "2026-06-01" },
+  ],
+  companySignals: ["Careers page lists the role."],
+  summary: "Seen once on the company's Greenhouse board within the last two months; nothing else to report.",
+  confidence: 0.6,
+};
+
 export const MATCH_SCORE = {
   score: 4.2,
   verdict: "Apply" as const,
@@ -71,6 +86,8 @@ export const QUESTION_ANSWER = {
 export const scriptedFixtures: Partial<Record<TaskName, unknown>> = {
   "resume-extract": RESUME_STORE,
   "jd-extract": JD_FACTS,
+  "url-check-search": URL_SEARCH_RESULT,
+  "ghost-web": GHOST_WEB_EVIDENCE,
   "match-score": MATCH_SCORE,
   "question-extract": QUESTION_EXTRACT,
   "question-answer": QUESTION_ANSWER,
