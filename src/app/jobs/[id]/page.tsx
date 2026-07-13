@@ -9,9 +9,11 @@
 import * as React from "react";
 import { useParams, useRouter } from "next/navigation";
 import { JobDetail } from "@/caliber-ui/compositions/Detail/JobDetail";
+import { ReScoringBanner } from "@/caliber-ui/compositions/Detail/ReScoringBanner";
 import { Button } from "@/caliber-ui/components/Button";
 import { Icon } from "@/caliber-ui/components/Icon";
-import { evaluateJob, getJob } from "@/features/feed/client";
+import { getJob } from "@/features/feed/client";
+import { useUrlChecks } from "@/features/url-check/checksStore";
 import { listApplications, markApplied } from "@/features/applied/client";
 import type { Application, Job } from "@/types";
 
@@ -29,7 +31,18 @@ export default function JobDetailPage() {
   const [job, setJob] = React.useState<Job | null>(null);
   const [applied, setApplied] = React.useState<Application | undefined>();
   const [error, setError] = React.useState<string | undefined>();
-  const [evaluateStatus, setEvaluateStatus] = React.useState<"idle" | "evaluating" | "error">("idle");
+  const checks = useUrlChecks();
+  const myRun = checks.runs.find((r) => r.origin === "reevaluate" && r.jobId === id && r.phase !== "failed");
+  const otherActive = checks.active.filter((r) => r.jobId !== id).length;
+  const evaluateStatus: "idle" | "evaluating" | "error" =
+    myRun && myRun.phase !== "done" ? "evaluating"
+    : checks.runs.some((r) => r.origin === "reevaluate" && r.jobId === id && r.phase === "failed") ? "error"
+    : "idle";
+
+  // When our re-score completes, adopt the fresh job the store fetched.
+  React.useEffect(() => {
+    if (myRun?.phase === "done" && myRun.job && myRun.job !== job) setJob(myRun.job);
+  }, [myRun?.phase, myRun?.job, job]);
 
   const load = React.useCallback(async () => {
     setError(undefined);
@@ -47,18 +60,6 @@ export default function JobDetailPage() {
   React.useEffect(() => {
     void load();
   }, [load]);
-
-  async function handleEvaluate() {
-    if (!job) return;
-    setEvaluateStatus("evaluating");
-    try {
-      const freshJob = await evaluateJob(job.id);
-      setJob(freshJob);
-      setEvaluateStatus("idle");
-    } catch {
-      setEvaluateStatus("error");
-    }
-  }
 
   if (error) {
     return (
@@ -91,13 +92,16 @@ export default function JobDetailPage() {
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg-app)", padding: 24 }}>
       <div style={{ maxWidth: "var(--content-max, 900px)", margin: "0 auto" }}>
+        {myRun && (myRun.phase === "fetching" || myRun.phase === "scoring" || myRun.phase === "done") && (
+          <ReScoringBanner phase={myRun.phase} otherActive={otherActive} />
+        )}
         <JobDetail
           job={job}
           applied={applied}
           onApply={() => openApplyUrl(job.applyUrl)}
           onTailor={() => router.push(`/jobs/${job.id}/tailor`)}
           onAnswerQuestions={() => router.push(`/jobs/${job.id}/questions`)}
-          onEvaluate={() => void handleEvaluate()}
+          onEvaluate={() => checks.submitEvaluate(job.id)}
           evaluateStatus={evaluateStatus}
           onMarkApplied={async () => {
             const app = await markApplied({ jobId: job.id });
