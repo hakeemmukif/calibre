@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { JobJoinScore } from "@/server/persistence/repos/jobs";
 import { assembleJob } from "./assemble";
 
-function baseJoined(overrides: Partial<JobJoinScore["job"]> = {}): JobJoinScore {
+function baseJoined(
+  overrides: Partial<JobJoinScore["job"]> = {},
+  scoreOverrides: Partial<JobJoinScore["score"]> = {},
+): JobJoinScore {
   const job: JobJoinScore["job"] = {
     id: "job-1",
     dedupeKey: "dk-1",
@@ -47,6 +50,7 @@ function baseJoined(overrides: Partial<JobJoinScore["job"]> = {}): JobJoinScore 
     costUsd: 0.01,
     policyVersion: "v1",
     createdAt: new Date("2026-07-01T00:00:00.000Z"),
+    ...scoreOverrides,
   };
 
   const source: JobJoinScore["source"] = {
@@ -68,7 +72,7 @@ describe("assembleJob", () => {
     expect(job.id).toBe("job-1");
     expect(job.role).toBe("Backend Engineer");
     expect(job.meta).toBe("Remote · $120k-$150k");
-    expect(job.tags).toEqual([{ tone: "good", label: "Looks legit" }]);
+    expect(job.tags.find((t) => t.label === "Looks legit")?.tone).toBe("good");
     expect(job.legitimacy).toEqual({ tier: "clear", tone: "good", summary: "Established company.", confidence: undefined });
     expect(job.source).toEqual({ id: "greenhouse", name: "Greenhouse", kind: "ats", persona: "remote" });
   });
@@ -93,7 +97,7 @@ describe("assembleJob", () => {
     joined.score.legitimacy = { tier: "ghost", tone: "ghost", summary: "Posting is stale.", signals: [] };
     const job = assembleJob(joined);
     expect(job.ghost).toBe(true);
-    expect(job.tags).toEqual([{ tone: "ghost", label: "Likely stale" }]);
+    expect(job.tags.find((t) => t.label === "Likely stale")?.tone).toBe("ghost");
   });
 
   it("emits eligibility from the job row — tags carry the legitimacy tag only (spec §8)", () => {
@@ -105,7 +109,7 @@ describe("assembleJob", () => {
       tone: "verified",
       summary: "employer prior: hires anywhere",
     });
-    expect(anywhere.tags).toEqual([{ tone: "good", label: "Looks legit" }]);
+    expect(anywhere.tags.find((t) => t.label === "Looks legit")?.tone).toBe("good");
 
     const local = assembleJob(baseJoined({ eligibility: "local", eligibilityEvidence: "MY board source" }));
     expect(local.eligibility.tier).toBe("local");
@@ -140,5 +144,35 @@ describe("assembleJob", () => {
     // application-level shape guarantee.
     (joined.score as unknown as { legitimacy: unknown }).legitimacy = null;
     expect(() => assembleJob(joined)).toThrow(/legitimacy/i);
+  });
+
+  it("appends a neutral schedule pill for a known non-apac band, with the verbatim tooltip; suppresses apac", () => {
+    const a = assembleJob(baseJoined({ tzBand: "americas" }, { jdFacts: { tzRequirement: "4h overlap with PST" } }));
+    const pill = a.tags.find((t) => t.label === "US hours");
+    expect(pill?.tone).toBe("neutral");
+    expect(pill?.title).toBe("4h overlap with PST");
+
+    const b = assembleJob(baseJoined({ tzBand: "apac" }));
+    expect(b.tags.find((t) => t.label === "APAC hours")).toBeUndefined();
+  });
+
+  it("appends a structure pill only when stated", () => {
+    const a = assembleJob(baseJoined({ hiringStructure: "contractor" }));
+    expect(a.tags.find((t) => t.label === "Contractor")?.tone).toBe("neutral");
+
+    const b = assembleJob(baseJoined({ hiringStructure: null }));
+    expect(b.tags.some((t) => ["Contractor", "EOR", "Local entity"].includes(t.label))).toBe(false);
+  });
+
+  it("appends a workCalendar gap entry only when stated", () => {
+    const a = assembleJob(baseJoined({}, { jdFacts: { workCalendar: "Mon-Fri, core hours 9am-5pm ET" } }));
+    expect(a.gaps.find((g) => g.k === "Work calendar")).toEqual({
+      tone: "warn",
+      k: "Work calendar",
+      v: "Mon-Fri, core hours 9am-5pm ET",
+    });
+
+    const b = assembleJob(baseJoined());
+    expect(b.gaps.some((g) => g.k === "Work calendar")).toBe(false);
   });
 });

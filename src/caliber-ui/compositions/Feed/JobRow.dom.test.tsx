@@ -33,3 +33,17 @@ describe("JobRow eligibility pill (spec §8)", () => {
     expect(screen.queryByText("Malaysia")).not.toBeInTheDocument();
   });
 });
+
+describe("JobRow neutral schedule/structure pills (remote-fit spec §11, D2)", () => {
+  it("renders a neutral 'US hours' tag when the assembled job carries one", () => {
+    const job = { ...anywhereJob, tags: [...anywhereJob.tags, { tone: "neutral" as const, label: "US hours" }] };
+    render(<JobRow job={job} onOpen={noop} onSave={noop} onDismiss={noop} />);
+    expect(screen.getByText("US hours")).toBeInTheDocument();
+  });
+
+  it("renders no schedule pill when tzBand is null or apac (no neutral tag on the job)", () => {
+    render(<JobRow job={anywhereJob} onOpen={noop} onSave={noop} onDismiss={noop} />);
+    expect(screen.queryByText("US hours")).not.toBeInTheDocument();
+    expect(screen.queryByText("EU hours")).not.toBeInTheDocument();
+  });
+});

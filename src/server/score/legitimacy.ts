@@ -13,7 +13,11 @@
 import type { GhostWebEvidence, LegitimacyTier, Tone, WebEvidence } from "@/types";
 import type { LivenessResult } from "./liveness";
 
-const TIER_TONE: Record<LegitimacyTier, Tone> = {
+// `neutral` is reserved for the schedule/structure pills (features/feed/
+// assemble.ts) — legitimacy tones are always semantic, never neutral, so the
+// jobs.legitimacy jsonb column (schema.ts LegitimacyShape) keeps its narrower
+// 5-tone literal; excluded here rather than widened to match.
+const TIER_TONE: Record<LegitimacyTier, Exclude<Tone, "neutral">> = {
   verified: "verified",
   clear: "good",
   suspicious: "warn",
@@ -21,7 +25,7 @@ const TIER_TONE: Record<LegitimacyTier, Tone> = {
   scam: "danger",
 };
 
-export function legitimacyTone(tier: LegitimacyTier): Tone {
+export function legitimacyTone(tier: LegitimacyTier): Exclude<Tone, "neutral"> {
   return TIER_TONE[tier];
 }
 

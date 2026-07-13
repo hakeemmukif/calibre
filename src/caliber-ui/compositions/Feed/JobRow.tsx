@@ -3,6 +3,7 @@ import * as React from "react";
 import { Card } from "../../components/Card";
 import { ScoreBadge } from "../../components/ScoreBadge";
 import { IconButton } from "../../components/IconButton";
+import { Tag } from "../../components/Tag";
 import { NewBadge } from "./NewBadge";
 import { EligibilityTag } from "../../lib/eligibility";
 import { LegitimacyTag } from "../../lib/legitimacy";
@@ -70,6 +71,11 @@ export function JobRow({ job, onOpen, onSave, onDismiss }: JobRowProps) {
           </span>
           <LegitimacyTag legitimacy={job.legitimacy} />
           <EligibilityTag eligibility={job.eligibility} />
+          {job.tags
+            .filter((t) => t.tone === "neutral")
+            .map((t) => (
+              <Tag key={t.label} tone={t.tone} title={t.title}>{t.label}</Tag>
+            ))}
           {job.isNew && <NewBadge />}
         </div>
         <div style={{ font: "var(--type-caption)", color: "var(--text-muted)", marginTop: 3 }}>

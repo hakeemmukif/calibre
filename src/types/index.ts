@@ -13,7 +13,7 @@ export type ScanPersona = z.infer<typeof ScanPersona>;
 export const LegitimacyTier = z.enum(["verified", "clear", "suspicious", "ghost", "scam"]); // §11.8
 export type LegitimacyTier = z.infer<typeof LegitimacyTier>;
 
-export const Tone = z.enum(["verified", "good", "warn", "ghost", "danger"]);
+export const Tone = z.enum(["verified", "good", "warn", "ghost", "danger", "neutral"]);
 export type Tone = z.infer<typeof Tone>;
 
 export const GhostWebEvidence = z.object({
@@ -114,7 +114,7 @@ export const Job = z.object({ // §5 frozen + §11.8 extensions
   meta: z.string(),
   verdict: z.string(),
   why: z.string(),
-  tags: z.array(z.object({ tone: Tone, label: z.string() })),
+  tags: z.array(z.object({ tone: Tone, label: z.string(), title: z.string().optional() })),
   breakdown: z.array(
     z.object({
       label: z.string(),

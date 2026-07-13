@@ -408,6 +408,9 @@
                 "label": {
                   "type": "string"
                 },
+                "title": {
+                  "type": "string"
+                },
                 "tone": {
                   "$ref": "#/components/schemas/Tone"
                 }
@@ -1147,7 +1150,8 @@
           "good",
           "warn",
           "ghost",
-          "danger"
+          "danger",
+          "neutral"
         ],
         "type": "string"
       },

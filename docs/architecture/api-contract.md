@@ -39,7 +39,7 @@ Search and tailor share one **run pattern**: `POST` returns `202` with the run e
 export const Persona = z.enum(['remote', 'local', 'pasted']);   // 'pasted' — 2026-07-12 pasted-job-ingestion spec §2.5
 export const ScanPersona = z.enum(['remote', 'local']);          // scan-only boundaries (POST /api/search, sourcesRepo, searchRunsRepo) — widening Persona alone does not propagate
 export const LegitimacyTier = z.enum(['verified','clear','suspicious','ghost','scam']);   // §11.8
-export const Tone = z.enum(['verified','good','warn','ghost','danger']);
+export const Tone = z.enum(['verified','good','warn','ghost','danger','neutral']);
 
 // Ghost posting-history web-search evidence (pasted jobs only, §8 of the
 // 2026-07-12 pasted-job-ingestion spec). Never enters the scoring prompt —
@@ -97,7 +97,7 @@ export const Job = z.object({                        // §5 frozen + §11.8 exte
   id: z.string(), score: z.number().min(0).max(5), ghost: z.boolean().optional(),
   role: z.string(), company: z.string(), meta: z.string(),
   verdict: z.string(), why: z.string(),
-  tags: z.array(z.object({ tone: Tone, label: z.string() })),
+  tags: z.array(z.object({ tone: Tone, label: z.string(), title: z.string().optional() })),
   breakdown: z.array(z.object({ label: z.string(), value: z.number(),
     display: z.string().optional(), tone: Tone.optional() })),
   fit: z.array(z.object({ k: z.string(), v: z.string() })),
