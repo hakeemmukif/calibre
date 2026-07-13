@@ -2,6 +2,7 @@
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { SidebarNav, Avatar, type NavItem } from "@/caliber-ui/components";
+import { CheckDock } from "@/caliber-ui/compositions/Shell/CheckDock";
 
 // Full design-canonical sidebar — prototype parity (labels + icons + grouping).
 // Only the ids in ENABLED navigate; the rest stay here on purpose so the design
@@ -102,6 +103,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         footer={<ProfileChip />}
       />
       <main style={{ flex: 1, overflow: "auto", height: "100vh" }}>{children}</main>
+      <CheckDock />
     </div>
   );
 }
