@@ -32,12 +32,13 @@ export default function JobDetailPage() {
   const [applied, setApplied] = React.useState<Application | undefined>();
   const [error, setError] = React.useState<string | undefined>();
   const checks = useUrlChecks();
-  const myRun = checks.runs.find((r) => r.origin === "reevaluate" && r.jobId === id && r.phase !== "failed");
+  // Newest re-evaluate run for this job (runs are newest-first) — INCLUDING a
+  // failed one, so a newer success supersedes an older failure instead of the
+  // error caption sticking forever.
+  const myRun = checks.runs.find((r) => r.origin === "reevaluate" && r.jobId === id);
   const otherActive = checks.active.filter((r) => r.jobId !== id).length;
   const evaluateStatus: "idle" | "evaluating" | "error" =
-    myRun && myRun.phase !== "done" ? "evaluating"
-    : checks.runs.some((r) => r.origin === "reevaluate" && r.jobId === id && r.phase === "failed") ? "error"
-    : "idle";
+    !myRun || myRun.phase === "done" ? "idle" : myRun.phase === "failed" ? "error" : "evaluating";
 
   // When our re-score completes, adopt the fresh job the store fetched.
   React.useEffect(() => {
