@@ -2,8 +2,10 @@
 // with the 4 src/types-wins reconciliations from .superpowers/sdd/task-B1-brief.md applied
 // (search_runs.status / tailored_resumes.status+finalizedAt / tailored_resumes.diff /
 // application_answers shape+resumeId). Postgres everywhere — see db.ts / test-db.ts.
+import { sql } from "drizzle-orm";
 import {
   boolean,
+  index,
   integer,
   jsonb,
   numeric,
@@ -209,21 +211,31 @@ export const tailoredResumes = pgTable("tailored_resumes", {
 // job_id nulls on delete: url_checks is a log of an action, not a foreign
 // owner of the job — deleting a pasted job must not cascade into its own
 // audit trail.
-export const urlChecks = pgTable("url_checks", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  url: text("url").notNull(),
-  dedupeKey: text("dedupe_key").notNull(),
-  status: text("status", { enum: ["queued", "running", "completed", "failed"] }).notNull(),
-  stage: text("stage"),
-  jobId: uuid("job_id").references(() => jobs.id, { onDelete: "set null" }),
-  alreadyKnown: boolean("already_known").notNull(),
-  needsText: boolean("needs_text").notNull(),
-  error: jsonb("error").$type<{ code: string; message: string }>(),
-  costUsd: numeric("cost_usd", { precision: 8, scale: 4, mode: "number" }).notNull(),
-  raw: jsonb("raw").$type<unknown>().notNull(),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  finishedAt: timestamp("finished_at"),
-});
+export const urlChecks = pgTable(
+  "url_checks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    url: text("url").notNull(),
+    dedupeKey: text("dedupe_key").notNull(),
+    status: text("status", { enum: ["queued", "running", "completed", "failed"] }).notNull(),
+    stage: text("stage"),
+    jobId: uuid("job_id").references(() => jobs.id, { onDelete: "set null" }),
+    alreadyKnown: boolean("already_known").notNull(),
+    needsText: boolean("needs_text").notNull(),
+    error: jsonb("error").$type<{ code: string; message: string }>(),
+    costUsd: numeric("cost_usd", { precision: 8, scale: 4, mode: "number" }).notNull(),
+    raw: jsonb("raw").$type<unknown>().notNull(),
+    // Governs orphan recovery only (max 2 attempts) — never in-run retries.
+    attempts: integer("attempts").notNull().default(0),
+    // Set at claim to now()+8min; the server lease owns row liveness (spec §4.7).
+    leaseExpiresAt: timestamp("lease_expires_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    finishedAt: timestamp("finished_at"),
+  },
+  (t) => ({
+    queuedIdx: index("url_checks_queued_idx").on(t.status, t.createdAt).where(sql`${t.status} = 'queued'`),
+  }),
+);
 
 export const applications = pgTable("applications", {
   id: uuid("id").primaryKey().defaultRandom(),

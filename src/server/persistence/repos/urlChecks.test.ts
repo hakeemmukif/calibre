@@ -107,3 +107,30 @@ describe("urlChecksRepo", () => {
     expect((await repo.getById(alreadyFailed.id))?.status).toBe("failed");
   });
 });
+
+function queuedRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: crypto.randomUUID(),
+    url: "https://example.com/job",
+    dedupeKey: "example.com/job",
+    status: "queued" as const,
+    stage: null,
+    jobId: null,
+    alreadyKnown: false,
+    needsText: false,
+    error: null,
+    costUsd: 0,
+    raw: { text: null },
+    ...overrides,
+  };
+}
+
+describe("url_checks schema", () => {
+  it("defaults attempts to 0 and leaseExpiresAt to null on insert", async () => {
+    const db = await createTestDb();
+    const repo = createUrlChecksRepo(db);
+    const row = await repo.insert(queuedRow());
+    expect(row.attempts).toBe(0);
+    expect(row.leaseExpiresAt).toBeNull();
+  });
+});
