@@ -42,7 +42,7 @@ export async function scoreJob(args: {
   // bot-walled URL into a false "expired" liveness read.
   precomputedJdFacts?: JdFacts;
   livenessOverride?: LivenessResult;
-  webEvidence?: WebEvidence;
+  webEvidence?: WebEvidence | Promise<WebEvidence>;
 }): Promise<JobScoreRow> {
   const { job, source, profile, resume, llm } = args;
 
@@ -78,11 +78,13 @@ export async function scoreJob(args: {
     }
   }
 
+  const webEvidence = await args.webEvidence;
+
   const tier = resolveLegitimacyTier({
     tier: final.data.legitimacy.tier,
     liveness,
     corroborated: final.data.legitimacy.corroborated,
-    webEvidence: args.webEvidence,
+    webEvidence,
   });
 
   const row: NewJobScore = {
@@ -97,7 +99,7 @@ export async function scoreJob(args: {
       summary: final.data.legitimacy.summary,
       confidence: final.data.legitimacy.confidence,
       signals: final.data.legitimacy.signals,
-      webEvidence: args.webEvidence,
+      webEvidence,
     },
     liveness,
     breakdown: final.data.breakdown,

@@ -251,11 +251,12 @@ async function runPipeline(
       return;
     }
 
-    await urlChecksRepo.updateStage(checkId, "ghost-check");
-    const ghost = await deps.fetchGhostWebEvidence(llm, job.company, job.title);
-    await urlChecksRepo.addCost(checkId, ghost.costUsd);
-
     await urlChecksRepo.updateStage(checkId, "scoring");
+    // Ghost-web and scoreMatch run concurrently — fetchGhostWebEvidence never
+    // throws (its own catch returns a status:"failed" webEvidence), and
+    // scoreJob doesn't consume webEvidence until after its LLM call, so
+    // there's no ordering dependency (spec §6 latency win).
+    const ghostPromise = deps.fetchGhostWebEvidence(llm, job.company, job.title);
     let scoreRow: Awaited<ReturnType<typeof scoreJob>>;
     try {
       scoreRow = await deps.scoreJob({
@@ -268,11 +269,13 @@ async function runPipeline(
         // never 'expired' — a bot-walled URL must not re-probe into a false
         // ghost (spec §6, 07-11 §8).
         livenessOverride: (tier1Live ? "active" : "uncertain") satisfies LivenessResult,
-        webEvidence: ghost.webEvidence,
+        webEvidence: ghostPromise.then((g) => g.webEvidence),
       });
     } catch (err) {
       throw new UpstreamLlmError(`scoring failed: ${err instanceof Error ? err.message : String(err)}`);
     }
+    const ghost = await ghostPromise;
+    await urlChecksRepo.addCost(checkId, ghost.costUsd);
     await urlChecksRepo.addCost(checkId, scoreRow.costUsd);
 
     await urlChecksRepo.complete(checkId, { jobId: job.id, alreadyKnown: false });

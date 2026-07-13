@@ -411,7 +411,7 @@ describe("runPipeline — persisting edge cases", () => {
         fetchPageText: async () => ({ ok: true, text: "Acme hiring.", pageTitle: undefined }),
         fetchGhostWebEvidence: async () => ({ webEvidence: { status: "failed", reason: "sonar timed out" }, costUsd: 0 }),
         scoreJob: async (args) => {
-          receivedWebEvidence = args.webEvidence;
+          receivedWebEvidence = await args.webEvidence;
           return { costUsd: 0.02 } as unknown as ReturnType<typeof scoreJob> extends Promise<infer T> ? T : never;
         },
       },
