@@ -8,11 +8,11 @@ import { SummaryStrip } from "./SummaryStrip";
 afterEach(cleanup);
 
 describe("SummaryStrip excluded cell (spec §8)", () => {
-  it("renders the eligibility-excluded count with its label", () => {
+  it("renders the three-gate-excluded count with its label", () => {
     render(
       <SummaryStrip stats={{ scanned: 214, worth: 38, ghosts: 12, flagged: 6, sinceLast: 9, excluded: 12 }} />,
     );
-    expect(screen.getByText("Not eligible · hidden (not yet scored)")).toBeInTheDocument();
+    expect(screen.getByText("Excluded · outside your remote preferences")).toBeInTheDocument();
     expect(screen.getByText("12")).toBeInTheDocument();
   });
 });

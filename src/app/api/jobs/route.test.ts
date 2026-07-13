@@ -71,6 +71,40 @@ describe("GET /api/jobs", () => {
     await state.testDb.update(profile).set({ relocation: "stay" }).where(eq(profile.id, "default"));
   });
 
+  it("scheduleFlex 'base-hours' hides americas-band jobs and reports them in stats.excluded; 'any-hours' reveals them (2026-07-14 remote-fit spec §8)", async () => {
+    const { profile } = await import("@/server/persistence/schema");
+    const { eq } = await import("drizzle-orm");
+    const source = await insertSource(state.testDb);
+    const resume = await insertResume(state.testDb);
+
+    await state.testDb.update(profile).set({ scheduleFlex: "base-hours" }).where(eq(profile.id, "default"));
+
+    const americasJob = await insertJob(state.testDb, source.id, {
+      dedupeKey: "dk-tzband-americas",
+      url: "https://example.com/tzband-americas",
+      tzBand: "americas",
+    });
+    await insertJobScore(state.testDb, americasJob.id, resume.id);
+    const apacJob = await insertJob(state.testDb, source.id, {
+      dedupeKey: "dk-tzband-apac",
+      url: "https://example.com/tzband-apac",
+      tzBand: "apac",
+    });
+    await insertJobScore(state.testDb, apacJob.id, resume.id);
+
+    // scheduleFlex "base-hours" admits only apac — americas hidden, counted.
+    const baseHours = await (await GET(req(""))).json();
+    expect(baseHours.items).toHaveLength(1);
+    expect(baseHours.items[0].id).toBe(apacJob.id);
+    expect(baseHours.stats.excluded).toBe(1);
+
+    // Flip to "any-hours": the same rows re-scope with zero rescan.
+    await state.testDb.update(profile).set({ scheduleFlex: "any-hours" }).where(eq(profile.id, "default"));
+    const anyHours = await (await GET(req(""))).json();
+    expect(anyHours.items).toHaveLength(2);
+    expect(anyHours.stats.excluded).toBe(0);
+  });
+
   it("filters by tier + minScore and pages with a cursor", async () => {
     const source = await insertSource(state.testDb);
     const resume = await insertResume(state.testDb);

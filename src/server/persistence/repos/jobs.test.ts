@@ -582,13 +582,79 @@ describe("jobsRepo", () => {
     expect(items).toHaveLength(2);
   });
 
-  it("countHiddenByEligibility counts everything the predicate hid, scored or not, scoped by persona", async () => {
+  it("filters by tzBands: NULL passes, listed bands pass, others hidden", async () => {
+    const db = await createTestDb();
+    const repo = createJobsRepo(db);
+    const source = await insertSource(db);
+    const resume = await insertResume(db);
+    const mk = async (tzBand: "apac" | "americas" | null, key: string) => {
+      const job = await repo.upsertByDedupeKey({
+        dedupeKey: `dk-tzband-${key}`,
+        url: `https://example.com/tzband-${key}`,
+        sourceId: source.id,
+        title: "Backend Engineer",
+        company: "Acme",
+        location: "Remote",
+        persona: "remote",
+        eligibility: "unknown",
+        eligibilityEvidence: "t",
+        aliases: [],
+        raw: {},
+        tzBand,
+      });
+      await insertJobScore(db, job.id, resume.id);
+      return job;
+    };
+    await mk(null, "null"); // passes (unstated)
+    await mk("apac", "apac"); // passes (allowed)
+    await mk("americas", "americas"); // hidden
+
+    const { items } = await repo.listScored({ tzBands: ["apac"] });
+    expect(items).toHaveLength(2);
+  });
+
+  it("filters by hiringStructures: NULL passes, listed pass, others hidden", async () => {
+    const db = await createTestDb();
+    const repo = createJobsRepo(db);
+    const source = await insertSource(db);
+    const resume = await insertResume(db);
+    const mk = async (hiringStructure: "eor" | "contractor" | null, key: string) => {
+      const job = await repo.upsertByDedupeKey({
+        dedupeKey: `dk-hiring-${key}`,
+        url: `https://example.com/hiring-${key}`,
+        sourceId: source.id,
+        title: "Backend Engineer",
+        company: "Acme",
+        location: "Remote",
+        persona: "remote",
+        eligibility: "unknown",
+        eligibilityEvidence: "t",
+        aliases: [],
+        raw: {},
+        hiringStructure,
+      });
+      await insertJobScore(db, job.id, resume.id);
+      return job;
+    };
+    await mk(null, "null"); // passes (unstated)
+    await mk("eor", "eor"); // passes (allowed)
+    await mk("contractor", "contractor"); // hidden
+
+    const { items } = await repo.listScored({ hiringStructures: ["local-entity", "eor"] });
+    expect(items).toHaveLength(2);
+  });
+
+  it("countHidden ORs hidden tiers/bands/structures, scored or not, scoped by persona", async () => {
     const db = await createTestDb();
     const repo = createJobsRepo(db);
     const source = await insertSource(db);
     const resume = await insertResume(db);
     const mk = async (
-      eligibility: "anywhere" | "abroad" | "unknown",
+      overrides: Partial<{
+        eligibility: "anywhere" | "abroad" | "unknown";
+        tzBand: "apac" | "americas" | null;
+        hiringStructure: "eor" | "contractor" | null;
+      }>,
       opts: { key: string; persona?: "remote" | "local"; scored?: boolean },
     ) => {
       const job = await repo.upsertByDedupeKey({
@@ -599,22 +665,35 @@ describe("jobsRepo", () => {
         company: "Acme",
         location: "Remote",
         persona: opts.persona ?? "remote",
-        eligibility,
+        eligibility: overrides.eligibility ?? "unknown",
         eligibilityEvidence: "t",
         aliases: [],
         raw: {},
+        tzBand: overrides.tzBand ?? null,
+        hiringStructure: overrides.hiringStructure ?? null,
       });
       if (opts.scored ?? true) await insertJobScore(db, job.id, resume.id);
       return job;
     };
 
-    await mk("anywhere", { key: "anywhere" }); // admitted tier — never hidden
-    await mk("unknown", { key: "unknown" }); // admitted tier — never hidden
-    await mk("abroad", { key: "abroad-scored", scored: true }); // hidden, scored
-    await mk("abroad", { key: "abroad-unscored", scored: false }); // hidden, gated out of scoring entirely
-    await mk("abroad", { key: "abroad-other-persona", persona: "local" }); // hidden but wrong persona scope
+    await mk({ eligibility: "anywhere" }, { key: "anywhere" }); // admitted tier — never hidden
+    await mk({}, { key: "unknown" }); // admitted tier, unstated band/structure — never hidden
+    await mk({ eligibility: "abroad" }, { key: "abroad-scored", scored: true }); // hidden tier, scored
+    await mk({ eligibility: "abroad" }, { key: "abroad-unscored", scored: false }); // hidden tier, gated out of scoring entirely
+    await mk({ eligibility: "abroad" }, { key: "abroad-other-persona", persona: "local" }); // hidden but wrong persona scope
+    await mk({ tzBand: "americas" }, { key: "band-hidden" }); // hidden band, admitted tier — OR, not AND
+    await mk({ hiringStructure: "contractor" }, { key: "structure-hidden" }); // hidden structure, admitted tier — OR, not AND
 
-    const hidden = await repo.countHiddenByEligibility({ persona: "remote", eligibility: ["abroad"] });
-    expect(hidden).toBe(2);
+    const hidden = await repo.countHidden(
+      { persona: "remote" },
+      { tiers: ["abroad"], bands: ["americas"], structures: ["contractor"] },
+    );
+    expect(hidden).toBe(4); // abroad-scored, abroad-unscored, band-hidden, structure-hidden
+  });
+
+  it("countHidden returns 0 without a query when all hidden sets are empty", async () => {
+    const db = await createTestDb();
+    const repo = createJobsRepo(db);
+    expect(await repo.countHidden({}, {})).toBe(0);
   });
 });
