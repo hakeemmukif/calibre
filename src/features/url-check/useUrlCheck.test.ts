@@ -68,6 +68,16 @@ function job(overrides: Partial<Job> = {}): Job {
   };
 }
 
+// Steps fake timers in POLL_MS-sized chunks until getCheck has been called
+// `n` times — avoids hand-computing the retry-cycle's variable timer spacing.
+async function advanceUntilCalls(n: number) {
+  while (getCheck.mock.calls.length < n) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+  }
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
 });
@@ -216,9 +226,12 @@ describe("useUrlCheck", () => {
   });
 
   // final-review fix wave FIX 1b: every async resume must be caught and
-  // routed to a generation-guarded "failed" instead of hanging in "running".
+  // routed to a generation-guarded retry-or-fail instead of hanging in
+  // "running" — but (per the poll fault-tolerance fix above) a persistent
+  // failure, not a single blip, is what's required to actually surface as
+  // "failed".
 
-  it("a getJob rejection after a completed check sets status failed instead of hanging forever", async () => {
+  it("a persistent getJob rejection after a completed check eventually sets status failed instead of hanging forever", async () => {
     startCheck.mockResolvedValue(check({ status: "running", stage: "scoring" }));
     getCheck.mockResolvedValueOnce(check({ status: "completed", stage: "scoring", jobId: "job-1" }));
     getJob.mockRejectedValue(new Error("job fetch failed"));
@@ -227,15 +240,17 @@ describe("useUrlCheck", () => {
     await act(async () => {
       await result.current.submit("https://example.com/job");
     });
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1500);
-    });
+    while (getJob.mock.calls.length < 8) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1500);
+      });
+    }
 
     expect(result.current.state.status).toBe("failed");
     expect(result.current.state.job).toBeNull();
   });
 
-  it("a getCheck poll rejection mid-run sets status failed instead of hanging forever", async () => {
+  it("a single getCheck poll rejection mid-run retries instead of failing immediately", async () => {
     startCheck.mockResolvedValue(check({ status: "running", stage: "fetching" }));
     getCheck.mockRejectedValueOnce(new Error("network blip"));
     const { result } = renderHook(() => useUrlCheck());
@@ -243,11 +258,9 @@ describe("useUrlCheck", () => {
     await act(async () => {
       await result.current.submit("https://example.com/job");
     });
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1500);
-    });
+    await advanceUntilCalls(1);
 
-    expect(result.current.state.status).toBe("failed");
+    expect(result.current.state.status).toBe("running");
   });
 
   it("a stale poll rejection from a superseded generation does not clobber the fresh run's state", async () => {
@@ -344,6 +357,91 @@ describe("useUrlCheck", () => {
 
     await act(async () => {
       staleGetJob.resolve(job({ id: "job-1" }));
+      await Promise.resolve().then(() => Promise.resolve());
+    });
+
+    expect(result.current.state).toEqual({ status: "idle", stage: null, check: null, job: null });
+  });
+
+  // Poll fault-tolerance: a single transient getCheck rejection (dev-recompile
+  // 500, network blip) must not permanently fail a run — only MAX_POLL_FAILURES
+  // *consecutive* rejections, or the overall run deadline, do.
+
+  it("a transient getCheck rejection followed by a success stays running, then completes", async () => {
+    startCheck.mockResolvedValue(check({ status: "running", stage: "fetching" }));
+    getCheck
+      .mockRejectedValueOnce(new Error("dev-recompile 500"))
+      .mockResolvedValueOnce(check({ status: "completed", stage: "scoring", jobId: "job-1" }));
+    getJob.mockResolvedValue(job({ id: "job-1" }));
+    const { result } = renderHook(() => useUrlCheck());
+
+    await act(async () => {
+      await result.current.submit("https://example.com/job");
+    });
+
+    await advanceUntilCalls(1);
+    expect(result.current.state.status).toBe("running");
+
+    await advanceUntilCalls(2);
+    expect(result.current.state.status).toBe("done");
+    expect(getJob).toHaveBeenCalledWith("job-1");
+  });
+
+  it("MAX_POLL_FAILURES consecutive getCheck rejections gives up and sets status failed", async () => {
+    startCheck.mockResolvedValue(check({ status: "running", stage: "fetching" }));
+    getCheck.mockRejectedValue(new Error("network blip"));
+    const { result } = renderHook(() => useUrlCheck());
+
+    await act(async () => {
+      await result.current.submit("https://example.com/job");
+    });
+
+    await advanceUntilCalls(8);
+
+    expect(getCheck).toHaveBeenCalledTimes(8);
+    expect(result.current.state.status).toBe("failed");
+  });
+
+  it("a success mid-streak resets the poll-failure counter (5 fails, success, 5 fails stays running)", async () => {
+    startCheck.mockResolvedValue(check({ status: "running", stage: "fetching" }));
+    for (let i = 0; i < 5; i++) getCheck.mockRejectedValueOnce(new Error(`blip ${i}`));
+    getCheck.mockResolvedValueOnce(check({ status: "running", stage: "searching" }));
+    for (let i = 0; i < 5; i++) getCheck.mockRejectedValueOnce(new Error(`blip ${5 + i}`));
+    const { result } = renderHook(() => useUrlCheck());
+
+    await act(async () => {
+      await result.current.submit("https://example.com/job");
+    });
+
+    await advanceUntilCalls(11);
+
+    expect(result.current.state.status).toBe("running");
+  });
+
+  it("dismiss() during an in-flight poll's retry window is a silent no-op (generation guard)", async () => {
+    const stalePoll = deferred<UrlCheck>();
+    startCheck.mockResolvedValueOnce(check({ id: "check-1", status: "running", stage: "fetching" }));
+    getCheck.mockImplementationOnce(() => stalePoll.promise);
+    const { result } = renderHook(() => useUrlCheck());
+
+    await act(async () => {
+      await result.current.submit("https://example.com/job");
+    });
+    // Fires the poll timer, which invokes getCheck() — still pending.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+
+    act(() => {
+      result.current.dismiss();
+    });
+    expect(result.current.state).toEqual({ status: "idle", stage: null, check: null, job: null });
+
+    // The in-flight poll now rejects for the dismissed generation —
+    // retryOrFail's generation guard must make this a silent no-op, not a
+    // jump to "failed" or a new retry timer.
+    await act(async () => {
+      stalePoll.reject(new Error("transient failure after dismiss"));
       await Promise.resolve().then(() => Promise.resolve());
     });
 

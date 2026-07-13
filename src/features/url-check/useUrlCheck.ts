@@ -25,6 +25,8 @@ export interface UseUrlCheck {
 }
 
 const POLL_MS = 1500;
+const MAX_POLL_FAILURES = 8; // consecutive failed polls before giving up (~24s of continuous outage)
+const MAX_RUN_MS = 5 * 60_000; // overall per-run deadline (server orphan guard)
 
 function idleState(): UrlCheckState {
   return { status: "idle", stage: null, check: null, job: null };
@@ -41,6 +43,12 @@ export function useUrlCheck(): UseUrlCheck {
   // of a self-referential useCallback so the recursive call always reads
   // the live closure without an exhaustive-deps false positive.
   const settleRef = useRef<((check: UrlCheck, generation: number) => Promise<void>) | undefined>(undefined);
+  // Consecutive failed polls (any status) for the current generation — reset
+  // on submit and on every successful poll. retryOrFail held in a ref for
+  // the same reason as settleRef: it's invoked from settleRef's own closure.
+  const pollFailuresRef = useRef(0);
+  const deadlineRef = useRef(0);
+  const retryOrFailRef = useRef<((check: UrlCheck, generation: number) => void) | undefined>(undefined);
 
   settleRef.current = async (check, generation) => {
     if (generation !== generationRef.current) return;
@@ -59,19 +67,39 @@ export function useUrlCheck(): UseUrlCheck {
         setState({ status: check.needsText ? "needsText" : "failed", stage: check.stage, check, job: null });
         return;
       }
+      if (Date.now() > deadlineRef.current) {
+        setState({ status: "failed", stage: check.stage, check, job: null });
+        return;
+      }
       setState({ status: "running", stage: check.stage, check, job: null });
       timerRef.current = setTimeout(() => {
         void getCheck(check.id)
-          .then((next) => settleRef.current!(next, generation))
-          .catch(() => {
-            if (generation !== generationRef.current) return;
-            setState({ status: "failed", stage: check.stage, check, job: null });
-          });
+          .then((next) => {
+            pollFailuresRef.current = 0;
+            return settleRef.current!(next, generation);
+          })
+          .catch(() => retryOrFailRef.current!(check, generation));
       }, POLL_MS);
     } catch {
       if (generation !== generationRef.current) return;
-      setState({ status: "failed", stage: check.stage, check, job: null });
+      retryOrFailRef.current!(check, generation);
     }
+  };
+
+  // A transient poll/job-fetch rejection (dev-recompile 500, network blip)
+  // retries in place instead of failing the whole run — only a run of
+  // MAX_POLL_FAILURES consecutive rejections, or the overall MAX_RUN_MS
+  // deadline above, gives up.
+  retryOrFailRef.current = (check, generation) => {
+    if (generation !== generationRef.current) return;
+    pollFailuresRef.current += 1;
+    if (pollFailuresRef.current >= MAX_POLL_FAILURES) {
+      setState({ status: "failed", stage: check.stage, check, job: null });
+      return;
+    }
+    timerRef.current = setTimeout(() => {
+      void settleRef.current!(check, generation);
+    }, POLL_MS);
   };
 
   const clearTimer = useCallback(() => {
@@ -85,6 +113,8 @@ export function useUrlCheck(): UseUrlCheck {
     async (url: string, text?: string) => {
       clearTimer();
       const generation = ++generationRef.current;
+      pollFailuresRef.current = 0;
+      deadlineRef.current = Date.now() + MAX_RUN_MS;
       setState({ status: "running", stage: null, check: null, job: null });
       let check: UrlCheck;
       try {
