@@ -2,9 +2,13 @@
 // is stubbed per describe.test.ts's precedent; ./ssrf is mocked so these
 // stay hermetic (no real DNS lookups) and assert assertPublicHttpUrl is
 // re-invoked on every redirect hop.
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { assertPublicHttpUrl } from "./ssrf";
-import { fetchPageText } from "./fetch-page";
+import { fetchPageText, MAX_TEXT_CHARS, MIN_TEXT_CHARS } from "./fetch-page";
+
+const FIXTURES = join(__dirname, "__fixtures__");
 
 vi.mock("./ssrf", () => ({
   assertPublicHttpUrl: vi.fn().mockResolvedValue(undefined),
@@ -154,5 +158,115 @@ describe("fetchPageText", () => {
     const result = await fetchPageText("https://example.com/job");
 
     expect(result).toEqual({ ok: false, reason: "blocked" });
+  });
+
+  it("rewrites a LinkedIn /jobs/view/{id} url to the guest endpoint before fetching and SSRF-checking it", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(htmlPage("Job description content. ".repeat(20)), {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const guestUrl = "https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/4388552365";
+
+    const result = await fetchPageText("https://www.linkedin.com/jobs/view/4388552365/");
+
+    expect(result.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledWith(guestUrl, expect.anything());
+    expect(assertPublicHttpUrl).toHaveBeenCalledWith(new URL(guestUrl));
+  });
+
+  it("marker scoping: login-wall text from the guest endpoint is NOT blocked, but the same text from a non-guest url IS", async () => {
+    const body = htmlPage("Join LinkedIn to see this posting. ".repeat(20));
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(body, { status: 200, headers: { "content-type": "text/html" } })),
+    );
+    const guestResult = await fetchPageText("https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/4388552365");
+    expect(guestResult.ok).toBe(true);
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(body, { status: 200, headers: { "content-type": "text/html" } })),
+    );
+    const nonGuestResult = await fetchPageText("https://example.com/job");
+    expect(nonGuestResult).toEqual({ ok: false, reason: "blocked" });
+  });
+
+  it("re-normalizes a redirect hop that lands on a LinkedIn job url", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 302,
+          headers: { location: "https://www.linkedin.com/jobs/view/4388552365" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(htmlPage("Job description content. ".repeat(20)), {
+          status: 200,
+          headers: { "content-type": "text/html" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await fetchPageText("https://short.link/abc");
+
+    expect(result.ok).toBe(true);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/4388552365",
+      expect.anything(),
+    );
+  });
+
+  it("guest endpoint 404 -> error, not blocked", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("Not Found", { status: 404 })));
+
+    const result = await fetchPageText("https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/4388552365");
+
+    expect(result).toEqual({ ok: false, reason: "error" });
+  });
+
+  it("sends the browser User-Agent and Accept-Language on every fetch", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(htmlPage("Job description content. ".repeat(20)), {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchPageText("https://example.com/job");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://example.com/job",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "user-agent": expect.stringContaining("Chrome"),
+          "accept-language": "en-US,en;q=0.9",
+        }),
+      }),
+    );
+  });
+
+  it("real pinned LinkedIn guest fixture: succeeds via the real htmlToText/extractTitle, no login-wall false-positive", async () => {
+    const fixture = readFileSync(join(FIXTURES, "linkedin-guest.html"), "utf8");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(fixture, { status: 200, headers: { "content-type": "text/html" } })),
+    );
+
+    const result = await fetchPageText("https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/4388552365");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok:true");
+    expect(result.text.length).toBeGreaterThanOrEqual(MIN_TEXT_CHARS);
+    expect(result.text.length).toBeLessThanOrEqual(MAX_TEXT_CHARS);
+    expect(result.pageTitle).toBeUndefined();
+    expect(result.text).toContain("Software Engineer");
+    expect(result.text).toContain("DHL");
   });
 });

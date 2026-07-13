@@ -12,6 +12,7 @@ import {
 import { createJobsRepo } from "@/server/persistence/repos/jobs";
 import { createUrlChecksRepo, type UrlCheckRow } from "@/server/persistence/repos/urlChecks";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
+import { dedupeKeyFor } from "@/server/search/dedupe";
 import { scoreJob } from "@/server/score";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
@@ -464,5 +465,34 @@ describe("runPipeline — persisting edge cases", () => {
     expect(finalRow.status).toBe("failed");
     expect(finalRow.error?.code).toBe("UPSTREAM_LLM_ERROR");
     expect(finalRow.needsText).toBe(false);
+  });
+});
+
+describe("run.ts is agnostic to the tier-1 LinkedIn guest-endpoint rewrite", () => {
+  it("persists the job under the ORIGINAL LinkedIn url/dedupeKey, never the fetch-page-internal guest rewrite", async () => {
+    const db = await createTestDb();
+    state.testDb = db;
+    await setUpForPipeline(db);
+    const reqUrl = "https://www.linkedin.com/jobs/view/4388552365/";
+
+    const { check } = await startUrlCheck(
+      { url: reqUrl },
+      {
+        llm: jdExtractLlm({ title: "Software Engineer", company: "DHL", isJobPosting: true, mustHaves: [], niceToHaves: [], responsibilities: [], redFlags: [] }),
+        fetchPageText: async () => ({ ok: true, text: "DHL is hiring a Software Engineer.", pageTitle: "Software Engineer (Fullstack Developer)" }),
+        fetchGhostWebEvidence: async () => ({ webEvidence: { status: "ok", sightings: [], companySignals: [], summary: "ok", confidence: 0.6 }, costUsd: 0 }),
+        scoreJob: async () => ({ costUsd: 0.02 }) as unknown as ReturnType<typeof scoreJob> extends Promise<infer T> ? T : never,
+      },
+    );
+
+    const finalRow = await waitForTerminal(db, check.id);
+    expect(finalRow.status).toBe("completed");
+
+    const persisted = await createJobsRepo(db).getByDedupeKey(dedupeKeyFor(reqUrl));
+    expect(persisted).not.toBeNull();
+    expect(persisted!.url).toBe(reqUrl);
+    expect(persisted!.applyUrl).toBe(reqUrl);
+    expect(persisted!.raw).toMatchObject({ acquisition: "fetch" });
+    expect(finalRow.jobId).toBe(persisted!.id);
   });
 });

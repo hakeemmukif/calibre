@@ -6,6 +6,7 @@
 // failure for the caller (server/url-check/run.ts escalates to the sonar
 // search tier); only a non-SsrfBlockedError bug propagates (fail-loud).
 import { htmlToText, unescapeEntities } from "@/server/search/connectors/_html";
+import { isLinkedInGuestUrl, normalizeJobUrl } from "./linkedin";
 import { assertPublicHttpUrl, SsrfBlockedError } from "./ssrf";
 
 export type FetchPageResult =
@@ -18,6 +19,14 @@ export const MAX_BYTES = 2_000_000;
 
 const TIMEOUT_MS = 10_000;
 const MAX_REDIRECTS = 3;
+
+// Hedge: undici's default `node` User-Agent is more blocklist-prone than a
+// standard browser one; a stable English Chrome UA/locale also keeps the
+// (English-only) LOGIN_WALL_MARKERS regexes deterministic for the MY-based
+// operator.
+const BROWSER_USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+const ACCEPT_LANGUAGE = "en-US,en;q=0.9";
 
 // Boilerplate on gated pages (LinkedIn/Indeed auth-walls, Cloudflare
 // challenge screens) instead of the posting — flagged 'blocked' even when
@@ -40,6 +49,10 @@ export async function fetchPageText(url: string): Promise<FetchPageResult> {
   }
 
   for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
+    // Rewrite before the SSRF check, every hop: the guard must validate the
+    // URL actually dialed, and per-hop normalization also catches a
+    // redirect/shortener hop that retargets into a LinkedIn job URL.
+    currentUrl = normalizeJobUrl(currentUrl);
     try {
       await assertPublicHttpUrl(currentUrl);
     } catch (err) {
@@ -51,7 +64,12 @@ export async function fetchPageText(url: string): Promise<FetchPageResult> {
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
     let res: Response;
     try {
-      res = await fetch(currentUrl.toString(), { method: "GET", redirect: "manual", signal: controller.signal });
+      res = await fetch(currentUrl.toString(), {
+        method: "GET",
+        redirect: "manual",
+        signal: controller.signal,
+        headers: { "user-agent": BROWSER_USER_AGENT, "accept-language": ACCEPT_LANGUAGE },
+      });
     } catch {
       clearTimeout(timer);
       return { ok: false, reason: "error" };
@@ -83,7 +101,13 @@ export async function fetchPageText(url: string): Promise<FetchPageResult> {
     const raw = new TextDecoder().decode(body.bytes);
     const pageTitle = extractTitle(raw);
     const text = htmlToText(raw);
-    if (LOGIN_WALL_MARKERS.some((marker) => marker.test(text))) return { ok: false, reason: "blocked" };
+    // A 200 from LinkedIn's public guest endpoint IS the posting — its
+    // failure modes (404/429/redirect) are handled by the status branches
+    // above, so these markers (which legitimately guard authwall/Cloudflare
+    // boilerplate on every other host) don't apply to it.
+    if (!isLinkedInGuestUrl(currentUrl) && LOGIN_WALL_MARKERS.some((marker) => marker.test(text))) {
+      return { ok: false, reason: "blocked" };
+    }
     if (text.length < MIN_TEXT_CHARS) return { ok: false, reason: text.length === 0 ? "empty" : "blocked" };
     if (text.length > MAX_TEXT_CHARS) return { ok: false, reason: "oversize" };
     return { ok: true, text, pageTitle };
