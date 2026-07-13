@@ -1,11 +1,15 @@
 # Caliber API Contract v1 (MVP)
 
-Schema-first: Zod schemas in `src/types` are the single source of truth; OpenAPI, TS types, and runtime validation all derive from them (§12). Entities align with the frozen §5 contract plus §11.8 hero extensions. Auth: **none in v1** (single-operator, §1 non-goals) — protect at the network layer; every route below is unauthenticated and this is recorded in OpenAPI as a v1 constraint.
+Schema-first: Zod schemas in `src/types` are the single source of truth; OpenAPI, TS types, and runtime validation all derive from them (§12). Entities align with the frozen §5 contract plus §11.8 hero extensions. Auth: email+password sessions. Registration/login mint an opaque token stored as a SHA-256 hash; it rides in an httpOnly SameSite=Lax cookie (`caliber_session`). Route handlers enforce via `requireUser()`/`requireAdmin()` (never Next middleware); `/api/health` and the auth routes themselves are the only unauthenticated endpoints. Per-user data scoping and admin routes arrive in later tenancy steps.
 
 ## 1. Endpoint table
 
 | # | Method | Path | Purpose | Mode |
 |---|---|---|---|---|
+| — | POST | `/api/auth/register` | Create a `user`-role account, auto-login | sync |
+| — | POST | `/api/auth/login` | Verify credentials, mint a session | sync |
+| — | POST | `/api/auth/logout` | Clear the session (idempotent) | sync |
+| — | GET | `/api/auth/session` | Current user from the session cookie | sync |
 | F1 | POST | `/api/resume` | Upload (multipart PDF/DOCX) or paste (JSON) → parse → persist structured `Resume` | sync |
 | F1 | GET | `/api/resume` | Fetch the current résumé | sync |
 | F2 | POST | `/api/search` | Start a dual search run (global ATS + MY boards) scored against the résumé | async, 202 |
@@ -32,6 +36,22 @@ Schema-first: Zod schemas in `src/types` are the single source of truth; OpenAPI
 `GET /api/jobs/:id` returns the frozen `Job` entity verbatim — there is no separate detail/`MatchDetail` entity in MVP; `JobDetail`'s Fit/Legitimacy/Breakdown tabs are derived entirely from `Job.fit`/`Job.legitimacy`/`Job.breakdown`. An `archetype` field (e.g. "Global remote — APAC-friendly") was drafted during component design but is **deferred** — not part of `Job`, not returned by this route.
 
 Search and tailor share one **run pattern**: `POST` returns `202` with the run entity; the `GET :id` route serves both polling (JSON) and streaming (SSE) via content negotiation — one path, two documented content types in OpenAPI.
+
+## 1a. Auth
+
+Email+password sessions, cookie-based. `Schema.parse(body)` boundary rule applies (§3) — `422 VALIDATION_ERROR` on bad input.
+
+**POST /api/auth/register** — `{ email, password }` (password min 8). Creates a `user`-role account (never `admin`) and auto-logs-in. → `201 { user: AuthUser }`, sets the `caliber_session` cookie. `409 CONFLICT` if the email is taken. `422 VALIDATION_ERROR` on bad input.
+
+**POST /api/auth/login** — `{ email, password }`. → `200 { user: AuthUser }`, sets the `caliber_session` cookie. `401 UNAUTHORIZED` on bad credentials — identical error whether the email doesn't exist or the password is wrong (no user enumeration). `422 VALIDATION_ERROR` on bad input.
+
+**POST /api/auth/logout** — clears the cookie and deletes the session row. → `204`. Idempotent (no cookie / an already-deleted session is not an error).
+
+**GET /api/auth/session** — → `200 { user: AuthUser }` if logged in, else `401 UNAUTHORIZED`.
+
+The session cookie (`caliber_session`) is httpOnly, `SameSite=Lax`, `Secure` unless `SESSION_COOKIE_SECURE=false` (local http dev only), 30-day `maxAge`. Its value is an opaque random token; only its SHA-256 hash is persisted (`sessions` table), so a DB read never yields a usable token. Route handlers call `requireUser()` (any authenticated user) or `requireAdmin()` (role `admin`) — enforcement lives in the handler, not in Next middleware. `ErrorCode` gained two values for this: `UNAUTHORIZED` (401) and `FORBIDDEN` (403).
+
+Per-user data scoping (rows filtered by the caller's `user_id`) and admin-only content routes are **forthcoming** in later tenancy steps — not part of this contract yet.
 
 ## 2. Core Zod schemas (`src/types`)
 
