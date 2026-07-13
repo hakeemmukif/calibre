@@ -1750,12 +1750,14 @@ Changes to `src/app/jobs/[id]/page.tsx`:
 
 ```tsx
   const checks = useUrlChecks();
-  const myRun = checks.runs.find((r) => r.origin === "reevaluate" && r.jobId === id && r.phase !== "failed");
+  // Newest re-evaluate run for this job (runs are newest-first) — INCLUDING a
+  // failed one, so a newer success supersedes an older failure. Deriving status
+  // from `.some(...failed)` instead would leave a stale error caption stuck
+  // forever after a failed-then-succeeded sequence.
+  const myRun = checks.runs.find((r) => r.origin === "reevaluate" && r.jobId === id);
   const otherActive = checks.active.filter((r) => r.jobId !== id).length;
   const evaluateStatus: "idle" | "evaluating" | "error" =
-    myRun && myRun.phase !== "done" ? "evaluating"
-    : checks.runs.some((r) => r.origin === "reevaluate" && r.jobId === id && r.phase === "failed") ? "error"
-    : "idle";
+    !myRun || myRun.phase === "done" ? "idle" : myRun.phase === "failed" ? "error" : "evaluating";
 
   // When our re-score completes, adopt the fresh job the store fetched.
   React.useEffect(() => {
