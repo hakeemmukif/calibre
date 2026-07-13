@@ -80,12 +80,20 @@ export type Source = z.infer<typeof Source>;
 export const RelocationPref = z.enum(["stay", "open"]);
 export type RelocationPref = z.infer<typeof RelocationPref>;
 
+export const ScheduleFlex = z.enum(["base-hours", "flex-evenings", "any-hours"]); // ordered: each level includes the ones before it
+export type ScheduleFlex = z.infer<typeof ScheduleFlex>;
+
+export const EmploymentPref = z.enum(["any", "employee", "local-entity"]); // "employee" admits local entity OR EOR
+export type EmploymentPref = z.infer<typeof EmploymentPref>;
+
 // Operator profile — singleton (single-operator MVP). `baseCountry` is
 // ISO-3166-1 alpha-2 ("MY" at launch). The seed row IS the install step
 // (seed.ts precedent); a missing row is an error, never defaulted.
 export const Profile = z.object({
   baseCountry: z.string().length(2),
   relocation: RelocationPref,
+  scheduleFlex: ScheduleFlex,
+  employmentPref: EmploymentPref,
   updatedAt: z.string().datetime(),
 });
 export type Profile = z.infer<typeof Profile>;

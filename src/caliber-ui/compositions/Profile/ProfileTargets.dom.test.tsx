@@ -9,7 +9,13 @@ import { ProfileTargets } from "./ProfileTargets";
 // automatic afterEach(cleanup) never registers — clean up explicitly.
 afterEach(cleanup);
 
-const profile = { baseCountry: "MY", relocation: "stay" as const, updatedAt: "2026-07-12T00:00:00.000Z" };
+const profile = {
+  baseCountry: "MY",
+  relocation: "stay" as const,
+  scheduleFlex: "any-hours" as const,
+  employmentPref: "any" as const,
+  updatedAt: "2026-07-12T00:00:00.000Z",
+};
 
 describe("ProfileTargets", () => {
   it("renders base country and both relocation options with stay selected", () => {

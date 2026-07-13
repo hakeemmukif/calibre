@@ -574,8 +574,24 @@
             "minLength": 2,
             "type": "string"
           },
+          "employmentPref": {
+            "enum": [
+              "any",
+              "employee",
+              "local-entity"
+            ],
+            "type": "string"
+          },
           "relocation": {
             "$ref": "#/components/schemas/RelocationPref"
+          },
+          "scheduleFlex": {
+            "enum": [
+              "base-hours",
+              "flex-evenings",
+              "any-hours"
+            ],
+            "type": "string"
           },
           "updatedAt": {
             "format": "date-time",
@@ -585,6 +601,8 @@
         "required": [
           "baseCountry",
           "relocation",
+          "scheduleFlex",
+          "employmentPref",
           "updatedAt"
         ],
         "type": "object"
@@ -2261,13 +2279,31 @@
                     "minLength": 2,
                     "type": "string"
                   },
+                  "employmentPref": {
+                    "enum": [
+                      "any",
+                      "employee",
+                      "local-entity"
+                    ],
+                    "type": "string"
+                  },
                   "relocation": {
                     "$ref": "#/components/schemas/RelocationPref"
+                  },
+                  "scheduleFlex": {
+                    "enum": [
+                      "base-hours",
+                      "flex-evenings",
+                      "any-hours"
+                    ],
+                    "type": "string"
                   }
                 },
                 "required": [
                   "baseCountry",
-                  "relocation"
+                  "relocation",
+                  "scheduleFlex",
+                  "employmentPref"
                 ],
                 "type": "object"
               }

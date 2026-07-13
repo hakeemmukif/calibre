@@ -207,3 +207,29 @@ describe("UrlCheck", () => {
     expect(() => UrlCheck.parse({ ...base, id: "not-a-uuid" })).toThrow();
   });
 });
+
+import { ScheduleFlex, EmploymentPref, Profile } from "./index";
+
+describe("ScheduleFlex / EmploymentPref", () => {
+  it("ScheduleFlex accepts the three ordered levels and rejects others", () => {
+    expect(ScheduleFlex.parse("base-hours")).toBe("base-hours");
+    expect(ScheduleFlex.parse("flex-evenings")).toBe("flex-evenings");
+    expect(ScheduleFlex.parse("any-hours")).toBe("any-hours");
+    expect(() => ScheduleFlex.parse("evenings")).toThrow();
+  });
+  it("EmploymentPref accepts any|employee|local-entity", () => {
+    expect(EmploymentPref.parse("employee")).toBe("employee");
+    expect(() => EmploymentPref.parse("eor")).toThrow();
+  });
+  it("Profile requires the two new dials (fail loud, no default)", () => {
+    expect(() =>
+      Profile.parse({ baseCountry: "MY", relocation: "stay", updatedAt: "2026-07-14T00:00:00.000Z" }),
+    ).toThrow();
+    const p = Profile.parse({
+      baseCountry: "MY", relocation: "stay",
+      scheduleFlex: "any-hours", employmentPref: "any",
+      updatedAt: "2026-07-14T00:00:00.000Z",
+    });
+    expect(p.scheduleFlex).toBe("any-hours");
+  });
+});
