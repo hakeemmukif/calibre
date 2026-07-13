@@ -1,14 +1,15 @@
 "use client";
-// Profile & targets page (spec 2026-07-12 §7): base country + relocation,
-// save-on-change PUT /api/profile. Mirrors sources/page.tsx's busy/error/
-// Retry pattern. A 404 here means an unseeded install — surfaced, not
-// defaulted (fail loud).
+// Profile & targets page (spec 2026-07-12 §7, extended by
+// 2026-07-14-remote-fit-criteria-design.md §8): base country + relocation/
+// schedule/employment dials + a preset row, save-on-change PUT /api/profile.
+// Mirrors sources/page.tsx's busy/error/Retry pattern. A 404 here means an
+// unseeded install — surfaced, not defaulted (fail loud).
 import * as React from "react";
-import { ProfileTargets } from "@/caliber-ui/compositions/Profile/ProfileTargets";
+import { ProfileTargets, type ProfileDialsBundle } from "@/caliber-ui/compositions/Profile/ProfileTargets";
 import { Button } from "@/caliber-ui/components/Button";
 import { Icon } from "@/caliber-ui/components/Icon";
 import { getProfile, updateProfile } from "@/features/profile/client";
-import type { Profile, RelocationPref } from "@/types";
+import type { Profile, RelocationPref, ScheduleFlex, EmploymentPref } from "@/types";
 
 export default function ProfilePage() {
   const [profile, setProfile] = React.useState<Profile | null>(null);
@@ -28,17 +29,47 @@ export default function ProfilePage() {
     void load();
   }, [load]);
 
-  async function handleRelocationChange(relocation: RelocationPref) {
-    if (!profile || relocation === profile.relocation) return;
+  // Every PUT carries the full four-field body — Profile requires all of
+  // them (Task 1), and this is also what keeps a preset selection atomic:
+  // ONE PUT with all three dials, never three racing per-dial PUTs off the
+  // same stale `profile` snapshot.
+  async function applyDials(next: ProfileDialsBundle) {
+    if (!profile) return;
     setBusy(true);
     setError(undefined);
     try {
-      setProfile(await updateProfile({ baseCountry: profile.baseCountry, relocation }));
+      setProfile(await updateProfile({ baseCountry: profile.baseCountry, ...next }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't update the profile.");
     } finally {
       setBusy(false);
     }
+  }
+
+  function handleRelocationChange(relocation: RelocationPref) {
+    if (!profile || relocation === profile.relocation) return;
+    void applyDials({ relocation, scheduleFlex: profile.scheduleFlex, employmentPref: profile.employmentPref });
+  }
+
+  function handleScheduleChange(scheduleFlex: ScheduleFlex) {
+    if (!profile || scheduleFlex === profile.scheduleFlex) return;
+    void applyDials({ relocation: profile.relocation, scheduleFlex, employmentPref: profile.employmentPref });
+  }
+
+  function handleEmploymentChange(employmentPref: EmploymentPref) {
+    if (!profile || employmentPref === profile.employmentPref) return;
+    void applyDials({ relocation: profile.relocation, scheduleFlex: profile.scheduleFlex, employmentPref });
+  }
+
+  function handlePresetSelect(bundle: ProfileDialsBundle) {
+    if (
+      !profile ||
+      (bundle.relocation === profile.relocation &&
+        bundle.scheduleFlex === profile.scheduleFlex &&
+        bundle.employmentPref === profile.employmentPref)
+    )
+      return;
+    void applyDials(bundle);
   }
 
   return (
@@ -73,7 +104,16 @@ export default function ProfilePage() {
             </Button>
           </div>
         )}
-        {profile && <ProfileTargets profile={profile} busy={busy} onRelocationChange={handleRelocationChange} />}
+        {profile && (
+          <ProfileTargets
+            profile={profile}
+            busy={busy}
+            onRelocationChange={handleRelocationChange}
+            onScheduleChange={handleScheduleChange}
+            onEmploymentChange={handleEmploymentChange}
+            onPresetSelect={handlePresetSelect}
+          />
+        )}
       </div>
     </div>
   );

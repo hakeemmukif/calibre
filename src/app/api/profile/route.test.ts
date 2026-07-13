@@ -52,6 +52,16 @@ describe("/api/profile", () => {
     expect(Profile.parse(body).relocation).toBe("open");
   });
 
+  it("PUT flips scheduleFlex and returns it on the updated Profile", async () => {
+    await state.testDb.insert(profile).values({ id: "default", baseCountry: "MY", relocation: "stay", scheduleFlex: "any-hours", employmentPref: "any" });
+    const res = await PUT(
+      putRequest({ baseCountry: "MY", relocation: "stay", scheduleFlex: "base-hours", employmentPref: "any" }),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Profile.parse(body).scheduleFlex).toBe("base-hours");
+  });
+
   it("PUT 422s on an invalid body", async () => {
     await state.testDb.insert(profile).values({ id: "default", baseCountry: "MY", relocation: "stay", scheduleFlex: "any-hours", employmentPref: "any" });
     const res = await PUT(putRequest({ baseCountry: "Malaysia", relocation: "maybe" }));
