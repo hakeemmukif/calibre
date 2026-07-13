@@ -34,7 +34,7 @@ describe("/api/profile", () => {
   });
 
   it("GET returns the seeded row as a valid Profile", async () => {
-    await state.testDb.insert(profile).values({ id: "default", baseCountry: "MY", relocation: "stay" });
+    await state.testDb.insert(profile).values({ id: "default", baseCountry: "MY", relocation: "stay", scheduleFlex: "any-hours", employmentPref: "any" });
     const res = await GET();
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -43,15 +43,17 @@ describe("/api/profile", () => {
   });
 
   it("PUT full-replaces and returns the updated Profile", async () => {
-    await state.testDb.insert(profile).values({ id: "default", baseCountry: "MY", relocation: "stay" });
-    const res = await PUT(putRequest({ baseCountry: "MY", relocation: "open" }));
+    await state.testDb.insert(profile).values({ id: "default", baseCountry: "MY", relocation: "stay", scheduleFlex: "any-hours", employmentPref: "any" });
+    const res = await PUT(
+      putRequest({ baseCountry: "MY", relocation: "open", scheduleFlex: "any-hours", employmentPref: "any" }),
+    );
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(Profile.parse(body).relocation).toBe("open");
   });
 
   it("PUT 422s on an invalid body", async () => {
-    await state.testDb.insert(profile).values({ id: "default", baseCountry: "MY", relocation: "stay" });
+    await state.testDb.insert(profile).values({ id: "default", baseCountry: "MY", relocation: "stay", scheduleFlex: "any-hours", employmentPref: "any" });
     const res = await PUT(putRequest({ baseCountry: "Malaysia", relocation: "maybe" }));
     expect(res.status).toBe(422);
     const body = await res.json();
@@ -59,7 +61,9 @@ describe("/api/profile", () => {
   });
 
   it("PUT 404s when the row is missing", async () => {
-    const res = await PUT(putRequest({ baseCountry: "MY", relocation: "open" }));
+    const res = await PUT(
+      putRequest({ baseCountry: "MY", relocation: "open", scheduleFlex: "any-hours", employmentPref: "any" }),
+    );
     expect(res.status).toBe(404);
   });
 });

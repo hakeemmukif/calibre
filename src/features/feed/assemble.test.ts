@@ -23,6 +23,8 @@ function baseJoined(overrides: Partial<JobJoinScore["job"]> = {}): JobJoinScore 
     eligibilityEvidence: "test fixture",
     aliases: [],
     raw: {},
+    tzBand: null,
+    hiringStructure: null,
     ...overrides,
   };
 

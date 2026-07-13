@@ -24,10 +24,18 @@ export function createProfileRepo(db: Db) {
       if (!row) throw new ProfileMissingError();
       return row;
     },
-    async update(input: { baseCountry: string; relocation: "stay" | "open" }): Promise<ProfileRow> {
+    async update(input: {
+      baseCountry: string; relocation: "stay" | "open";
+      scheduleFlex: "base-hours" | "flex-evenings" | "any-hours";
+      employmentPref: "any" | "employee" | "local-entity";
+    }): Promise<ProfileRow> {
       const [row] = await db
         .update(profile)
-        .set({ baseCountry: input.baseCountry, relocation: input.relocation, updatedAt: sql`now()` })
+        .set({
+          baseCountry: input.baseCountry, relocation: input.relocation,
+          scheduleFlex: input.scheduleFlex, employmentPref: input.employmentPref,
+          updatedAt: sql`now()`,
+        })
         .where(eq(profile.id, SINGLETON_ID))
         .returning();
       if (!row) throw new ProfileMissingError();

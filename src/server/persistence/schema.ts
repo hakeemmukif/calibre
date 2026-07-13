@@ -86,6 +86,8 @@ export const profile = pgTable("profile", {
   id: text("id").primaryKey(),
   baseCountry: text("base_country").notNull(),
   relocation: text("relocation", { enum: ["stay", "open"] }).notNull(),
+  scheduleFlex: text("schedule_flex", { enum: ["base-hours", "flex-evenings", "any-hours"] }).notNull(),
+  employmentPref: text("employment_pref", { enum: ["any", "employee", "local-entity"] }).notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -136,6 +138,11 @@ export const jobs = pgTable("jobs", {
   eligibilityEvidence: text("eligibility_evidence").notNull(),
   aliases: jsonb("aliases").$type<JobAlias[]>().notNull(),
   raw: jsonb("raw").$type<unknown>().notNull(),
+  // Spec 2026-07-14 §6: stated remote-fit facts. NULL = nothing stated (never
+  // hidden by the schedule/structure gate). tz_band is normalized from a
+  // stated TZ requirement (resolveTzBand); hiring_structure is stated-only.
+  tzBand: text("tz_band", { enum: ["apac", "emea", "americas"] }),
+  hiringStructure: text("hiring_structure", { enum: ["local-entity", "eor", "contractor"] }),
 });
 
 export const jobScores = pgTable(

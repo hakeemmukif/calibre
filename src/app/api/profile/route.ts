@@ -1,6 +1,6 @@
 // GET/PUT /api/profile — the operator profile singleton (spec
 // 2026-07-12-remote-local-eligibility-design.md §3/§7). GET 404s when the
-// seed row is absent (Resume absence-is-404 pattern); PUT is a full 2-field
+// seed row is absent (Resume absence-is-404 pattern); PUT is a full field
 // replace. All DB access via profileRepo; wire shape is the frozen Profile.
 import { NextRequest, NextResponse } from "next/server";
 import { ZodError } from "zod";
@@ -19,6 +19,8 @@ function toWire(row: ProfileRow): Profile {
   return Profile.parse({
     baseCountry: row.baseCountry,
     relocation: row.relocation,
+    scheduleFlex: row.scheduleFlex,
+    employmentPref: row.employmentPref,
     updatedAt: row.updatedAt.toISOString(),
   });
 }

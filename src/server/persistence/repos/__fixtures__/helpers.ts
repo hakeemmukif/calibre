@@ -33,7 +33,11 @@ export async function insertSource(db: Db, overrides: Partial<typeof sources.$in
 export async function insertProfile(db: Db, overrides: Partial<typeof profile.$inferInsert> = {}) {
   const [row] = await db
     .insert(profile)
-    .values({ id: "default", baseCountry: "MY", relocation: "stay", ...overrides })
+    .values({
+      id: "default", baseCountry: "MY", relocation: "stay",
+      scheduleFlex: "any-hours", employmentPref: "any",
+      ...overrides,
+    })
     .returning();
   return row;
 }

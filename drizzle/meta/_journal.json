@@ -57,6 +57,13 @@
       "when": 1783951371580,
       "tag": "0007_dizzy_elektra",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1783966308288,
+      "tag": "0008_jittery_star_brand",
+      "breakpoints": true
     }
   ]
 }

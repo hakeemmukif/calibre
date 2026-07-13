@@ -25,7 +25,10 @@ export async function seedTestSources(db: Db) {
 export async function seedTestProfile(db: Db) {
   return db
     .insert(profile)
-    .values({ id: "default", baseCountry: "MY", relocation: "stay" })
+    .values({
+      id: "default", baseCountry: "MY", relocation: "stay",
+      scheduleFlex: "any-hours", employmentPref: "any",
+    })
     .onConflictDoNothing()
     .returning();
 }
