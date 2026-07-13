@@ -42,15 +42,18 @@ test("profile: relocation flip persists, reveals abroad jobs, and re-scopes the 
     await expect(page).toHaveURL(/\/profile$/);
     await expect(page.locator("header").getByText("Profile & targets")).toBeVisible();
 
-    const stay = page.getByRole("button", { name: "Stay in Malaysia" });
-    const open = page.getByRole("button", { name: "Open to relocate" });
+    const stay = page.getByRole("button", { name: "Stay in Malaysia", exact: true });
+    const open = page.getByRole("button", { name: "Open to relocate", exact: true });
     await expect(stay).toHaveAttribute("aria-pressed", "true");
 
     // Flip to open; persistence proven across a reload (PUT round-trip).
     await open.click();
     await expect(page.getByText("Also roles abroad that require relocating.")).toBeVisible();
     await page.reload();
-    await expect(page.getByRole("button", { name: "Open to relocate" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("button", { name: "Open to relocate", exact: true })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
 
     // Scan under "open": the abroad fixture job (Acme US) now gets scored.
     await scanRemoteUntil(request, (items) => items.some((j) => j.company === "Acme US"), "the Acme US abroad job");
@@ -61,12 +64,12 @@ test("profile: relocation flip persists, reveals abroad jobs, and re-scopes the 
 
     // Flip back to "stay": same rows, instantly re-scoped — no rescan.
     await page.getByRole("navigation").getByRole("button", { name: "Profile & targets" }).click();
-    await page.getByRole("button", { name: "Stay in Malaysia" }).click();
+    await page.getByRole("button", { name: "Stay in Malaysia", exact: true }).click();
     await expect(page.getByText("Malaysia jobs + remote roles that hire from Malaysia.")).toBeVisible();
 
     await page.getByRole("navigation").getByRole("button", { name: "Matches" }).click();
     await expect(page).toHaveURL(/\/feed$/);
-    await expect(page.getByText("Not eligible · hidden (not yet scored)")).toBeVisible();
+    await expect(page.getByText("Excluded · outside your remote preferences")).toBeVisible();
     await expect(page.getByText("Acme US", { exact: false })).not.toBeVisible();
 
     const feed = await (await request.get("/api/jobs?persona=remote")).json();
@@ -74,7 +77,9 @@ test("profile: relocation flip persists, reveals abroad jobs, and re-scopes the 
     expect(feed.items.some((j: { company: string }) => j.company === "Acme US")).toBe(false);
   } finally {
     // Restore the seeded default for every other spec (shared scratch DB).
-    const restore = await request.put("/api/profile", { data: { baseCountry: "MY", relocation: "stay" } });
+    const restore = await request.put("/api/profile", {
+      data: { baseCountry: "MY", relocation: "stay", scheduleFlex: "any-hours", employmentPref: "any" },
+    });
     if (!restore.ok()) throw new Error(`profile restore failed: ${restore.status()} ${await restore.text()}`);
   }
 });
