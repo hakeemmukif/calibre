@@ -182,7 +182,7 @@ export default function FeedPage() {
           />
         </div>
         {(() => {
-          const latestDone = checks.runs.find((r) => r.phase === "done" && r.job);
+          const latestDone = checks.runs.find((r) => r.origin === "paste" && r.phase === "done" && r.job);
           if (!latestDone?.job) return null;
           return (
             <div style={{ marginBottom: 16, display: "flex", justifyContent: "center" }}>

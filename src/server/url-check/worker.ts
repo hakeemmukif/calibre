@@ -136,6 +136,8 @@ export function createUrlCheckWorker(overrides: UrlCheckWorkerDeps = {}) {
           },
         );
       }
+    } catch (err) {
+      console.error("url-check worker: drain loop error:", err);
     } finally {
       draining = false;
     }
