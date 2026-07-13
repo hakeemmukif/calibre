@@ -134,3 +134,77 @@ describe("url_checks schema", () => {
     expect(row.leaseExpiresAt).toBeNull();
   });
 });
+
+describe("claimNextQueued", () => {
+  it("flips the oldest queued row to running, sets attempts=1 and a future lease", async () => {
+    const db = await createTestDb();
+    const repo = createUrlChecksRepo(db);
+    const first = await repo.insert(queuedRow());
+    await repo.insert(queuedRow());
+
+    const claimed = await repo.claimNextQueued();
+
+    expect(claimed?.id).toBe(first.id); // ORDER BY created_at
+    expect(claimed?.status).toBe("running");
+    expect(claimed?.attempts).toBe(1);
+    expect(claimed?.leaseExpiresAt).not.toBeNull();
+    expect(claimed!.leaseExpiresAt!.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it("returns null when nothing is queued", async () => {
+    const db = await createTestDb();
+    const repo = createUrlChecksRepo(db);
+    expect(await repo.claimNextQueued()).toBeNull();
+  });
+
+  it("two sequential claims return two distinct rows", async () => {
+    const db = await createTestDb();
+    const repo = createUrlChecksRepo(db);
+    await repo.insert(queuedRow());
+    await repo.insert(queuedRow());
+    const a = await repo.claimNextQueued();
+    const b = await repo.claimNextQueued();
+    expect(a?.id).not.toBe(b?.id);
+    expect(await repo.claimNextQueued()).toBeNull();
+  });
+});
+
+describe("requeueOrphanedRunning", () => {
+  it("requeues running rows under the attempt cap and fails those at/over it", async () => {
+    const db = await createTestDb();
+    const repo = createUrlChecksRepo(db);
+    const young = await repo.insert(queuedRow({ status: "running", attempts: 1, stage: "scoring" }));
+    const old = await repo.insert(queuedRow({ status: "running", attempts: 2 }));
+    const queued = await repo.insert(queuedRow()); // untouched
+
+    const result = await repo.requeueOrphanedRunning();
+
+    expect(result).toEqual({ requeued: 1, failed: 1 });
+    expect((await repo.getById(young.id))?.status).toBe("queued");
+    expect((await repo.getById(young.id))?.stage).toBeNull();
+    expect((await repo.getById(old.id))?.status).toBe("failed");
+    expect((await repo.getById(queued.id))?.status).toBe("queued");
+  });
+});
+
+describe("listActive / listByIds", () => {
+  it("listActive returns queued+running only, oldest first", async () => {
+    const db = await createTestDb();
+    const repo = createUrlChecksRepo(db);
+    await repo.insert(queuedRow({ status: "completed" }));
+    const q = await repo.insert(queuedRow());
+    const r = await repo.insert(queuedRow({ status: "running", attempts: 1 }));
+    const active = await repo.listActive();
+    expect(active.map((x) => x.id).sort()).toEqual([q.id, r.id].sort());
+  });
+
+  it("listByIds returns exact rows regardless of status; [] for empty input", async () => {
+    const db = await createTestDb();
+    const repo = createUrlChecksRepo(db);
+    const a = await repo.insert(queuedRow({ status: "completed" }));
+    const b = await repo.insert(queuedRow({ status: "failed" }));
+    await repo.insert(queuedRow());
+    expect((await repo.listByIds([a.id, b.id])).map((x) => x.id).sort()).toEqual([a.id, b.id].sort());
+    expect(await repo.listByIds([])).toEqual([]);
+  });
+});
