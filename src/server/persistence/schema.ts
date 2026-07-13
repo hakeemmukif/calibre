@@ -248,3 +248,22 @@ export const applications = pgTable("applications", {
   appliedAt: timestamp("applied_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
+
+// Multi-tenant identity (spec: 2026-07-14 auth core). Passwords argon2id;
+// sessions store only the SHA-256 hash of an opaque token. role gates the
+// admin surface — no separate admins table (additive capability only).
+export const users = pgTable("users", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  email: text("email").notNull().unique(), // normalized lowercase at the repo boundary
+  passwordHash: text("password_hash").notNull(),
+  role: text("role", { enum: ["user", "admin"] }).notNull(), // written explicitly at insert — no column default (no-fallback)
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const sessions = pgTable("sessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull().unique(), // SHA-256 of the opaque cookie token
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  lastUsedAt: timestamp("last_used_at", { withTimezone: true }).notNull().defaultNow(),
+});
