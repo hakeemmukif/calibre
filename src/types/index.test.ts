@@ -11,6 +11,8 @@ import {
   Legitimacy,
   UrlCheckRequest,
   UrlCheck,
+  AuthUser,
+  RegisterRequest,
 } from "./index";
 
 describe("Persona / ScanPersona", () => {
@@ -206,4 +208,18 @@ describe("UrlCheck", () => {
   it("rejects a non-uuid id", () => {
     expect(() => UrlCheck.parse({ ...base, id: "not-a-uuid" })).toThrow();
   });
+});
+
+it("ErrorCode includes the auth codes", () => {
+  expect(ErrorCode.options).toContain("UNAUTHORIZED");
+  expect(ErrorCode.options).toContain("FORBIDDEN");
+});
+
+it("AuthUser never carries a password hash", () => {
+  const parsed = AuthUser.parse({ id: "u1", email: "a@b.co", role: "user", passwordHash: "leak" });
+  expect(parsed).not.toHaveProperty("passwordHash"); // strip via .parse
+});
+
+it("RegisterRequest enforces a minimum password length", () => {
+  expect(RegisterRequest.safeParse({ email: "a@b.co", password: "short" }).success).toBe(false);
 });
