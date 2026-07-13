@@ -1166,6 +1166,8 @@ Run: `npx vitest run src/features/url-check/checksStore.test.ts` → FAIL (modul
 
 - [ ] **Step 4: Implement the store.**
 
+> **As-built corrections (applied during execution — the code below has 4 async defects Fable caught; the committed store is the corrected version):** a `pollInFlight` single-flight flag guards `pollTick` (no overlapping ticks double-applying "done"); the `pollFailures` success-reset moved OUT of `pollTick` INTO `applySnapshot` with a `bumpFailure(key)` helper on both the batch-poll and `getJob` failure legs (else persistent `getJob` failures oscillate 0↔1 and never fail); `applySnapshot`'s done branch has a terminal guard before AND after the `getJob` await; the scored-dedupe short-circuit upserts WITHOUT `phase` (+ `ensureTimer` backstop) and lets `applySnapshot` own the done transition (else `doneCount`/job land in an earlier emit and a failed `getJob` strands the run). `clearFinished` also deletes `pollFailures` entries. See commit `fc94053`.
+
 Create `src/features/url-check/checksStore.ts`. Design notes baked in: a module singleton (not Context — `AppShell` persists across App Router navigations, spec §5.1); one shared 1.5s interval that batch-polls only runs with a `checkId` that are still present + non-terminal; `evaluate` runs are one-shot (no polling, resolved by the awaited `evaluateJob`); staleness is per-key presence (a snapshot applies only if the key is still in the map), so a `dismiss(key)` deletes it and late responses no-op naturally — no generation counter; `MAX_POLL_FAILURES=8` fails one run; **no** `MAX_RUN_MS` (server lease owns liveness, spec §5.1).
 
 ```ts
