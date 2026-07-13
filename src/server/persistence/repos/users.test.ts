@@ -31,6 +31,14 @@ describe("usersRepo", () => {
       .rejects.toBeInstanceOf(EmailTakenError);
   });
 
+  it("users_email_unique constraint fires a 23505 on a direct duplicate insert (foundation for the race-safety catch in create())", async () => {
+    const db = await createTestDb();
+    await db.insert(users).values({ email: "race@x.co", passwordHash: "h", role: "user" });
+    await expect(
+      db.insert(users).values({ email: "race@x.co", passwordHash: "h", role: "user" }),
+    ).rejects.toMatchObject({ cause: { code: "23505" } });
+  });
+
   it("findById returns the row; list() returns all", async () => {
     const repo = createUserRepo(await createTestDb());
     const a = await repo.create({ email: "a@x.co", passwordHash: "h", role: "admin" });

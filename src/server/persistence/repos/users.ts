@@ -16,11 +16,23 @@ export function createUserRepo(db: Db) {
       const email = normalizeEmail(input.email);
       const existing = await db.select().from(users).where(eq(users.email, email)).limit(1);
       if (existing.length > 0) throw new EmailTakenError(email);
-      const [row] = await db
-        .insert(users)
-        .values({ email, passwordHash: input.passwordHash, role: input.role })
-        .returning();
-      return row;
+      try {
+        const [row] = await db
+          .insert(users)
+          .values({ email, passwordHash: input.passwordHash, role: input.role })
+          .returning();
+        return row;
+      } catch (err) {
+        // drizzle-orm's pg-core session wraps every driver error in a
+        // DrizzleQueryError, putting the real driver error (with the
+        // Postgres SQLSTATE `.code`) on `.cause` rather than on the
+        // thrown error itself — true for both postgres-js and PGlite.
+        const cause = err && typeof err === "object" ? (err as { cause?: unknown }).cause : undefined;
+        if (cause && typeof cause === "object" && (cause as { code?: string }).code === "23505") {
+          throw new EmailTakenError(email);
+        }
+        throw err;
+      }
     },
     async findByEmail(email: string): Promise<UserRow | null> {
       const [row] = await db.select().from(users).where(eq(users.email, normalizeEmail(email))).limit(1);
