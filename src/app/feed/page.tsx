@@ -14,12 +14,13 @@ import { NotificationBell } from "@/caliber-ui/compositions/Shell/NotificationBe
 import { EvalResultCard } from "@/caliber-ui/compositions/Eval/EvalResultCard";
 import { JobFeed, type JobRowAction } from "@/caliber-ui/compositions/Feed/JobFeed";
 import { ScanProgress } from "@/caliber-ui/compositions/Feed/ScanProgress";
+import { ScoringStatusCard } from "@/caliber-ui/compositions/Feed/ScoringStatusCard";
 import { Button } from "@/caliber-ui/components/Button";
 import type { FeedFilter } from "@/caliber-ui/compositions/Feed/FilterChips";
 import { getJobs, deleteJob } from "@/features/feed/client";
 import { useScanRun } from "@/features/search/useScanRun";
 import { takeScanHandoff, type ScanHandoff } from "@/features/search/scanHandoff";
-import { useUrlCheck } from "@/features/url-check/useUrlCheck";
+import { useUrlChecks } from "@/features/url-check/checksStore";
 import type { Job, Persona, SummaryStripStats } from "@/types";
 
 const EMPTY_STATS: SummaryStripStats = { scanned: 0, worth: 0, ghosts: 0, flagged: 0, sinceLast: 0, excluded: 0 };
@@ -91,23 +92,19 @@ export default function FeedPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const urlCheck = useUrlCheck();
+  const checks = useUrlChecks();
 
-  // Feed refreshes on completion only while the Pasted segment is active
-  // (spec §12) — a paste made while viewing Remote/Local shouldn't yank
-  // the visible list.
+  const prevDone = React.useRef(0);
   React.useEffect(() => {
-    if (urlCheck.state.status === "done" && persona === "pasted") void load();
-  }, [urlCheck.state.status, persona, load]);
+    if (checks.doneCount > prevDone.current) { prevDone.current = checks.doneCount; void load(); }
+  }, [checks.doneCount, load]);
 
+  const latestPaste = checks.runs.find((r) => r.origin === "paste");
   const urlEvalStatus: "idle" | "evaluating" | "success" | "error" =
-    urlCheck.state.status === "running"
-      ? "evaluating"
-      : urlCheck.state.status === "done"
-        ? "success"
-        : urlCheck.state.status === "needsText" || urlCheck.state.status === "failed"
-          ? "error"
-          : "idle";
+    !latestPaste ? "idle"
+    : latestPaste.phase === "done" ? "success"
+    : latestPaste.phase === "failed" || latestPaste.phase === "needsText" ? "error"
+    : "evaluating";
 
   function handleRowAction(id: string, action: JobRowAction) {
     if (action === "open") {
@@ -155,10 +152,10 @@ export default function FeedPage() {
           <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
             <UrlEvalBar
               status={urlEvalStatus}
-              stageText={urlCheck.state.stage ?? undefined}
-              error={urlCheck.state.check?.error?.message ?? (urlCheck.state.status === "failed" ? "Couldn't check that URL." : undefined)}
-              showPasteBox={urlCheck.state.status === "needsText"}
-              onSubmit={(url, text) => void urlCheck.submit(url, text)}
+              stageText={latestPaste?.stage ?? undefined}
+              error={latestPaste?.error?.message}
+              showPasteBox={latestPaste?.phase === "needsText"}
+              onSubmit={(url, text) => checks.submit(url, text)}
             />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -175,20 +172,31 @@ export default function FeedPage() {
             )}
           </div>
         </div>
-        {urlCheck.state.status === "done" && urlCheck.state.job && (
-          <div style={{ marginBottom: 16, display: "flex", justifyContent: "center" }}>
-            <EvalResultCard
-              job={urlCheck.state.job}
-              onOpen={() => router.push(`/jobs/${urlCheck.state.job!.id}`)}
-              onSave={() => {}}
-              onTailor={() => router.push(`/jobs/${urlCheck.state.job!.id}/tailor`)}
-              onDismiss={() => urlCheck.dismiss()}
-              alreadyKnownScopeLabel={
-                urlCheck.state.check?.alreadyKnown ? scopeLabel(urlCheck.state.job.persona) : undefined
-              }
-            />
-          </div>
-        )}
+        <div style={{ marginBottom: 16 }}>
+          <ScoringStatusCard
+            runs={checks.runs}
+            onOpen={(jobId) => router.push(`/jobs/${jobId}`)}
+            onRetry={(key) => checks.retryWithText(key, "")}
+            onPasteText={() => { /* paste box already shown via showPasteBox on needsText */ }}
+            onDismiss={checks.dismiss}
+          />
+        </div>
+        {(() => {
+          const latestDone = checks.runs.find((r) => r.phase === "done" && r.job);
+          if (!latestDone?.job) return null;
+          return (
+            <div style={{ marginBottom: 16, display: "flex", justifyContent: "center" }}>
+              <EvalResultCard
+                job={latestDone.job}
+                onOpen={() => router.push(`/jobs/${latestDone.job!.id}`)}
+                onSave={() => {}}
+                onTailor={() => router.push(`/jobs/${latestDone.job!.id}/tailor`)}
+                onDismiss={() => checks.dismiss(latestDone.key)}
+                alreadyKnownScopeLabel={latestDone.alreadyKnown ? scopeLabel(latestDone.job.persona) : undefined}
+              />
+            </div>
+          );
+        })()}
         <JobFeed
           jobs={jobs}
           filter={filter}
