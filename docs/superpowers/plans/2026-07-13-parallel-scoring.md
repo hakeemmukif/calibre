@@ -107,11 +107,11 @@ export const urlChecks = pgTable(
     createdAt: timestamp("created_at").notNull().defaultNow(),
     finishedAt: timestamp("finished_at"),
   },
-  (t) => ({
-    queuedIdx: index("url_checks_queued_idx").on(t.status, t.createdAt).where(sql`${t.status} = 'queued'`),
-  }),
+  (t) => [index("url_checks_queued_idx").on(t.status, t.createdAt).where(sql`${t.status} = 'queued'`)],
 );
 ```
+
+> Use the **array** return form `(t) => [ ... ]` (current Drizzle API, matches `jobScores` at `schema.ts:141-164`) — NOT the deprecated object form `(t) => ({ queuedIdx: ... })`.
 
 - [ ] **Step 4: Generate the migration.**
 
