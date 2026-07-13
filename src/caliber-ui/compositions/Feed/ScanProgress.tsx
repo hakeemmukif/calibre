@@ -21,8 +21,7 @@ export interface ScanProgressProps {
   onClose?(): void;
 }
 
-function StageGlyph({ state }: { state: ScanProgressStageRow["state"] }) {
-  const size = 26;
+export function StageGlyph({ state, size = 26 }: { state: ScanProgressStageRow["state"]; size?: number }) {
   if (state === "done") {
     return (
       <div style={{ width: size, height: size, borderRadius: "50%", background: "var(--fit-strong-soft)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
