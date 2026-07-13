@@ -321,7 +321,7 @@ describe("runPipeline — needsText truth table", () => {
     await runPipeline(checkId, { url: "https://example.com/pasted-omitted-field", text: "Company: Front\n\nSenior Engineer..." }, {
       // No isJobPosting key at all — under JdFactsSchema (optional) this
       // used to parse fine and silently produce "incomplete"; under
-      // JdFactsGateSchema (required) makeMockLlm's own responseSchema.parse
+      // JdFactsEmitSchema (required) makeMockLlm's own responseSchema.parse
       // throws, which runGate's paste-mode caller maps to
       // ExtractionIncompleteError just like a real upstream failure.
       llm: jdExtractLlm({ title: "Senior Engineer", company: "Front", mustHaves: [], niceToHaves: [], responsibilities: [], redFlags: [] }),

@@ -85,7 +85,9 @@ export async function extractJdFacts(
 // prompt wording, because client.ts's response_format derives `required`
 // from the Zod schema and runs with `strict: false`. JdFactsEmitSchema makes
 // every field required (scalars nullable) forcing the model to emit them
-// explicitly (verified 3/3 live calls); emitToFacts then strips nulls back to
+// explicitly. isJobPosting/company were verified 3/3 live (2026-07-13); the
+// three remote-fit fields (tzRequirement/hiringStructure/workCalendar) are
+// pending live verification. emitToFacts then strips nulls back to
 // undefined so run.ts's `!company` check still holds and isJobPosting is
 // always present at runtime.
 export async function extractJdFactsForGate(

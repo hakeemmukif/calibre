@@ -80,7 +80,7 @@ describe("JdFactsSchema isJobPosting field", () => {
   });
 });
 
-describe("JdFactsEmitSchema (url-check gate only — JdFactsSchema itself stays optional)", () => {
+describe("JdFactsEmitSchema (emission schema for both the scanned path and the url-check gate)", () => {
   const base = {
     title: "Engineer",
     mustHaves: [],

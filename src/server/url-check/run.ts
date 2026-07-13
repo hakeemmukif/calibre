@@ -114,9 +114,9 @@ type GateOutcome = { kind: "ok"; facts: PostingFacts } | { kind: "not-a-posting"
 // content, paste-mode text) — spec §6's extract-gate: isJobPosting:false is
 // terminal-not-a-posting, null/empty company is incomplete (fail-loud: no
 // `?? ""` default lets an empty company through as "ok"). Uses
-// JdFactsGateSchema (jdFacts.ts) — isJobPosting required, company
+// JdFactsEmitSchema (jdFacts.ts) — isJobPosting required, company
 // required-but-nullable — so the model must explicitly emit both rather
-// than silently omitting them (see JdFactsGateSchema's comment).
+// than silently omitting them (see JdFactsEmitSchema's comment).
 async function runGate(llm: LlmClient, text: string): Promise<{ outcome: GateOutcome; costUsd: number }> {
   const { data, costUsd } = await extractJdFactsForGate(llm, text);
   if (data.isJobPosting === false) return { outcome: { kind: "not-a-posting" }, costUsd };
