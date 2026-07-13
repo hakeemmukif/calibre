@@ -95,24 +95,33 @@ export function createUrlChecksRepo(db: Db) {
       if (ids.length === 0) return [];
       return db.select().from(urlChecks).where(inArray(urlChecks.id, ids));
     },
-    async updateStage(id: string, stage: string): Promise<UrlCheckRow | null> {
-      const [updated] = await db.update(urlChecks).set({ stage }).where(eq(urlChecks.id, id)).returning();
+    // Attempt-fenced (spec §4.5): only the worker holding this row's claimed
+    // `attempts` value may write it. A stale attempt (a requeue/lease-expiry
+    // already moved the row on) no-ops instead of clobbering the new owner.
+    async updateStage(id: string, stage: string, attempt: number): Promise<UrlCheckRow | null> {
+      const [updated] = await db
+        .update(urlChecks)
+        .set({ stage })
+        .where(and(eq(urlChecks.id, id), eq(urlChecks.status, "running"), eq(urlChecks.attempts, attempt)))
+        .returning();
       return updated ?? null;
     },
     async complete(
       id: string,
       patch: { jobId: string; alreadyKnown: boolean },
+      attempt: number,
     ): Promise<UrlCheckRow | null> {
       const [updated] = await db
         .update(urlChecks)
         .set({ status: "completed", jobId: patch.jobId, alreadyKnown: patch.alreadyKnown, finishedAt: new Date() })
-        .where(eq(urlChecks.id, id))
+        .where(and(eq(urlChecks.id, id), eq(urlChecks.status, "running"), eq(urlChecks.attempts, attempt)))
         .returning();
       return updated ?? null;
     },
     async fail(
       id: string,
       patch: { code: string; message: string; needsText: boolean },
+      attempt: number,
     ): Promise<UrlCheckRow | null> {
       const [updated] = await db
         .update(urlChecks)
@@ -122,29 +131,17 @@ export function createUrlChecksRepo(db: Db) {
           needsText: patch.needsText,
           finishedAt: new Date(),
         })
-        .where(eq(urlChecks.id, id))
+        .where(and(eq(urlChecks.id, id), eq(urlChecks.status, "running"), eq(urlChecks.attempts, attempt)))
         .returning();
       return updated ?? null;
     },
-    async addCost(id: string, usd: number): Promise<UrlCheckRow | null> {
+    async addCost(id: string, usd: number, attempt: number): Promise<UrlCheckRow | null> {
       const [updated] = await db
         .update(urlChecks)
         .set({ costUsd: sql`${urlChecks.costUsd} + ${usd}` })
-        .where(eq(urlChecks.id, id))
+        .where(and(eq(urlChecks.id, id), eq(urlChecks.status, "running"), eq(urlChecks.attempts, attempt)))
         .returning();
       return updated ?? null;
-    },
-    async markAllUnfinishedAsFailed(): Promise<number> {
-      const rows = await db
-        .update(urlChecks)
-        .set({
-          status: "failed",
-          error: { code: "INTERNAL", message: "stale: process restarted while this check was in progress" },
-          finishedAt: new Date(),
-        })
-        .where(inArray(urlChecks.status, ["queued", "running"]))
-        .returning();
-      return rows.length;
     },
   };
 }
@@ -152,11 +149,10 @@ export function createUrlChecksRepo(db: Db) {
 export const urlChecksRepo: ReturnType<typeof createUrlChecksRepo> = {
   insert: (row) => createUrlChecksRepo(getDb()).insert(row),
   getById: (id) => createUrlChecksRepo(getDb()).getById(id),
-  updateStage: (id, stage) => createUrlChecksRepo(getDb()).updateStage(id, stage),
-  complete: (id, patch) => createUrlChecksRepo(getDb()).complete(id, patch),
-  fail: (id, patch) => createUrlChecksRepo(getDb()).fail(id, patch),
-  addCost: (id, usd) => createUrlChecksRepo(getDb()).addCost(id, usd),
-  markAllUnfinishedAsFailed: () => createUrlChecksRepo(getDb()).markAllUnfinishedAsFailed(),
+  updateStage: (id, stage, attempt) => createUrlChecksRepo(getDb()).updateStage(id, stage, attempt),
+  complete: (id, patch, attempt) => createUrlChecksRepo(getDb()).complete(id, patch, attempt),
+  fail: (id, patch, attempt) => createUrlChecksRepo(getDb()).fail(id, patch, attempt),
+  addCost: (id, usd, attempt) => createUrlChecksRepo(getDb()).addCost(id, usd, attempt),
   claimNextQueued: () => createUrlChecksRepo(getDb()).claimNextQueued(),
   requeueOrphanedRunning: (maxAttempts) => createUrlChecksRepo(getDb()).requeueOrphanedRunning(maxAttempts),
   sweepExpiredLeases: (maxAttempts) => createUrlChecksRepo(getDb()).sweepExpiredLeases(maxAttempts),

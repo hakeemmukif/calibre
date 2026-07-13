@@ -20,6 +20,12 @@ vi.mock("@/lib/llm/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/llm/client")>();
   return { ...actual, getLlm: () => makeMockLlm(llm.scripted) };
 });
+// startUrlCheck now kicks the boot-started urlCheckWorker singleton instead
+// of running the pipeline itself. Without this mock, the "202 queued" test
+// below would drain the mocked test DB through the REAL worker with REAL
+// pipeline deps (real fetchPageText/searchForPosting) — hitting the network
+// (same hazard the parallel-scoring cutover flags for run.test.ts).
+vi.mock("@/server/url-check/worker", () => ({ urlCheckWorker: { kick: vi.fn() } }));
 
 const { POST } = await import("./route");
 
@@ -95,11 +101,10 @@ describe("POST /api/jobs/check", () => {
 
   it("a new URL starts the pipeline and returns 202 queued", async () => {
     await insertResume(state.testDb, { isActive: true });
-    // startUrlCheck's admission reads the operator profile synchronously
-    // (run.ts) once past the dedupe short-circuit — a fixture the brief's
-    // test list omitted; Task 12's own run.test.ts seeds it the same way
-    // before every success-path assertion (3rd sanctioned deviation, see
-    // route.ts commit).
+    // Profile is no longer read during admission (moved to the worker's
+    // claim-time process step, mocked out above) — this insert is now dead
+    // weight but harmless; left in place rather than touching more than the
+    // worker-mock fix requires.
     await insertProfile(state.testDb);
     const res = await POST(jsonRequest({ url: "https://example.com/brand-new-job" }));
     expect(res.status).toBe(202);

@@ -36,7 +36,7 @@ describe("urlChecksRepo", () => {
       alreadyKnown: false, needsText: false, costUsd: 0, raw: {},
     });
 
-    const staged = await repo.updateStage(inserted.id, "fetching");
+    const staged = await repo.updateStage(inserted.id, "fetching", 0);
     expect(staged?.stage).toBe("fetching");
     expect(staged?.status).toBe("running");
   });
@@ -51,7 +51,7 @@ describe("urlChecksRepo", () => {
       alreadyKnown: false, needsText: false, costUsd: 0, raw: {},
     });
 
-    const done = await repo.complete(inserted.id, { jobId: job.id, alreadyKnown: true });
+    const done = await repo.complete(inserted.id, { jobId: job.id, alreadyKnown: true }, 0);
     expect(done?.status).toBe("completed");
     expect(done?.jobId).toBe(job.id);
     expect(done?.alreadyKnown).toBe(true);
@@ -68,7 +68,7 @@ describe("urlChecksRepo", () => {
 
     const failed = await repo.fail(inserted.id, {
       code: "NOT_A_JOB_POSTING", message: "page is not a job posting", needsText: true,
-    });
+    }, 0);
     expect(failed?.status).toBe("failed");
     expect(failed?.error).toEqual({ code: "NOT_A_JOB_POSTING", message: "page is not a job posting" });
     expect(failed?.needsText).toBe(true);
@@ -83,30 +83,9 @@ describe("urlChecksRepo", () => {
       alreadyKnown: false, needsText: false, costUsd: 0, raw: {},
     });
 
-    await repo.addCost(inserted.id, 0.01);
-    const after = await repo.addCost(inserted.id, 0.005);
+    await repo.addCost(inserted.id, 0.01, 0);
+    const after = await repo.addCost(inserted.id, 0.005, 0);
     expect(after?.costUsd).toBeCloseTo(0.015, 6);
-  });
-
-  it("markAllUnfinishedAsFailed flips 'queued' and 'running' rows to 'failed', leaves completed/failed untouched", async () => {
-    const db = await createTestDb();
-    const repo = createUrlChecksRepo(db);
-    const base = { url: "https://x.example/job", dedupeKey: "x.example/job", alreadyKnown: false, needsText: false, costUsd: 0, raw: {} };
-
-    const running = await repo.insert({ ...base, status: "running" });
-    const queued = await repo.insert({ ...base, status: "queued" });
-    const completed = await repo.insert({ ...base, status: "completed" });
-    const alreadyFailed = await repo.insert({ ...base, status: "failed" });
-
-    const flippedCount = await repo.markAllUnfinishedAsFailed();
-    expect(flippedCount).toBe(2);
-
-    expect((await repo.getById(running.id))?.status).toBe("failed");
-    expect((await repo.getById(running.id))?.error).toMatchObject({ code: "INTERNAL" });
-    expect((await repo.getById(running.id))?.finishedAt).not.toBeNull();
-    expect((await repo.getById(queued.id))?.status).toBe("failed");
-    expect((await repo.getById(completed.id))?.status).toBe("completed");
-    expect((await repo.getById(alreadyFailed.id))?.status).toBe("failed");
   });
 });
 
@@ -236,5 +215,21 @@ describe("listActive / listByIds", () => {
     await repo.insert(queuedRow());
     expect((await repo.listByIds([a.id, b.id])).map((x) => x.id).sort()).toEqual([a.id, b.id].sort());
     expect(await repo.listByIds([])).toEqual([]);
+  });
+});
+
+describe("attempt-fenced writes", () => {
+  it("a stale-attempt complete()/fail()/updateStage() no-ops against a row held by a newer attempt", async () => {
+    const db = await createTestDb();
+    const repo = createUrlChecksRepo(db);
+    // Row currently owned by attempt 2.
+    const row = await repo.insert(queuedRow({ status: "running", attempts: 2 }));
+
+    expect(await repo.updateStage(row.id, "scoring", 1)).toBeNull(); // stale
+    expect(await repo.complete(row.id, { jobId: null as unknown as string, alreadyKnown: true }, 1)).toBeNull();
+    expect((await repo.getById(row.id))?.status).toBe("running"); // untouched
+
+    expect(await repo.updateStage(row.id, "scoring", 2)).not.toBeNull(); // owner
+    expect((await repo.getById(row.id))?.stage).toBe("scoring");
   });
 });

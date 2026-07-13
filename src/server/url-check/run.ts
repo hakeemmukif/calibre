@@ -4,9 +4,9 @@
 // ghost-check -> score. Shaped like server/search/run.ts's admission-then-
 // fire-and-forget split, but there's no fan-out and no in-memory registry:
 // one job, one `url_checks` row, polled via getUrlCheck instead of SSE.
-import { getLlm, type LlmClient } from "@/lib/llm/client";
+import type { LlmClient } from "@/lib/llm/client";
 import { jobsRepo } from "@/server/persistence/repos/jobs";
-import { profileRepo, type ProfileRow } from "@/server/persistence/repos/profile";
+import type { ProfileRow } from "@/server/persistence/repos/profile";
 import { resumesRepo, type ResumeRow } from "@/server/persistence/repos/resumes";
 import { sourcesRepo } from "@/server/persistence/repos/sources";
 import { urlChecksRepo, type UrlCheckRow } from "@/server/persistence/repos/urlChecks";
@@ -20,6 +20,7 @@ import { scoreJob } from "@/server/score";
 import { UrlCheck, type ErrorCode, type UrlCheckRequest } from "@/types";
 import { fetchPageText, MAX_TEXT_CHARS } from "./fetch-page";
 import { searchForPosting } from "./search-tier";
+import { urlCheckWorker } from "./worker";
 
 export class PayloadTooLargeError extends Error {
   constructor(length: number) {
@@ -122,12 +123,12 @@ function mapFailure(err: Error): { code: ErrorCode; needsText: boolean } {
   return { code: "INTERNAL", needsText: false };
 }
 
-async function failCheck(checkId: string, err: Error): Promise<void> {
+async function failCheck(checkId: string, err: Error, attempt: number): Promise<void> {
   const { code, needsText } = mapFailure(err);
-  await urlChecksRepo.fail(checkId, { code, message: err.message, needsText });
+  await urlChecksRepo.fail(checkId, { code, message: err.message, needsText }, attempt);
 }
 
-async function runPipeline(
+export async function runPipeline(
   checkId: string,
   req: UrlCheckRequest,
   ctx: {
@@ -135,9 +136,10 @@ async function runPipeline(
     resumeRow: ResumeRow;
     profile: ProfileRow;
     deps: Required<Omit<UrlCheckDeps, "llm">>;
+    attempt: number;
   },
 ): Promise<void> {
-  const { llm, resumeRow, profile, deps } = ctx;
+  const { llm, resumeRow, profile, deps, attempt } = ctx;
   try {
     const pasteMode = req.text !== undefined;
     let jdText: string;
@@ -156,13 +158,13 @@ async function runPipeline(
       } catch {
         throw new ExtractionIncompleteError();
       }
-      await urlChecksRepo.addCost(checkId, gate.costUsd);
+      await urlChecksRepo.addCost(checkId, gate.costUsd, attempt);
       if (gate.outcome.kind === "not-a-posting") throw new NotAJobPostingError();
       if (gate.outcome.kind === "incomplete") throw new ExtractionIncompleteError();
       facts = gate.outcome.facts;
       jdText = req.text!;
     } else {
-      await urlChecksRepo.updateStage(checkId, "fetching");
+      await urlChecksRepo.updateStage(checkId, "fetching", attempt);
       const fetched = await deps.fetchPageText(req.url);
 
       let tier1Facts: PostingFacts | undefined;
@@ -175,7 +177,7 @@ async function runPipeline(
         // the check from this branch.
         try {
           const gate = await runGate(llm, fetched.text);
-          await urlChecksRepo.addCost(checkId, gate.costUsd);
+          await urlChecksRepo.addCost(checkId, gate.costUsd, attempt);
           if (gate.outcome.kind === "ok") {
             tier1Facts = gate.outcome.facts;
             tier1Text = fetched.text;
@@ -190,7 +192,7 @@ async function runPipeline(
         jdText = tier1Text;
         tier1Live = true;
       } else {
-        await urlChecksRepo.updateStage(checkId, "searching");
+        await urlChecksRepo.updateStage(checkId, "searching", attempt);
         let search: Awaited<ReturnType<typeof searchForPosting>>;
         try {
           search = await deps.searchForPosting(llm, req.url, pageTitle);
@@ -199,11 +201,11 @@ async function runPipeline(
             `url-check-search failed: ${err instanceof Error ? err.message : String(err)}`,
           );
         }
-        await urlChecksRepo.addCost(checkId, search.costUsd);
+        await urlChecksRepo.addCost(checkId, search.costUsd, attempt);
         if (!search.found) throw new FetchBlockedError();
 
         const gate = await runGate(llm, search.content);
-        await urlChecksRepo.addCost(checkId, gate.costUsd);
+        await urlChecksRepo.addCost(checkId, gate.costUsd, attempt);
         if (gate.outcome.kind === "not-a-posting") throw new NotAJobPostingError();
         if (gate.outcome.kind === "incomplete") throw new ExtractionIncompleteError();
         facts = gate.outcome.facts;
@@ -211,7 +213,7 @@ async function runPipeline(
       }
     }
 
-    await urlChecksRepo.updateStage(checkId, "persisting");
+    await urlChecksRepo.updateStage(checkId, "persisting", attempt);
     const manualSource = await sourcesRepo.getById("manual");
     if (!manualSource) throw new ManualSourceMissingError();
 
@@ -247,11 +249,11 @@ async function runPipeline(
     // `job` is the SCANNED row. Complete as alreadyKnown rather than ghost-
     // checking/scoring a job this pipeline no longer owns.
     if (job.sourceId !== "manual") {
-      await urlChecksRepo.complete(checkId, { jobId: job.id, alreadyKnown: true });
+      await urlChecksRepo.complete(checkId, { jobId: job.id, alreadyKnown: true }, attempt);
       return;
     }
 
-    await urlChecksRepo.updateStage(checkId, "scoring");
+    await urlChecksRepo.updateStage(checkId, "scoring", attempt);
     // Ghost-web and scoreMatch run concurrently — fetchGhostWebEvidence never
     // throws (its own catch returns a status:"failed" webEvidence), and
     // scoreJob doesn't consume webEvidence until after its LLM call, so
@@ -275,21 +277,18 @@ async function runPipeline(
       throw new UpstreamLlmError(`scoring failed: ${err instanceof Error ? err.message : String(err)}`);
     }
     const ghost = await ghostPromise;
-    await urlChecksRepo.addCost(checkId, ghost.costUsd);
-    await urlChecksRepo.addCost(checkId, scoreRow.costUsd);
+    await urlChecksRepo.addCost(checkId, ghost.costUsd, attempt);
+    await urlChecksRepo.addCost(checkId, scoreRow.costUsd, attempt);
 
-    await urlChecksRepo.complete(checkId, { jobId: job.id, alreadyKnown: false });
+    await urlChecksRepo.complete(checkId, { jobId: job.id, alreadyKnown: false }, attempt);
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
     console.error(`url-check ${checkId}: pipeline failed:`, error);
-    await failCheck(checkId, error);
+    await failCheck(checkId, error, attempt);
   }
 }
 
-export async function startUrlCheck(
-  req: UrlCheckRequest,
-  deps: UrlCheckDeps = {},
-): Promise<{ check: UrlCheck; started: boolean }> {
+export async function startUrlCheck(req: UrlCheckRequest): Promise<{ check: UrlCheck; started: boolean }> {
   // Admission order is load-bearing (spec §6): résumé check runs before any
   // URL/text work, so a no-résumé request never reaches an LLM call or a
   // url_checks write — see run.test.ts's zero-LLM-call assertion.
@@ -327,7 +326,6 @@ export async function startUrlCheck(
     return { check: assemble(row), started: false };
   }
 
-  const profile = await profileRepo.get();
   const row = await urlChecksRepo.insert({
     id: crypto.randomUUID(),
     url: req.url,
@@ -342,19 +340,6 @@ export async function startUrlCheck(
     raw: { text: req.text ?? null },
   });
 
-  const resolvedDeps: Required<Omit<UrlCheckDeps, "llm">> = {
-    fetchPageText: deps.fetchPageText ?? fetchPageText,
-    searchForPosting: deps.searchForPosting ?? searchForPosting,
-    fetchGhostWebEvidence: deps.fetchGhostWebEvidence ?? fetchGhostWebEvidence,
-    scoreJob: deps.scoreJob ?? scoreJob,
-  };
-  const llm = deps.llm ?? getLlm();
-
-  void runPipeline(row.id, req, { llm, resumeRow, profile, deps: resolvedDeps }).catch((err) => {
-    // Last-resort net (search/run.ts's failRun precedent): only reachable if
-    // failCheck itself throws inside runPipeline's own catch (e.g. DB down).
-    console.error(`url-check ${row.id}: pipeline crashed after failCheck also threw:`, err);
-  });
-
+  urlCheckWorker.kick(); // fire-and-forget: enqueue then let the worker own execution
   return { check: assemble(row), started: true };
 }

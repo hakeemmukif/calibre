@@ -13,6 +13,8 @@ export async function register(): Promise<void> {
     const { markStaleRunningOnBoot } = await import("@/server/runs/registry");
     await markStaleRunningOnBoot();
     const { urlChecksRepo } = await import("@/server/persistence/repos/urlChecks");
-    await urlChecksRepo.markAllUnfinishedAsFailed();
+    await urlChecksRepo.requeueOrphanedRunning();
+    const { urlCheckWorker } = await import("@/server/url-check/worker");
+    urlCheckWorker.start();
   }
 }
