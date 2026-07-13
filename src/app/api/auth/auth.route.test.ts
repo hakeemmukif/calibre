@@ -1,16 +1,22 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 
-const { usersRepo, sessionsRepo } = vi.hoisted(() => ({
+const { usersRepo, sessionsRepo, getSession } = vi.hoisted(() => ({
   usersRepo: { create: vi.fn(), findByEmail: vi.fn() },
   sessionsRepo: { create: vi.fn(), deleteByTokenHash: vi.fn(), findUserByTokenHash: vi.fn() },
+  getSession: vi.fn(),
 }));
 vi.mock("@/server/persistence/repos/users", () => ({ usersRepo }));
 vi.mock("@/server/persistence/repos/sessions", () => ({ sessionsRepo }));
+vi.mock("@/server/auth/session", async (orig) => ({
+  ...(await orig<typeof import("@/server/auth/session")>()),
+  getSession: () => getSession(),
+}));
 
 import { POST as register } from "./register/route";
 import { POST as login } from "./login/route";
 import { POST as logout } from "./logout/route";
+import { GET as session } from "./session/route";
 import { hashPassword } from "@/server/auth/password";
 import { hashToken } from "@/server/auth/token";
 import { SESSION_COOKIE } from "@/server/auth/session";
@@ -150,6 +156,18 @@ describe("POST /api/auth/logout", () => {
   });
 });
 
-// GET /api/auth/session depends on next/headers `cookies()` request scope,
-// which isn't reachable from a unit test outside a request context. It's
-// covered by the Task 14 integration smoke instead.
+describe("GET /api/auth/session", () => {
+  it("returns 200 with the user when a session exists", async () => {
+    getSession.mockResolvedValue({ id: "u1", email: "a@b.co", role: "user" });
+    const res = await session();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ user: { id: "u1", email: "a@b.co", role: "user" } });
+  });
+
+  it("returns 401 UNAUTHORIZED when there is no session", async () => {
+    getSession.mockResolvedValue(null);
+    const res = await session();
+    expect(res.status).toBe(401);
+    expect((await res.json()).error.code).toBe("UNAUTHORIZED");
+  });
+});
