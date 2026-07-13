@@ -86,6 +86,13 @@ export type ScheduleFlex = z.infer<typeof ScheduleFlex>;
 export const EmploymentPref = z.enum(["any", "employee", "local-entity"]); // "employee" admits local entity OR EOR
 export type EmploymentPref = z.infer<typeof EmploymentPref>;
 
+// TzBand/HiringStructure — shared vocabulary for resolveTzBand + the schedule/
+// structure gates, NOT wire fields (spec §3: zero new Job fields; the jobs.tz_band/
+// hiring_structure columns are DB-only). Bare TS types, no Zod — never add to a
+// wire schema.
+export type TzBand = "apac" | "emea" | "americas";
+export type HiringStructure = "local-entity" | "eor" | "contractor";
+
 // Operator profile — singleton (single-operator MVP). `baseCountry` is
 // ISO-3166-1 alpha-2 ("MY" at launch). The seed row IS the install step
 // (seed.ts precedent); a missing row is an error, never defaulted.
