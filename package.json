@@ -16,7 +16,7 @@
     "build-storybook": "storybook build",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:seed": "tsx src/server/persistence/seed.ts",
+    "db:seed": "tsx --env-file-if-exists=.env.local src/server/persistence/seed.ts",
     "db:seed:test": "tsx src/server/persistence/seed-test.ts",
     "eligibility:recompute": "tsx src/server/score/recompute-eligibility.ts",
     "eligibility:report": "tsx src/server/score/eligibility-distribution.ts",
