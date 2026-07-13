@@ -50,6 +50,10 @@ import {
   UrlCheck,
   UrlCheckRequest,
   UrlChecksSnapshot,
+  AuthUser,
+  RegisterRequest,
+  LoginRequest,
+  SessionResponse,
 } from "@/types";
 
 const entitySchemas: Record<string, z.ZodType> = {
@@ -79,6 +83,10 @@ const entitySchemas: Record<string, z.ZodType> = {
   UrlCheck,
   UrlCheckRequest,
   UrlChecksSnapshot,
+  AuthUser,
+  RegisterRequest,
+  LoginRequest,
+  SessionResponse,
 };
 
 for (const [name, schema] of Object.entries(entitySchemas)) {
@@ -596,6 +604,49 @@ registry.registerPath({
     200: { description: "The updated Source", content: { "application/json": { schema: Source } } },
     404: { description: "Unknown source id", content: { "application/json": { schema: ErrorEnvelope } } },
     422: { description: "Invalid body (enabled must be a boolean)", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/auth/register",
+  summary: "Register an account (auto-login)",
+  request: { body: { content: { "application/json": { schema: RegisterRequest } } } },
+  responses: {
+    201: { description: "Created + session cookie set", content: { "application/json": { schema: SessionResponse } } },
+    409: { description: "Email already registered", content: { "application/json": { schema: ErrorEnvelope } } },
+    422: { description: "Validation error", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/auth/login",
+  summary: "Log in with email + password",
+  request: { body: { content: { "application/json": { schema: LoginRequest } } } },
+  responses: {
+    200: { description: "Session cookie set", content: { "application/json": { schema: SessionResponse } } },
+    401: { description: "Invalid credentials", content: { "application/json": { schema: ErrorEnvelope } } },
+    422: { description: "Validation error", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/auth/logout",
+  summary: "Log out",
+  responses: {
+    204: { description: "Logged out; session cookie cleared" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/auth/session",
+  summary: "Current session",
+  responses: {
+    200: { description: "Active session", content: { "application/json": { schema: SessionResponse } } },
+    401: { description: "No active session", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
 

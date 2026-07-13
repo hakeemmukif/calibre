@@ -223,6 +223,30 @@
         ],
         "type": "object"
       },
+      "AuthUser": {
+        "properties": {
+          "email": {
+            "format": "email",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "user",
+              "admin"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "role"
+        ],
+        "type": "object"
+      },
       "Eligibility": {
         "properties": {
           "summary": {
@@ -268,7 +292,9 @@
                   "PAYLOAD_TOO_LARGE",
                   "FETCH_BLOCKED",
                   "NOT_A_JOB_POSTING",
-                  "INTERNAL"
+                  "INTERNAL",
+                  "UNAUTHORIZED",
+                  "FORBIDDEN"
                 ],
                 "type": "string"
               },
@@ -559,6 +585,24 @@
         ],
         "type": "string"
       },
+      "LoginRequest": {
+        "properties": {
+          "email": {
+            "format": "email",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "type": "object"
+      },
       "Persona": {
         "enum": [
           "remote",
@@ -609,6 +653,24 @@
           "current",
           "total",
           "label"
+        ],
+        "type": "object"
+      },
+      "RegisterRequest": {
+        "properties": {
+          "email": {
+            "format": "email",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 200,
+            "minLength": 8,
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
         ],
         "type": "object"
       },
@@ -780,6 +842,17 @@
           "startedAt",
           "finishedAt",
           "error"
+        ],
+        "type": "object"
+      },
+      "SessionResponse": {
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/AuthUser"
+          }
+        },
+        "required": [
+          "user"
         ],
         "type": "object"
       },
@@ -1156,7 +1229,9 @@
                   "PAYLOAD_TOO_LARGE",
                   "FETCH_BLOCKED",
                   "NOT_A_JOB_POSTING",
-                  "INTERNAL"
+                  "INTERNAL",
+                  "UNAUTHORIZED",
+                  "FORBIDDEN"
                 ],
                 "type": "string"
               },
@@ -1259,7 +1334,7 @@
     }
   },
   "info": {
-    "description": "Auth: none in v1 (single-operator; network-layer protection only).",
+    "description": "Auth: email+password sessions (httpOnly cookie). requireUser()/requireAdmin() guard route handlers; no Next middleware.",
     "title": "Caliber API",
     "version": "1.0.0"
   },
@@ -1786,6 +1861,135 @@
           }
         },
         "summary": "Extract application questions from a posting — F4 tier 1/2/3 (B7)"
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            },
+            "description": "Session cookie set"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Invalid credentials"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          }
+        },
+        "summary": "Log in with email + password"
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "responses": {
+          "204": {
+            "description": "Logged out; session cookie cleared"
+          }
+        },
+        "summary": "Log out"
+      }
+    },
+    "/api/auth/register": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            },
+            "description": "Created + session cookie set"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Email already registered"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          }
+        },
+        "summary": "Register an account (auto-login)"
+      }
+    },
+    "/api/auth/session": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            },
+            "description": "Active session"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No active session"
+          }
+        },
+        "summary": "Current session"
       }
     },
     "/api/health": {
