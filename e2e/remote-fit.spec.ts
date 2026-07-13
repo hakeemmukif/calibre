@@ -59,7 +59,6 @@ test("remote-fit: flip schedule dial re-scopes the feed and the excluded count m
     await expect(page.getByText("Remote Fit APAC Co", { exact: false })).toBeVisible();
 
     const before = await (await request.get("/api/jobs?persona=remote")).json();
-    expect(before.stats.excluded).toBe(0);
 
     // Flip to "Malaysia hours" (base-hours) — allowedBandsFor admits only
     // `apac` (server/score/tzBand.ts), so the Americas job's stated band is
@@ -80,7 +79,9 @@ test("remote-fit: flip schedule dial re-scopes the feed and the excluded count m
     // The trust signal (spec §8) — not just the row vanishing, the Excluded
     // count moving to account for it.
     const after = await (await request.get("/api/jobs?persona=remote")).json();
-    expect(after.stats.excluded).toBe(1);
+    // Delta not absolute: the shared scratch DB may carry rows from other specs,
+    // but the schedule gate hides exactly our one Americas-band job, so the delta is the invariant.
+    expect(after.stats.excluded - before.stats.excluded).toBe(1);
     expect(after.items.some((j: { company: string }) => j.company === "Remote Fit Americas Co")).toBe(false);
     expect(after.items.some((j: { company: string }) => j.company === "Remote Fit APAC Co")).toBe(true);
   } finally {
