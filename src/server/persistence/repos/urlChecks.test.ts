@@ -1,4 +1,6 @@
+import { eq, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
+import { urlChecks } from "../schema";
 import { createTestDb } from "../test-db";
 import { insertJob, insertSource } from "./__fixtures__/helpers";
 import { createUrlChecksRepo } from "./urlChecks";
@@ -184,6 +186,34 @@ describe("requeueOrphanedRunning", () => {
     expect((await repo.getById(young.id))?.stage).toBeNull();
     expect((await repo.getById(old.id))?.status).toBe("failed");
     expect((await repo.getById(queued.id))?.status).toBe("queued");
+  });
+});
+
+describe("sweepExpiredLeases", () => {
+  // Drive lease timestamps with SQL intervals (the Postgres time frame), NOT
+  // JS Dates: `lease_expires_at` is a tz-naive `timestamp`, so a JS Date
+  // round-trips shifted by the local UTC offset (deferred TZ bug, spec §8 #3).
+  // Production is unaffected — claimNextQueued writes `now()+interval` and this
+  // sweep compares `< now()`, both server-side.
+  it("requeues an expired-lease row under the cap, fails it at the cap, leaves a future lease alone", async () => {
+    const db = await createTestDb();
+    const repo = createUrlChecksRepo(db);
+    const setLease = (id: string, expr: ReturnType<typeof sql>) =>
+      db.update(urlChecks).set({ leaseExpiresAt: expr }).where(eq(urlChecks.id, id));
+    const requeue = await repo.insert(queuedRow({ status: "running", attempts: 1, stage: "scoring" }));
+    const fail = await repo.insert(queuedRow({ status: "running", attempts: 2 }));
+    const healthy = await repo.insert(queuedRow({ status: "running", attempts: 1 }));
+    await setLease(requeue.id, sql`now() - interval '1 minute'`);
+    await setLease(fail.id, sql`now() - interval '1 minute'`);
+    await setLease(healthy.id, sql`now() + interval '10 minutes'`);
+
+    const result = await repo.sweepExpiredLeases();
+
+    expect(result).toEqual({ requeued: 1, failed: 1 });
+    expect((await repo.getById(requeue.id))?.status).toBe("queued");
+    expect((await repo.getById(requeue.id))?.stage).toBeNull();
+    expect((await repo.getById(fail.id))?.status).toBe("failed");
+    expect((await repo.getById(healthy.id))?.status).toBe("running"); // future lease untouched
   });
 });
 
