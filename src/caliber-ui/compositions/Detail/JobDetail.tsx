@@ -68,7 +68,7 @@ export function JobDetail({
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
         {job.tags.map((t) => (
-          <Tag key={t.label} tone={t.tone}>{t.label}</Tag>
+          <Tag key={t.label} tone={t.tone} title={t.title}>{t.label}</Tag>
         ))}
         <EligibilityTag eligibility={job.eligibility} />
       </div>

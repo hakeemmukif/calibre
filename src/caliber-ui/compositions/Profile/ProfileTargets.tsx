@@ -99,9 +99,16 @@ export function ProfileTargets({
                     }
                   }}
                   style={{
-                    border: selected ? "1.5px solid var(--text-strong)" : undefined,
+                    border: "1px solid var(--border)",
                     cursor: busy ? "not-allowed" : "pointer",
                     opacity: busy ? 0.5 : 1,
+                    // Selection ring is a box-shadow, not a border swap: Card
+                    // spreads `...style` AFTER its own default border, so an
+                    // unselected `border: undefined` here would erase Card's
+                    // hairline entirely rather than falling back to it. A
+                    // box-shadow ring also avoids the 1px->1.5px layout shift
+                    // a border-width change would cause on selection.
+                    ...(selected ? { boxShadow: "inset 0 0 0 1.5px var(--text-strong)" } : {}),
                   }}
                 >
                   <div style={{ font: "600 13px/1.3 var(--font-body)", color: "var(--text-strong)" }}>{preset.name}</div>

@@ -297,7 +297,7 @@ export const SummaryStripStats = z.object({
   ghosts: z.number().int(),
   flagged: z.number().int(),
   sinceLast: z.number().int(),
-  excluded: z.number().int(), // hidden by the eligibility predicate (spec §8) — 0 under relocation "open"
+  excluded: z.number().int(), // hidden by any of the three feed gates (eligibility/schedule/structure, spec §8) — 0 when every gate is a no-op
 });
 export type SummaryStripStats = z.infer<typeof SummaryStripStats>;
 

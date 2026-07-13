@@ -46,8 +46,15 @@ export async function recomputeEligibility() {
     // tz_band re-derivation (spec §5): zero-LLM, scavenges a TZ token
     // misfiled in hiringCountries via the non-logging probeTzToken —
     // resolveTzBand would warn on every ordinary country name here.
+    // Source is "location", not "stated": hiringCountries holds COUNTRY
+    // entries, not a stated TZ requirement — probing with "stated" would
+    // enable the bare-code STATED_ONLY tokens (/\b(ET|PT)\b/) against country
+    // names, mis-mapping a "PT" (Portugal) hiring-country entry to
+    // tz_band=americas (the §14.2 trust-killer inversion). SAFE_TOKENS (the
+    // legitimate misfiled entries this scavenge targets) match under either
+    // source, so nothing intended is lost.
     const statedTz =
-      jdFacts?.tzRequirement ?? (jdFacts?.hiringCountries ?? []).find((c: string) => probeTzToken(c, "stated") !== null) ?? null;
+      jdFacts?.tzRequirement ?? (jdFacts?.hiringCountries ?? []).find((c: string) => probeTzToken(c, "location") !== null) ?? null;
     const tz = resolveTzBand({ statedTz, location: job.location || undefined });
     const nextBand = tz?.band ?? null;
     if (nextBand !== job.tzBand) {
