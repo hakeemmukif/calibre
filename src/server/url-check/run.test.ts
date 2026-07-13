@@ -21,7 +21,7 @@ vi.mock("@/server/score/liveness", () => ({ probeLivenessDeep: vi.fn().mockResol
 // mock that would drain the mocked test DB through the REAL pipeline deps
 // (real getLlm/fetchPageText) — hitting the network. Pipeline behavior is
 // covered by driving runPipeline directly (see below), never through kick().
-vi.mock("./worker", () => ({ urlCheckWorker: { kick: vi.fn() } }));
+vi.mock("./worker", () => ({ urlCheckWorker: { kick: vi.fn().mockResolvedValue(undefined) } }));
 
 const {
   startUrlCheck,

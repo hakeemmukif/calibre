@@ -25,7 +25,7 @@ vi.mock("@/lib/llm/client", async (importOriginal) => {
 // below would drain the mocked test DB through the REAL worker with REAL
 // pipeline deps (real fetchPageText/searchForPosting) — hitting the network
 // (same hazard the parallel-scoring cutover flags for run.test.ts).
-vi.mock("@/server/url-check/worker", () => ({ urlCheckWorker: { kick: vi.fn() } }));
+vi.mock("@/server/url-check/worker", () => ({ urlCheckWorker: { kick: vi.fn().mockResolvedValue(undefined) } }));
 
 const { POST } = await import("./route");
 

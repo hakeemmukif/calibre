@@ -76,7 +76,10 @@ describe("url-check worker", () => {
 
     await worker.kick();                              // fills 3 slots, then stops
     await new Promise((r) => setTimeout(r, 0));       // let p-limit promote pending→active
-    expect(maxActive).toBeLessThanOrEqual(3);
-    gate.splice(0).forEach((release) => release());   // drain the held jobs
+    expect(fakeRun).toHaveBeenCalledTimes(3);       // exactly concurrency, not more
+    expect(maxActive).toBe(3);                       // genuinely ran 3 at once (not a 0 false-positive)
+    const stillQueued = (await createUrlChecksRepo(db).listActive()).filter((r) => r.status === "queued");
+    expect(stillQueued).toHaveLength(3);             // drain did NOT over-claim the other 3
+    gate.splice(0).forEach((release) => release());  // drain the held jobs
   });
 });

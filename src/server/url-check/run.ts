@@ -340,6 +340,7 @@ export async function startUrlCheck(req: UrlCheckRequest): Promise<{ check: UrlC
     raw: { text: req.text ?? null },
   });
 
-  urlCheckWorker.kick(); // fire-and-forget: enqueue then let the worker own execution
+  // fire-and-forget: enqueue then let the worker own execution
+  void urlCheckWorker.kick().catch((err) => console.error("url-check admission: kick failed:", err));
   return { check: assemble(row), started: true };
 }
