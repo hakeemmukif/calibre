@@ -443,6 +443,15 @@ git commit -m "feat(url-check): atomic claim + lease/orphan recovery + list repo
 
 This is the architectural cutover: execution moves from the fire-and-forget request handler into a boot-started worker, and the four in-run writes become attempt-fenced. These land together because the fence requires a claimed `attempts` value that only the worker provides — there is no correct intermediate state.
 
+> **As-built corrections (applied during execution — the code below has known bugs the implementer fixed; use the code as intent, not gospel):**
+> - Name the worker's per-row function `processRow`, NOT `process` — a local `process` shadows the global and crashes `process.env` at module-eval.
+> - Resolve `runPipeline` at **call time** inside `processRow` (`const run = overrides.runPipeline ?? runPipeline;` there), not in the factory body — the `run.ts`↔`worker.ts` cycle leaves it `undefined` when the singleton is constructed at module load.
+> - `processRow`'s whole body must be wrapped in a try/catch that logs + best-effort `fail()`s the row (last-resort net); the completion re-kick, the sweep chain, and the admission `kick()` all need rejection handlers (`.catch`/second `.then` arg) — a floating rejection crashes the process.
+> - The cost-cap env read must **throw** on a set-but-non-numeric `CALIBER_DAILY_LLM_USD` (fail-loud), not silently `NaN`-disable the cap.
+> - The serialized-drain test must assert `fakeRun` called exactly 3×, `maxActive === 3`, and 3 rows still `queued` — `maxActive <= 3` is toothless (passes at 0, can't catch over-claim).
+> - `run.test.ts` **and** `src/app/api/jobs/check/route.test.ts` must `vi.mock("@/server/url-check/worker")` with `kick: vi.fn().mockResolvedValue(undefined)` — else admission kicks the real singleton, which drains the mocked DB over real network.
+> - Worker tests need `insertResume(db, { isActive: true })` + an injected `llm` override, or the worker bails before running the fake pipeline.
+
 **Files:**
 - Modify: `src/server/persistence/repos/urlChecks.ts` (fence `updateStage`/`addCost`/`complete`/`fail`; delete `markAllUnfinishedAsFailed`)
 - Modify: `src/server/url-check/run.ts` (export `runPipeline`; add `attempt`; strip pipeline-launch from `startUrlCheck`)
