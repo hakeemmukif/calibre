@@ -23,6 +23,7 @@ let doneCount = 0;
 const listeners = new Set<() => void>();
 const pollFailures = new Map<string, number>();
 let timer: ReturnType<typeof setInterval> | null = null;
+let pollInFlight = false;
 
 function emit() {
   // New array identity each change so useSyncExternalStore re-renders.
@@ -54,45 +55,60 @@ function stopTimerIfIdle() {
 }
 
 async function pollTick() {
+  if (pollInFlight) return; // no overlapping ticks — a batch poll slower than POLL_MS must not double-process
   const polling = runs.filter((r) => r.checkId && !TERMINAL.has(r.phase));
   if (polling.length === 0) { stopTimerIfIdle(); return; }
-  let snapshot;
+  pollInFlight = true;
   try {
-    snapshot = await getChecksByIds(polling.map((r) => r.checkId!) as string[]);
-  } catch {
-    for (const r of polling) {
-      const n = (pollFailures.get(r.key) ?? 0) + 1;
-      pollFailures.set(r.key, n);
-      if (n >= MAX_POLL_FAILURES) applyTerminalFailure(r.key);
+    let snapshot;
+    try {
+      snapshot = await getChecksByIds(polling.map((r) => r.checkId!) as string[]);
+    } catch {
+      for (const r of polling) bumpFailure(r.key); // batch-poll failure counts against each run
+      return;
     }
-    return;
+    const byId = new Map(snapshot.checks.map((c) => [c.id, c]));
+    for (const r of polling) {
+      const c = byId.get(r.checkId!);
+      if (!c) continue; // key ours, row not returned — keep waiting (no reset, no bump)
+      await applySnapshot(r.key, c); // applySnapshot resets on success / bumps on getJob failure
+    }
+  } finally {
+    pollInFlight = false;
+    stopTimerIfIdle();
   }
-  const byId = new Map(snapshot.checks.map((c) => [c.id, c]));
-  for (const r of polling) {
-    const c = byId.get(r.checkId!);
-    if (!c) continue; // key still ours, but row not returned — keep waiting
-    pollFailures.set(r.key, 0);
-    await applySnapshot(r.key, c);
-  }
-  stopTimerIfIdle();
+}
+
+function bumpFailure(key: string) {
+  if (!runs.some((r) => r.key === key)) return; // dismissed — drop
+  const n = (pollFailures.get(key) ?? 0) + 1;
+  pollFailures.set(key, n);
+  if (n >= MAX_POLL_FAILURES) applyTerminalFailure(key);
 }
 
 async function applySnapshot(key: string, c: UrlCheck) {
   const phase = phaseFor(c);
   if (phase === "done") {
+    const cur = runs.find((r) => r.key === key);
+    if (!cur || TERMINAL.has(cur.phase)) return; // dismissed, or an earlier apply already finished it
     let job: Job | null = null;
-    try { job = c.jobId ? await getJob(c.jobId) : null; }
-    catch { const n = (pollFailures.get(key) ?? 0) + 1; pollFailures.set(key, n); if (n >= MAX_POLL_FAILURES) applyTerminalFailure(key); return; }
+    try {
+      job = c.jobId ? await getJob(c.jobId) : null;
+    } catch {
+      bumpFailure(key); // persistent getJob failure eventually fails THIS run (not an eternal spinner)
+      return;
+    }
     const i = runs.findIndex((r) => r.key === key);
-    if (i === -1) return; // dismissed mid-fetch
-    // Inline mutation + doneCount + a SINGLE emit — doneCount must change in
-    // the same notification as the run, or the feed reload effect (keyed on
-    // doneCount) never fires.
+    if (i === -1 || TERMINAL.has(runs[i].phase)) return; // dismissed, or finished during the getJob await
+    pollFailures.set(key, 0);
+    // Run mutation + doneCount + a SINGLE emit — doneCount must change in the
+    // same notification as the run, or the feed reload effect never fires.
     runs[i] = { ...runs[i], phase, stage: c.stage, checkId: c.id, jobId: c.jobId, job, alreadyKnown: c.alreadyKnown, finishedAt: Date.now() };
     doneCount += 1;
     emit();
     return;
   }
+  pollFailures.set(key, 0); // a definitive server snapshot is a successful poll — reset the streak
   upsert(key, { phase, stage: c.stage, error: c.error, finishedAt: TERMINAL.has(phase) ? Date.now() : null });
 }
 
@@ -116,9 +132,17 @@ function submit(url: string, text?: string): string {
   void startCheck({ url, text: cleanText })
     .then((c) => {
       if (!runs.some((r) => r.key === key)) return; // dismissed before start resolved
-      upsert(key, { checkId: c.id, phase: phaseFor(c), stage: c.stage, alreadyKnown: c.alreadyKnown, error: c.error });
-      if (c.status === "completed") void applySnapshot(key, c); // scored-dedupe short-circuit (202/200)
-      else ensureTimer();
+      if (c.status === "completed") {
+        // Scored-dedupe short-circuit: DON'T set phase:'done' here (job/doneCount
+        // would land in an earlier emit than the run). applySnapshot owns the done
+        // transition; ensureTimer is the retry backstop if its getJob fails.
+        upsert(key, { checkId: c.id, stage: c.stage, alreadyKnown: c.alreadyKnown });
+        ensureTimer();
+        void applySnapshot(key, c);
+      } else {
+        upsert(key, { checkId: c.id, phase: phaseFor(c), stage: c.stage, alreadyKnown: c.alreadyKnown, error: c.error });
+        if (!TERMINAL.has(phaseFor(c))) ensureTimer(); // don't spin the timer for an already-terminal start
+      }
     })
     .catch(() => upsert(key, { phase: "failed", error: { code: "START_FAILED", message: "Couldn't start the check." }, finishedAt: Date.now() }));
   return key;
@@ -148,11 +172,15 @@ function retryWithText(key: string, text: string) {
   submit(run.url, text);
 }
 function dismiss(key: string) { runs = runs.filter((r) => r.key !== key); pollFailures.delete(key); emit(); stopTimerIfIdle(); }
-function clearFinished() { runs = runs.filter((r) => !TERMINAL.has(r.phase)); emit(); stopTimerIfIdle(); }
+function clearFinished() {
+  for (const r of runs) if (TERMINAL.has(r.phase)) pollFailures.delete(r.key);
+  runs = runs.filter((r) => !TERMINAL.has(r.phase));
+  emit(); stopTimerIfIdle();
+}
 
 // Test-only reset.
 export function __resetChecksStore() {
-  runs = []; doneCount = 0; pollFailures.clear();
+  runs = []; doneCount = 0; pollFailures.clear(); pollInFlight = false;
   if (timer) { clearInterval(timer); timer = null; }
 }
 

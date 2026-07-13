@@ -26,6 +26,15 @@ function check(o: Partial<UrlCheck> = {}): UrlCheck {
     alreadyKnown: false, needsText: false, error: null, createdAt: "2026-07-13T00:00:00.000Z", finishedAt: null, ...o };
 }
 function snap(checks: UrlCheck[], paused = false): UrlChecksSnapshot { return { checks, paused }; }
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
 function job(overrides: Partial<Job> = {}): Job {
   return {
     id: "job-1",
@@ -113,5 +122,109 @@ describe("checksStore", () => {
     expect(result.current.runs[0].origin).toBe("reevaluate");
     expect(result.current.runs[0].phase).toBe("done");
     expect(result.current.runs[0].job?.id).toBe("job-9");
+  });
+
+  it("overlapping ticks don't double-process a slow batch poll (pollInFlight guard)", async () => {
+    const jobDeferred = deferred<Job>();
+    startCheck.mockResolvedValue(check({ id: "c1", status: "running", stage: "fetching" }));
+    getChecksByIds.mockResolvedValue(snap([check({ id: "c1", status: "completed", stage: "scoring", jobId: "job-1" })]));
+    getJob.mockImplementation(() => jobDeferred.promise);
+    const { result } = renderHook(() => useUrlChecks());
+    await act(async () => { result.current.submit("https://a.com/1"); });
+    // tick1: getChecksByIds resolves, applySnapshot enters the "done" branch and calls getJob — pending.
+    await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
+    // tick2: must no-op via pollInFlight (tick1 hasn't finished awaiting getJob yet).
+    await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
+    await act(async () => {
+      jobDeferred.resolve(job({ id: "job-1" }));
+      await Promise.resolve().then(() => Promise.resolve());
+    });
+    expect(getJob).toHaveBeenCalledTimes(1);
+    expect(result.current.doneCount).toBe(1);
+  });
+
+  it("persistent getJob failure eventually fails the run instead of spinning forever", async () => {
+    startCheck.mockResolvedValue(check({ id: "c1", status: "running", stage: "fetching" }));
+    getChecksByIds.mockResolvedValue(snap([check({ id: "c1", status: "completed", stage: "scoring", jobId: "job-1" })]));
+    getJob.mockRejectedValue(new Error("job fetch failed"));
+    const { result } = renderHook(() => useUrlChecks());
+    await act(async () => { result.current.submit("https://a.com/1"); });
+    for (let i = 0; i < 8; i++) await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
+    expect(result.current.runs[0].phase).toBe("failed");
+  });
+
+  it("scored-dedupe short-circuit lands phase+job+doneCount together, not phase alone in an earlier emit", async () => {
+    const jobDeferred = deferred<Job>();
+    startCheck.mockResolvedValueOnce(check({ id: "c1", status: "completed", jobId: "job-1", alreadyKnown: true }));
+    getJob.mockImplementationOnce(() => jobDeferred.promise);
+    const { result } = renderHook(() => useUrlChecks());
+    await act(async () => { result.current.submit("https://a.com/1"); });
+    // startCheck's .then has resolved and getJob has been called, but it's still pending —
+    // phase must NOT already read "done" (that would desync it from doneCount/job, landing
+    // in an earlier emit than the run finishing).
+    expect(result.current.runs[0].phase).not.toBe("done");
+    expect(result.current.doneCount).toBe(0);
+    await act(async () => {
+      jobDeferred.resolve(job({ id: "job-1" }));
+      await Promise.resolve().then(() => Promise.resolve());
+    });
+    expect(result.current.runs[0].phase).toBe("done");
+    expect(result.current.runs[0].job?.id).toBe("job-1");
+    expect(result.current.runs[0].alreadyKnown).toBe(true);
+    expect(result.current.doneCount).toBe(1);
+  });
+
+  it("scored-dedupe short-circuit retries via the timer backstop when the immediate getJob fails", async () => {
+    startCheck.mockResolvedValueOnce(check({ id: "c1", status: "completed", jobId: "job-1", alreadyKnown: true }));
+    getChecksByIds.mockResolvedValue(snap([check({ id: "c1", status: "completed", jobId: "job-1", alreadyKnown: true })]));
+    getJob.mockRejectedValueOnce(new Error("blip")).mockResolvedValueOnce(job({ id: "job-1" }));
+    const { result } = renderHook(() => useUrlChecks());
+    await act(async () => {
+      result.current.submit("https://a.com/1");
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.runs[0].phase).not.toBe("done"); // immediate attempt failed, not stranded
+    await act(async () => { await vi.advanceTimersByTimeAsync(1500); }); // retry backstop tick
+    expect(result.current.runs[0].phase).toBe("done");
+    expect(result.current.runs[0].job?.id).toBe("job-1");
+  });
+
+  it("dismiss during an in-flight poll does not resurrect the run", async () => {
+    const jobDeferred = deferred<Job>();
+    startCheck.mockResolvedValue(check({ id: "c1", status: "running", stage: "fetching" }));
+    getChecksByIds.mockResolvedValue(snap([check({ id: "c1", status: "completed", stage: "scoring", jobId: "job-1" })]));
+    getJob.mockImplementation(() => jobDeferred.promise);
+    const { result } = renderHook(() => useUrlChecks());
+    let key = "";
+    await act(async () => { key = result.current.submit("https://a.com/1"); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1500); }); // tick fires, getJob pending
+    act(() => { result.current.dismiss(key); });
+    await act(async () => {
+      jobDeferred.resolve(job({ id: "job-1" }));
+      await Promise.resolve().then(() => Promise.resolve());
+    });
+    expect(result.current.runs).toHaveLength(0);
+    expect(result.current.doneCount).toBe(0);
+  });
+
+  it("MAX_POLL_FAILURES isolates per-run: one run fails while a sibling completes", async () => {
+    startCheck.mockResolvedValueOnce(check({ id: "cA", status: "running", stage: "fetching" }))
+              .mockResolvedValueOnce(check({ id: "cB", status: "running", stage: "fetching" }));
+    getChecksByIds.mockResolvedValue(snap([
+      check({ id: "cA", status: "completed", jobId: "job-A" }),
+      check({ id: "cB", status: "completed", jobId: "job-B" }),
+    ]));
+    getJob.mockImplementation((jobId: string) =>
+      jobId === "job-A" ? Promise.reject(new Error("A always fails")) : Promise.resolve(job({ id: "job-B" })),
+    );
+    const { result } = renderHook(() => useUrlChecks());
+    await act(async () => { result.current.submit("https://a.com/A"); });
+    await act(async () => { result.current.submit("https://b.com/B"); });
+    for (let i = 0; i < 8; i++) await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
+    const runA = result.current.runs.find((r) => r.url === "https://a.com/A");
+    const runB = result.current.runs.find((r) => r.url === "https://b.com/B");
+    expect(runA?.phase).toBe("failed");
+    expect(runB?.phase).toBe("done");
+    expect(result.current.doneCount).toBe(1);
   });
 });
