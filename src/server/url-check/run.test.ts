@@ -173,7 +173,25 @@ async function setUpForPipeline(db: TestDb) {
   return { resumeRow, profile };
 }
 
-const jdExtractLlm = (data: Record<string, unknown>) => makeMockLlm({ "jd-extract": data });
+// Task 3 (remote-fit): extractJdFactsForGate now emits via JdFactsEmitSchema
+// (every field required, scalars nullable) — pad each call site's partial
+// fixture with the newly-required null fields it doesn't care about.
+const jdExtractLlm = (data: Record<string, unknown>) =>
+  makeMockLlm({
+    "jd-extract": {
+      seniority: null,
+      employmentType: null,
+      location: null,
+      remotePolicy: null,
+      hiringScope: null,
+      hiringCountries: null,
+      salaryRange: null,
+      tzRequirement: null,
+      hiringStructure: null,
+      workCalendar: null,
+      ...data,
+    },
+  });
 
 describe("runPipeline — needsText truth table", () => {
   it("tier-1 fetch ok + gate ok -> completed, no tier-2 search call", async () => {

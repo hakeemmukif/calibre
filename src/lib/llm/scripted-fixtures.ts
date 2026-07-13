@@ -22,10 +22,20 @@ export const JD_FACTS = {
   title: "Senior Backend Engineer, Payments",
   isJobPosting: true,
   company: "Acme Payments",
+  seniority: null,
+  employmentType: null,
+  location: null,
+  remotePolicy: null,
+  hiringScope: null,
+  hiringCountries: null,
+  salaryRange: null,
   mustHaves: ["Node.js", "Postgres"],
   niceToHaves: ["Kafka"],
   responsibilities: ["Own the payments ledger service"],
   redFlags: [],
+  tzRequirement: null,
+  hiringStructure: null,
+  workCalendar: null,
 };
 
 export const URL_SEARCH_RESULT = {

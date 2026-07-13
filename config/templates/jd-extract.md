@@ -24,6 +24,10 @@ company identity, urgency/pressure language, unrealistic pay-for-effort
 claims, requests for payment or personal financial info). Leave a field
 empty/absent if the posting does not state it — do not guess.
 
+- tzRequirement: the verbatim stated timezone/overlap requirement if any ("4h overlap with PST", "EU working hours"), else null. Timezone/overlap requirements go HERE, not in hiringCountries — geography and schedule are separate facts.
+- hiringStructure: "local-entity" | "eor" | "contractor" | null. Cues: "via Deel/EOR" -> eor; "B2B contract" / "independent contractor" -> contractor; "our local entity" / "direct employment" -> local-entity. The ONLY sanctioned inference: an explicitly contract-term role ("12-month contract") -> contractor. Otherwise null.
+- workCalendar: verbatim stated calendar expectation ("US public holidays") if any, else null. Display-only.
+
 --- user:jd ---
 Job description:
 {{jobDescription}}

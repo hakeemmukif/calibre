@@ -27,42 +27,75 @@ export const JdFactsSchema = z.object({
   salaryRange: z.string().optional(),
   responsibilities: z.array(z.string()),
   redFlags: z.array(z.string()), // legitimacy-review signals (Block G input)
+  tzRequirement: z.string().optional(),                                   // verbatim stated TZ/overlap requirement
+  hiringStructure: z.enum(["local-entity", "eor", "contractor"]).optional(),
+  workCalendar: z.string().optional(),                                    // stated calendar expectation (display-only)
 });
 export type JdFacts = z.infer<typeof JdFactsSchema>;
+
+// gpt-oss-120b drops `.optional()` fields from json_schema output regardless of
+// prompt wording (client.ts derives `required` from the Zod schema, strict:false).
+// The emission schema forces every field present; emitToFacts then strips nulls
+// back to undefined so the tolerant JdFactsSchema type is preserved.
+export const JdFactsEmitSchema = z.object({
+  title: z.string(),
+  isJobPosting: z.boolean(),
+  company: z.string().nullable(),
+  seniority: z.string().nullable(),
+  employmentType: z.string().nullable(),
+  location: z.string().nullable(),
+  remotePolicy: z.string().nullable(),
+  hiringScope: z.enum(["anywhere", "restricted"]).nullable(),
+  hiringCountries: z.array(z.string()).nullable(),
+  mustHaves: z.array(z.string()),
+  niceToHaves: z.array(z.string()),
+  salaryRange: z.string().nullable(),
+  responsibilities: z.array(z.string()),
+  redFlags: z.array(z.string()),
+  tzRequirement: z.string().nullable(),
+  hiringStructure: z.enum(["local-entity", "eor", "contractor"]).nullable(),
+  workCalendar: z.string().nullable(),
+});
+export type JdFactsEmit = z.infer<typeof JdFactsEmitSchema>;
+
+// Null-strip boundary: emission output -> tolerant JdFacts. Dropping null-valued
+// keys makes them `undefined`, which the `.optional()` parse-side fields accept
+// (Zod `.optional()` rejects `null`), and keeps the url-check gate's `!company`
+// check working when the model emits company: null.
+export function emitToFacts(emit: JdFactsEmit): JdFacts {
+  const stripped = Object.fromEntries(Object.entries(emit).filter(([, v]) => v !== null));
+  return JdFactsSchema.parse(stripped);
+}
 
 export async function extractJdFacts(
   llm: LlmClient,
   description: string,
 ): Promise<{ data: JdFacts; model: string; costUsd: number }> {
-  return llm.complete({
+  const raw = await llm.complete({
     task: "jd-extract",
     messages: renderTemplate("jd-extract", { jobDescription: description }),
-    responseSchema: JdFactsSchema,
+    responseSchema: JdFactsEmitSchema,
   });
+  return { ...raw, data: emitToFacts(raw.data) };
 }
 
 // Gate-only variant (url-check's runGate, run.ts) — NOT used by the scanned
 // path above. Live testing (2026-07-13) found gpt-oss-120b reliably omits
 // `.optional()` fields from json_schema structured output regardless of
 // prompt wording, because client.ts's response_format derives `required`
-// from the Zod schema and runs with `strict: false`. Making isJobPosting
-// required and company required-but-nullable forces the model to emit both
-// explicitly (verified 3/3 live calls); JdFactsSchema itself stays optional
-// so the scanned path (scoreTopCandidates) never fails to parse a cheap
-// model's omission.
-export const JdFactsGateSchema = JdFactsSchema.extend({
-  isJobPosting: z.boolean(),
-  company: z.string().nullable(),
-});
-export type JdFactsGate = z.infer<typeof JdFactsGateSchema>;
-
+// from the Zod schema and runs with `strict: false`. JdFactsEmitSchema makes
+// every field required (scalars nullable) forcing the model to emit them
+// explicitly (verified 3/3 live calls); emitToFacts then strips nulls back to
+// undefined so run.ts's `!company` check still holds and isJobPosting is
+// always present at runtime.
 export async function extractJdFactsForGate(
   llm: LlmClient,
   description: string,
-): Promise<{ data: JdFactsGate; model: string; costUsd: number }> {
-  return llm.complete({
+): Promise<{ data: JdFacts; model: string; costUsd: number }> {
+  const raw = await llm.complete({
     task: "jd-extract",
     messages: renderTemplate("jd-extract", { jobDescription: description }),
-    responseSchema: JdFactsGateSchema,
+    responseSchema: JdFactsEmitSchema,
   });
+  return { ...raw, data: emitToFacts(raw.data) };
 }
