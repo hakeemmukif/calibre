@@ -215,6 +215,19 @@ export function createJobsRepo(db: Db) {
       if (!row) throw new Error(`jobsRepo.updateEligibility: no job with id "${id}"`);
     },
 
+    // Layer-C refresh (spec §5 write points): the scoring path re-resolves
+    // tz_band from JD-stated facts (else location) and hiring_structure from
+    // the stated enum, overwriting the ingest-time stamp. Unknown id throws —
+    // a refresh for a vanished row is a bug, not a no-op.
+    async updateRemoteFit(id: string, tzBand: JobRow["tzBand"], hiringStructure: JobRow["hiringStructure"]): Promise<void> {
+      const [row] = await db
+        .update(jobs)
+        .set({ tzBand, hiringStructure })
+        .where(eq(jobs.id, id))
+        .returning({ id: jobs.id });
+      if (!row) throw new Error(`jobsRepo.updateRemoteFit: no job with id "${id}"`);
+    },
+
     // Job+source only (no job_scores join) — Task 6's per-job evaluate
     // endpoint needs a job regardless of whether it's been scored before
     // (unlike `getById`, which requires an existing job_scores row).
@@ -284,6 +297,7 @@ export const jobsRepo: ReturnType<typeof createJobsRepo> = {
   getRowWithSourceById: (id) => createJobsRepo(getDb()).getRowWithSourceById(id),
   updateDescription: (id, description) => createJobsRepo(getDb()).updateDescription(id, description),
   updateEligibility: (id, tier, evidence) => createJobsRepo(getDb()).updateEligibility(id, tier, evidence),
+  updateRemoteFit: (id, tzBand, hiringStructure) => createJobsRepo(getDb()).updateRemoteFit(id, tzBand, hiringStructure),
   countHiddenByEligibility: (q) => createJobsRepo(getDb()).countHiddenByEligibility(q),
   existsById: (id) => createJobsRepo(getDb()).existsById(id),
   statsForQuery: (q, sinceLastCutoff) => createJobsRepo(getDb()).statsForQuery(q, sinceLastCutoff),

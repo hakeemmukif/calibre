@@ -11,6 +11,7 @@ import { profileRepo } from "../persistence/repos/profile";
 import { parseSourceGeo } from "../search/geo";
 import { resolveEligibility } from "./eligibility";
 import type { JdFacts } from "./jdFacts";
+import { probeTzToken, resolveTzBand } from "./tzBand";
 
 export async function recomputeEligibility() {
   const db = getDb();
@@ -21,6 +22,7 @@ export async function recomputeEligibility() {
     .innerJoin(sources, eq(sources.id, jobs.sourceId));
 
   let changed = 0;
+  let tzChanged = 0;
   for (const { job, source } of rows) {
     const [latestScore] = await db
       .select({ jdFacts: jobScores.jdFacts })
@@ -40,14 +42,26 @@ export async function recomputeEligibility() {
       await db.update(jobs).set({ eligibility: tier, eligibilityEvidence: evidence }).where(eq(jobs.id, job.id));
       changed += 1;
     }
+
+    // tz_band re-derivation (spec §5): zero-LLM, scavenges a TZ token
+    // misfiled in hiringCountries via the non-logging probeTzToken —
+    // resolveTzBand would warn on every ordinary country name here.
+    const statedTz =
+      jdFacts?.tzRequirement ?? (jdFacts?.hiringCountries ?? []).find((c: string) => probeTzToken(c, "stated") !== null) ?? null;
+    const tz = resolveTzBand({ statedTz, location: job.location || undefined });
+    const nextBand = tz?.band ?? null;
+    if (nextBand !== job.tzBand) {
+      await db.update(jobs).set({ tzBand: nextBand }).where(eq(jobs.id, job.id));
+      tzChanged += 1;
+    }
   }
-  return { total: rows.length, changed };
+  return { total: rows.length, changed, tzChanged };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   recomputeEligibility()
-    .then(({ total, changed }) => {
-      console.log(`Recomputed eligibility for ${total} job(s); ${changed} changed.`);
+    .then(({ total, changed, tzChanged }) => {
+      console.log(`Recomputed eligibility for ${total} job(s); ${changed} changed, ${tzChanged} tz_band changed.`);
       process.exit(0);
     })
     .catch((err) => {

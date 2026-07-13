@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { jobs } from "../schema";
 import { createTestDb } from "../test-db";
@@ -524,6 +524,32 @@ describe("jobsRepo", () => {
     expect(after?.job.eligibilityEvidence).toBe("JD: hires in APAC");
 
     await expect(repo.updateEligibility(crypto.randomUUID(), "unknown", "x")).rejects.toThrow(/no job with id/);
+  });
+
+  it("updateRemoteFit sets tz_band and hiring_structure", async () => {
+    const db = await createTestDb();
+    const repo = createJobsRepo(db);
+    const source = await insertSource(db);
+    const job = await repo.upsertByDedupeKey({
+      dedupeKey: "dk-remote-fit",
+      url: "https://example.com/remote-fit",
+      sourceId: source.id,
+      title: "Remote Fit Job",
+      company: "Acme",
+      location: "Remote",
+      persona: "remote",
+      eligibility: "unknown",
+      eligibilityEvidence: "test fixture",
+      aliases: [],
+      raw: {},
+    });
+
+    await repo.updateRemoteFit(job.id, "americas", "contractor");
+    const [row] = await db.select().from(jobs).where(eq(jobs.id, job.id));
+    expect(row.tzBand).toBe("americas");
+    expect(row.hiringStructure).toBe("contractor");
+
+    await expect(repo.updateRemoteFit(crypto.randomUUID(), null, null)).rejects.toThrow(/no job with id/);
   });
 
   it("filters by eligibility[]", async () => {

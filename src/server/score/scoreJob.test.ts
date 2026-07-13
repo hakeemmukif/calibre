@@ -176,6 +176,23 @@ describe("scoreJob", () => {
     expect(after.eligibilityEvidence).toBe("JD: hires only in United States");
   });
 
+  it("refreshes jobs.tz_band/hiring_structure from JD-stated facts (spec §5)", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id, { description: "Backend role.", location: "Remote" });
+    const resume = await insertResume(state.testDb);
+    const remoteFitRaw: JdFactsEmit = { ...jdFactsRaw, tzRequirement: "PST", hiringStructure: "contractor" };
+    const llm = makeMockLlm({ "jd-extract": remoteFitRaw, "match-score": cheapEval });
+
+    expect(job.tzBand).toBeNull();
+    expect(job.hiringStructure).toBeNull();
+
+    await scoreJob({ job, source, profile, resume, llm });
+
+    const [after] = await state.testDb.select().from(jobs).where(eq(jobs.id, job.id));
+    expect(after.tzBand).toBe("americas");
+    expect(after.hiringStructure).toBe("contractor");
+  });
+
   it.each([null, ""])(
     "a job with description %j is skipped: no LLM call, no job_scores row, throws EmptyJobDescriptionError",
     async (description) => {

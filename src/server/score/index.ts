@@ -18,6 +18,7 @@ import { scoreMatch } from "./evalScores";
 import { extractJdFacts, type JdFacts } from "./jdFacts";
 import { legitimacyTone, resolveLegitimacyTier } from "./legitimacy";
 import { probeLivenessDeep, type LivenessResult } from "./liveness";
+import { resolveTzBand } from "./tzBand";
 
 // Thrown when a job has no description to extract facts from — the caller
 // (server/search/run.ts) is expected to SKIP scoring and record the job as
@@ -64,6 +65,12 @@ export async function scoreJob(args: {
     jdFacts: jdFactsResult.data,
   });
   await jobsRepo.updateEligibility(job.id, eligibility.tier, eligibility.evidence);
+
+  // Authoritative remote-fit write (spec §5): tz_band re-resolved from the
+  // JD-stated requirement (else location), hiring_structure from the stated
+  // enum — overwrites the ingest-time band-only stamp.
+  const tz = resolveTzBand({ statedTz: jdFactsResult.data.tzRequirement, location: job.location || undefined });
+  await jobsRepo.updateRemoteFit(job.id, tz?.band ?? null, jdFactsResult.data.hiringStructure ?? null);
 
   const cheap = await scoreMatch(llm, { jdFacts: jdFactsResult.data, resume: resume.structured });
 

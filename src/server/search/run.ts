@@ -24,6 +24,7 @@ import { connectorForSource } from "./connectors";
 import { companySlugFor, dedupeKeyFor, resolveCanonicalCollision, roleTokensHash, secondaryKey } from "./dedupe";
 import { parseSourceGeo } from "./geo";
 import { resolveEligibility } from "@/server/score/eligibility";
+import { allowedBandsFor, resolveTzBand } from "@/server/score/tzBand";
 import { ensureDescription } from "./describe";
 import { resolveIsNewCutoff } from "./jobsFeed";
 import { deriveRoleTargets, roleFuzzyMatch } from "./roleMatch";
@@ -337,6 +338,10 @@ async function upsertMatchedPostings(
       location: canonical.location,
       connectorGeo: canonical.geo,
     });
+    // Ingest-time tz_band stamp (location string only — no jd_facts yet);
+    // hiring_structure is never derivable from a location string, so it
+    // stays null until the score path's Layer-C refresh.
+    const tzIngest = resolveTzBand({ location: canonical.location });
     const job = await jobsRepo.upsertByDedupeKey({
       dedupeKey: dedupeKeyFor(canonical.url),
       url: canonical.url,
@@ -354,6 +359,8 @@ async function upsertMatchedPostings(
       persona,
       eligibility: tier,
       eligibilityEvidence: evidence,
+      tzBand: tzIngest?.band ?? null,
+      hiringStructure: null,
       aliases: aliasUrls,
       raw: canonical,
     });
@@ -383,8 +390,15 @@ async function scoreTopCandidates(
   deps: StartSearchDeps,
 ): Promise<{ scored: number; worth: number; ghosts: number; unscored: number; capStopped: boolean }> {
   // relocation "stay": provably-abroad postings don't consume scoring slots
-  // (spec §5 scan hardening — persisted, just not scored).
-  const pool = profile.relocation === "stay" ? candidates.filter((c) => c.job.eligibility !== "abroad") : candidates;
+  // (spec §5 scan hardening — persisted, just not scored). Likewise a stated
+  // tz_band provably outside the schedule dial (spec §6 rider) — NULL band
+  // (unstated) always passes.
+  const allowedBands = allowedBandsFor(profile.scheduleFlex); // null = all bands allowed
+  const pool = candidates.filter((c) => {
+    if (profile.relocation === "stay" && c.job.eligibility === "abroad") return false;
+    if (allowedBands && c.job.tzBand && !allowedBands.includes(c.job.tzBand)) return false;
+    return true;
+  });
   const topCandidates = pool.slice(0, TOP_N_CANDIDATES);
   let scored = 0;
   let worth = 0;
