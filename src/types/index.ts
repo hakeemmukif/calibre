@@ -305,3 +305,9 @@ export const UrlCheck = z.object({
   finishedAt: z.string().datetime().nullable(),
 });
 export type UrlCheck = z.infer<typeof UrlCheck>;
+
+export const UrlChecksSnapshot = z.object({
+  checks: z.array(UrlCheck),
+  paused: z.boolean(), // true ⇔ worker is holding claims on the daily cost cap
+});
+export type UrlChecksSnapshot = z.infer<typeof UrlChecksSnapshot>;

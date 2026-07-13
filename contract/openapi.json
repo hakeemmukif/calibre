@@ -1237,6 +1237,24 @@
           "url"
         ],
         "type": "object"
+      },
+      "UrlChecksSnapshot": {
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/UrlCheck"
+            },
+            "type": "array"
+          },
+          "paused": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "checks",
+          "paused"
+        ],
+        "type": "object"
       }
     }
   },
@@ -1922,6 +1940,56 @@
       }
     },
     "/api/jobs/check": {
+      "get": {
+        "parameters": [
+          {
+            "description": "Set to \"1\" to return in-flight (queued/running) rows",
+            "in": "query",
+            "name": "active",
+            "required": false,
+            "schema": {
+              "description": "Set to \"1\" to return in-flight (queued/running) rows",
+              "enum": [
+                "1"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Comma-separated url_check ids",
+            "in": "query",
+            "name": "ids",
+            "required": false,
+            "schema": {
+              "description": "Comma-separated url_check ids",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UrlChecksSnapshot"
+                }
+              }
+            },
+            "description": "The requested url_checks, plus worker pause state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Neither ?active=1 nor ?ids= was provided"
+          }
+        },
+        "summary": "Batched url-check snapshot — poll — parallel scoring"
+      },
       "post": {
         "requestBody": {
           "content": {

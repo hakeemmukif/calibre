@@ -17,7 +17,7 @@ import { fetchGhostWebEvidence } from "@/server/score/ghost-web";
 import { extractJdFactsForGate, type JdFacts } from "@/server/score/jdFacts";
 import type { LivenessResult } from "@/server/score/liveness";
 import { scoreJob } from "@/server/score";
-import { UrlCheck, type ErrorCode, type UrlCheckRequest } from "@/types";
+import { UrlCheck, type ErrorCode, type UrlCheckRequest, type UrlChecksSnapshot } from "@/types";
 import { fetchPageText, MAX_TEXT_CHARS } from "./fetch-page";
 import { searchForPosting } from "./search-tier";
 import { urlCheckWorker } from "./worker";
@@ -95,6 +95,16 @@ export function assemble(row: UrlCheckRow): UrlCheck {
 export async function getUrlCheck(id: string): Promise<UrlCheck | null> {
   const row = await urlChecksRepo.getById(id);
   return row ? assemble(row) : null;
+}
+
+export async function listActiveChecks(): Promise<UrlChecksSnapshot> {
+  const rows = await urlChecksRepo.listActive();
+  return { checks: rows.map(assemble), paused: urlCheckWorker.isPaused() };
+}
+
+export async function listChecksByIds(ids: string[]): Promise<UrlChecksSnapshot> {
+  const rows = await urlChecksRepo.listByIds(ids);
+  return { checks: rows.map(assemble), paused: urlCheckWorker.isPaused() };
 }
 
 type PostingFacts = Omit<JdFacts, "company"> & { company: string };

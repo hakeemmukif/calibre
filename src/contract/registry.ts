@@ -49,6 +49,7 @@ import {
   SseEvent,
   UrlCheck,
   UrlCheckRequest,
+  UrlChecksSnapshot,
 } from "@/types";
 
 const entitySchemas: Record<string, z.ZodType> = {
@@ -77,6 +78,7 @@ const entitySchemas: Record<string, z.ZodType> = {
   SseEvent,
   UrlCheck,
   UrlCheckRequest,
+  UrlChecksSnapshot,
 };
 
 for (const [name, schema] of Object.entries(entitySchemas)) {
@@ -297,6 +299,22 @@ registry.registerPath({
       description: "Invalid body/URL, or pasted text exceeds the 40k-character cap",
       content: { "application/json": { schema: ErrorEnvelope } },
     },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/jobs/check",
+  summary: "Batched url-check snapshot — poll — parallel scoring",
+  request: {
+    query: z.object({
+      active: z.literal("1").optional().describe('Set to "1" to return in-flight (queued/running) rows'),
+      ids: z.string().optional().describe("Comma-separated url_check ids"),
+    }),
+  },
+  responses: {
+    200: { description: "The requested url_checks, plus worker pause state", content: { "application/json": { schema: UrlChecksSnapshot } } },
+    422: { description: "Neither ?active=1 nor ?ids= was provided", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
 

@@ -13,7 +13,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { NoActiveResumeError } from "@/server/search/run";
-import { PayloadTooLargeError, startUrlCheck } from "@/server/url-check/run";
+import { listActiveChecks, listChecksByIds, PayloadTooLargeError, startUrlCheck } from "@/server/url-check/run";
 import { UrlCheckRequest, type ErrorEnvelope } from "@/types";
 
 function errorResponse(status: number, code: ErrorEnvelope["error"]["code"], message: string, details?: unknown) {
@@ -45,4 +45,17 @@ export async function POST(request: NextRequest) {
     }
     throw err;
   }
+}
+
+export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  if (searchParams.get("active") === "1") {
+    return NextResponse.json(await listActiveChecks(), { status: 200 });
+  }
+  const idsParam = searchParams.get("ids");
+  if (idsParam !== null) {
+    const ids = idsParam.split(",").map((s) => s.trim()).filter(Boolean);
+    return NextResponse.json(await listChecksByIds(ids), { status: 200 });
+  }
+  return errorResponse(422, "VALIDATION_ERROR", "Provide ?ids=<csv> or ?active=1.");
 }

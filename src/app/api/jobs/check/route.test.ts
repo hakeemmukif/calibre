@@ -25,9 +25,11 @@ vi.mock("@/lib/llm/client", async (importOriginal) => {
 // below would drain the mocked test DB through the REAL worker with REAL
 // pipeline deps (real fetchPageText/searchForPosting) — hitting the network
 // (same hazard the parallel-scoring cutover flags for run.test.ts).
-vi.mock("@/server/url-check/worker", () => ({ urlCheckWorker: { kick: vi.fn().mockResolvedValue(undefined) } }));
+vi.mock("@/server/url-check/worker", () => ({
+  urlCheckWorker: { kick: vi.fn().mockResolvedValue(undefined), isPaused: vi.fn().mockReturnValue(false) },
+}));
 
-const { POST } = await import("./route");
+const { POST, GET } = await import("./route");
 
 function jsonRequest(body: unknown): NextRequest {
   return new NextRequest("http://localhost/api/jobs/check", {
@@ -35,6 +37,24 @@ function jsonRequest(body: unknown): NextRequest {
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
+}
+
+function newUrlCheckRow(overrides: Partial<typeof urlChecks.$inferInsert> = {}) {
+  const url = overrides.url ?? `https://example.com/job/${crypto.randomUUID()}`;
+  return {
+    id: crypto.randomUUID(),
+    url,
+    dedupeKey: url,
+    status: "queued" as const,
+    stage: null,
+    jobId: null,
+    alreadyKnown: false,
+    needsText: false,
+    error: null,
+    costUsd: 0,
+    raw: { text: null },
+    ...overrides,
+  };
 }
 
 describe("POST /api/jobs/check", () => {
@@ -111,5 +131,54 @@ describe("POST /api/jobs/check", () => {
     const body = await res.json();
     expect(body.status).toBe("queued");
     expect(body.alreadyKnown).toBe(false);
+  });
+});
+
+describe("GET /api/jobs/check", () => {
+  beforeAll(async () => {
+    state.testDb = await createTestDb();
+  });
+
+  afterEach(async () => {
+    await state.testDb.delete(urlChecks);
+  });
+
+  it("?active=1 returns queued and running rows only", async () => {
+    const [queued] = await state.testDb.insert(urlChecks).values(newUrlCheckRow({ status: "queued" })).returning();
+    const [running] = await state.testDb.insert(urlChecks).values(newUrlCheckRow({ status: "running" })).returning();
+    await state.testDb.insert(urlChecks).values(newUrlCheckRow({ status: "completed" })).returning();
+    await state.testDb.insert(urlChecks).values(newUrlCheckRow({ status: "failed" })).returning();
+
+    const res = await GET(new NextRequest("http://localhost/api/jobs/check?active=1"));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.paused).toBe(false);
+    expect(body.checks.map((c: { id: string }) => c.id).sort()).toEqual([queued.id, running.id].sort());
+  });
+
+  it("?ids=a,b returns exactly those rows", async () => {
+    const [a] = await state.testDb.insert(urlChecks).values(newUrlCheckRow()).returning();
+    const [b] = await state.testDb.insert(urlChecks).values(newUrlCheckRow()).returning();
+    await state.testDb.insert(urlChecks).values(newUrlCheckRow()).returning();
+
+    const res = await GET(new NextRequest(`http://localhost/api/jobs/check?ids=${a.id},${b.id}`));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.checks.map((c: { id: string }) => c.id).sort()).toEqual([a.id, b.id].sort());
+  });
+
+  it("neither param → 422", async () => {
+    const res = await GET(new NextRequest("http://localhost/api/jobs/check"));
+    expect(res.status).toBe(422);
+    expect((await res.json()).error.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("reports paused:true from the worker singleton", async () => {
+    const { urlCheckWorker } = await import("@/server/url-check/worker");
+    (urlCheckWorker.isPaused as unknown as ReturnType<typeof vi.fn>).mockReturnValueOnce(true);
+
+    const res = await GET(new NextRequest("http://localhost/api/jobs/check?active=1"));
+    const body = await res.json();
+    expect(body.paused).toBe(true);
   });
 });
