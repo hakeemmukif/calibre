@@ -1,5 +1,5 @@
-import { and, desc, eq, gt, gte, ilike, inArray, or, sql } from "drizzle-orm";
-import type { EligibilityTier, Persona } from "@/types";
+import { and, desc, eq, gt, gte, ilike, inArray, isNull, notInArray, or, sql } from "drizzle-orm";
+import type { EligibilityTier, HiringStructure, Persona, TzBand } from "@/types";
 import { getDb } from "../db";
 import { jobs, jobScores, sources, type JobAlias } from "../schema";
 import { decodeCursorId, encodeCursorId } from "./cursor";
@@ -32,6 +32,11 @@ export type JobsQuery = {
   // wire param: relocation "stay" passes the 4 admitted tiers, "open" omits
   // the condition entirely.
   eligibility?: EligibilityTier[];
+  // Server-derived from the profile's scheduleFlex/employmentPref dials (spec
+  // §7), same pattern as `eligibility`: the bands/structures the current dial
+  // hides. Independent of relocation — active under both "stay" and "open".
+  hiddenBands?: TzBand[];
+  hiddenStructures?: HiringStructure[];
   q?: string; // ILIKE over title/company
   cursor?: string;
   limit?: number;
@@ -60,6 +65,15 @@ function buildFilterConditions(q: Omit<JobsQuery, "cursor" | "limit">) {
   const conditions = [];
   if (q.persona) conditions.push(eq(jobs.persona, q.persona));
   if (q.eligibility && q.eligibility.length > 0) conditions.push(inArray(jobs.eligibility, q.eligibility));
+  // NULL-safe: a job with no stated band/structure always passes (§7) — only
+  // a STATED-and-hidden value is excluded. `or(isNull, notInArray)`, never a
+  // bare `notInArray` (SQL IN/NOT IN never matches NULL either way, but
+  // notInArray alone reads as "exclude unless explicitly admitted", which
+  // would drop NULL rows too).
+  if (q.hiddenBands && q.hiddenBands.length > 0)
+    conditions.push(or(isNull(jobs.tzBand), notInArray(jobs.tzBand, q.hiddenBands)));
+  if (q.hiddenStructures && q.hiddenStructures.length > 0)
+    conditions.push(or(isNull(jobs.hiringStructure), notInArray(jobs.hiringStructure, q.hiddenStructures)));
   if (q.tier && q.tier.length > 0) {
     conditions.push(inArray(sql`(${jobScores.legitimacy}->>'tier')`, q.tier));
   }
@@ -184,22 +198,32 @@ export function createJobsRepo(db: Db) {
       return updated;
     },
 
-    // Excluded-count support (spec §8): everything the predicate hid for the
-    // scope, scored or not. `jobs` alone — no job_scores/sources join — since
-    // relocation "stay" gates abroad rows out of the scoring pool entirely
-    // (spec §5 scan hardening); a scored-only count undercounts (live run: 14
-    // real abroad jobs, count read 0). `tier`/`minScore` are Omit'd at the
-    // type level, not just unused: they're job_scores columns and
-    // buildFilterConditions would emit conditions against a table this query
-    // never joins — an unscored row has no score to filter on.
-    async countHiddenByEligibility(
-      q: Omit<JobsQuery, "cursor" | "limit" | "tier" | "minScore">,
-    ): Promise<number> {
-      const conditions = buildFilterConditions(q);
-      const rows = await db
-        .select({ id: jobs.id })
-        .from(jobs)
-        .where(conditions.length > 0 ? and(...conditions) : undefined);
+    // Excluded-count support (spec §7, §8): everything ANY of the three gates
+    // (geography, schedule, structure) hid for the scope, scored or not.
+    // `jobs` alone — no job_scores/sources join — since relocation "stay"
+    // gates abroad rows out of the scoring pool entirely (spec §5 scan
+    // hardening); a scored-only count undercounts (live run: 14 real abroad
+    // jobs, count read 0). Scope (persona/q/isNew) is built by REUSING
+    // buildFilterConditions so it can never drift from the items predicate;
+    // `inArray` on a nullable column excludes NULL rows automatically — a
+    // NULL fact is never counted as hidden.
+    async countHiddenByPreferences(q: {
+      persona?: Persona;
+      q?: string;
+      isNew?: Date;
+      hiddenTiers: EligibilityTier[];
+      hiddenBands: TzBand[];
+      hiddenStructures: HiringStructure[];
+    }): Promise<number> {
+      const scope = buildFilterConditions({ persona: q.persona, q: q.q, isNew: q.isNew });
+      const hidden = [];
+      if (q.hiddenTiers.length > 0) hidden.push(inArray(jobs.eligibility, q.hiddenTiers));
+      if (q.hiddenBands.length > 0) hidden.push(inArray(jobs.tzBand, q.hiddenBands));
+      if (q.hiddenStructures.length > 0) hidden.push(inArray(jobs.hiringStructure, q.hiddenStructures));
+      if (hidden.length === 0) return 0;
+
+      const where = scope.length > 0 ? and(...scope, or(...hidden)) : or(...hidden);
+      const rows = await db.select({ id: jobs.id }).from(jobs).where(where);
       return rows.length;
     },
 
@@ -298,7 +322,7 @@ export const jobsRepo: ReturnType<typeof createJobsRepo> = {
   getRowWithSourceById: (id) => createJobsRepo(getDb()).getRowWithSourceById(id),
   updateDescription: (id, description) => createJobsRepo(getDb()).updateDescription(id, description),
   updateResolvedGeo: (id, facts) => createJobsRepo(getDb()).updateResolvedGeo(id, facts),
-  countHiddenByEligibility: (q) => createJobsRepo(getDb()).countHiddenByEligibility(q),
+  countHiddenByPreferences: (q) => createJobsRepo(getDb()).countHiddenByPreferences(q),
   existsById: (id) => createJobsRepo(getDb()).existsById(id),
   statsForQuery: (q, sinceLastCutoff) => createJobsRepo(getDb()).statsForQuery(q, sinceLastCutoff),
 };

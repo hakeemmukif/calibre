@@ -7,6 +7,7 @@ import type { JobsQuery } from "@/server/persistence/repos/jobs";
 import { jobsRepo } from "@/server/persistence/repos/jobs";
 import { profileRepo } from "@/server/persistence/repos/profile";
 import { searchRunsRepo } from "@/server/persistence/repos/searchRuns";
+import { hiddenBandsFor, hiddenStructuresFor } from "@/server/score/tzBand";
 import { EligibilityTier } from "@/types";
 import type { Job, Persona, SummaryStripStats } from "@/types";
 
@@ -53,7 +54,11 @@ export async function listJobsFeed(
   // relocation "stay" hides abroad; "open" applies no eligibility condition;
   // the Pasted scope applies no eligibility condition either way.
   const eligibility = !isPastedScope && profile.relocation === "stay" ? STAY_TIERS : undefined;
-  const filterScope = { ...rest, isNew: isNewFilter, eligibility };
+  // Schedule/structure gates are independent of relocation (§7) — they stay
+  // active under "open" too, dropped only for the Pasted scope.
+  const hiddenBands = isPastedScope ? [] : hiddenBandsFor(profile.scheduleFlex);
+  const hiddenStructures = isPastedScope ? [] : hiddenStructuresFor(profile.employmentPref);
+  const filterScope = { ...rest, isNew: isNewFilter, eligibility, hiddenBands, hiddenStructures };
 
   const { items, nextCursor } = await jobsRepo.listScored({ ...filterScope, cursor, limit });
   // `stats` is computed over the SAME filter scope (task-B6-brief.md: "the
@@ -61,15 +66,21 @@ export async function listJobsFeed(
   // uses the cutoff regardless of whether the caller applied the `isNew`
   // filter (redundant-but-consistent when they did).
   const base = await jobsRepo.statsForQuery(filterScope, cutoff);
-  // The trust signal for what vanished (spec §8): all jobs the predicate hid,
-  // scored or not. 0 under "open" or the Pasted scope — nothing is hidden
-  // there. Deliberately NOT spreading `rest` — tier/minScore are job_scores
-  // columns and this answers "what did the geo predicate hide", not "what
-  // would also have passed your score filters".
-  const excluded =
-    !isPastedScope && profile.relocation === "stay"
-      ? await jobsRepo.countHiddenByEligibility({ persona: rest.persona, q: rest.q, isNew: isNewFilter, eligibility: HIDDEN_TIERS })
-      : 0;
+  // The trust signal for what vanished (spec §7, §8): all jobs ANY of the
+  // three gates hid, scored or not. 0 under the Pasted scope — nothing is
+  // hidden there. Deliberately NOT spreading `rest` — tier/minScore are
+  // job_scores columns and this answers "what did the predicate hide", not
+  // "what would also have passed your score filters".
+  const excluded = isPastedScope
+    ? 0
+    : await jobsRepo.countHiddenByPreferences({
+        persona: rest.persona,
+        q: rest.q,
+        isNew: isNewFilter,
+        hiddenTiers: profile.relocation === "stay" ? HIDDEN_TIERS : [],
+        hiddenBands,
+        hiddenStructures,
+      });
 
   return {
     items: items.map((joined) => assembleJob(joined, { isNewCutoff: cutoff })),
