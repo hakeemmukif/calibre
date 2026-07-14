@@ -33,7 +33,14 @@ export default function ProfilePage() {
     setBusy(true);
     setError(undefined);
     try {
-      setProfile(await updateProfile({ baseCountry: profile.baseCountry, relocation }));
+      setProfile(
+        await updateProfile({
+          baseCountry: profile.baseCountry,
+          relocation,
+          scheduleFlex: profile.scheduleFlex,
+          employmentPref: profile.employmentPref,
+        }),
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't update the profile.");
     } finally {

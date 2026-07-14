@@ -74,7 +74,9 @@ test("profile: relocation flip persists, reveals abroad jobs, and re-scopes the 
     expect(feed.items.some((j: { company: string }) => j.company === "Acme US")).toBe(false);
   } finally {
     // Restore the seeded default for every other spec (shared scratch DB).
-    const restore = await request.put("/api/profile", { data: { baseCountry: "MY", relocation: "stay" } });
+    const restore = await request.put("/api/profile", {
+      data: { baseCountry: "MY", relocation: "stay", scheduleFlex: "any-hours", employmentPref: "any" },
+    });
     if (!restore.ok()) throw new Error(`profile restore failed: ${restore.status()} ${await restore.text()}`);
   }
 });

@@ -86,6 +86,8 @@ export const profile = pgTable("profile", {
   id: text("id").primaryKey(),
   baseCountry: text("base_country").notNull(),
   relocation: text("relocation", { enum: ["stay", "open"] }).notNull(),
+  scheduleFlex: text("schedule_flex", { enum: ["base-hours", "flex-evenings", "any-hours"] }).notNull(),
+  employmentPref: text("employment_pref", { enum: ["any", "employee", "local-entity"] }).notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

@@ -19,6 +19,8 @@ function toWire(row: ProfileRow): Profile {
   return Profile.parse({
     baseCountry: row.baseCountry,
     relocation: row.relocation,
+    scheduleFlex: row.scheduleFlex,
+    employmentPref: row.employmentPref,
     updatedAt: row.updatedAt.toISOString(),
   });
 }

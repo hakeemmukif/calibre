@@ -5,6 +5,7 @@ import { eq, sql } from "drizzle-orm";
 import { getDb } from "../db";
 import { profile } from "../schema";
 import type { Db } from "./db";
+import type { EmploymentPref, ScheduleFlex } from "@/types";
 
 export type ProfileRow = typeof profile.$inferSelect;
 
@@ -24,10 +25,21 @@ export function createProfileRepo(db: Db) {
       if (!row) throw new ProfileMissingError();
       return row;
     },
-    async update(input: { baseCountry: string; relocation: "stay" | "open" }): Promise<ProfileRow> {
+    async update(input: {
+      baseCountry: string;
+      relocation: "stay" | "open";
+      scheduleFlex: ScheduleFlex;
+      employmentPref: EmploymentPref;
+    }): Promise<ProfileRow> {
       const [row] = await db
         .update(profile)
-        .set({ baseCountry: input.baseCountry, relocation: input.relocation, updatedAt: sql`now()` })
+        .set({
+          baseCountry: input.baseCountry,
+          relocation: input.relocation,
+          scheduleFlex: input.scheduleFlex,
+          employmentPref: input.employmentPref,
+          updatedAt: sql`now()`,
+        })
         .where(eq(profile.id, SINGLETON_ID))
         .returning();
       if (!row) throw new ProfileMissingError();

@@ -58,6 +58,8 @@ export const profileSeed: typeof profile.$inferInsert = {
   id: "default",
   baseCountry: "MY",
   relocation: "stay",
+  scheduleFlex: "any-hours",
+  employmentPref: "any",
 };
 
 export async function seedProfile(db: Db) {
