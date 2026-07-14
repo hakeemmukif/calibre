@@ -30,7 +30,7 @@ import { resolveIsNewCutoff } from "./jobsFeed";
 import { deriveRoleTargets, roleFuzzyMatch } from "./roleMatch";
 
 const TOP_N_CANDIDATES = 30; // system-architecture.md §6 decision 8 "per-run score cap (~30 jobs)"
-const SCORE_BATCH_SIZE = 3; // observed 25-60s/match-score call — batched concurrency keeps a 30-job run inside the hard cap
+const SCORE_CONCURRENCY = 3; // rolling scoring pool width — each match-score call is observed at 25-60s
 
 export class NoActiveResumeError extends Error {
   constructor(message = "No résumé exists — a search requires an active résumé to score against.") {
@@ -60,8 +60,8 @@ export class UnknownSourceIdsError extends Error {
 const DEFAULT_CONCURRENCY = 8;
 const DEFAULT_CONNECTOR_TIMEOUT_MS = 15_000;
 // Observed live (task-7b smoke): 25-60s per match-score call on the
-// configured model (gpt-oss-120b). TOP_N (30) scored in SCORE_BATCH_SIZE (3)
-// batches of concurrent calls is up to ~10 batches sequential, each bounded
+// configured model (gpt-oss-120b). TOP_N (30) scored through a SCORE_CONCURRENCY
+// (3)-wide rolling pool is up to ~10 pool-widths sequential, each bounded
 // by its slowest job (worst case ~60s) => up to ~10 min worst case. Spend is
 // already bounded by TOP_N + the optional CALIBER_DAILY_LLM_USD cap, so a
 // longer wall-clock cap doesn't unbound cost — only lets slow runs finish.
@@ -80,6 +80,10 @@ export interface StartSearchDeps {
   connectorForSource?: (source: SourceRow) => SourceConnector;
   llm?: LlmClient;
   dailyCapUsd?: number;
+  // Rolling scoring-pool width. Default SCORE_CONCURRENCY (3). Injected by
+  // tests to force strictly-sequential scoring (scoreConcurrency: 1) so the
+  // per-job cap gate is deterministic.
+  scoreConcurrency?: number;
 }
 
 export async function startSearch(
@@ -432,32 +436,31 @@ async function scoreTopCandidates(
     deps.dailyCapUsd ?? (process.env.CALIBER_DAILY_LLM_USD ? Number(process.env.CALIBER_DAILY_LLM_USD) : undefined);
   let spentToday = dailyCapUsd !== undefined ? await jobScoresRepo.sumCostUsdSince(startOfToday()) : 0;
 
+  const scoreConcurrency = deps.scoreConcurrency ?? SCORE_CONCURRENCY;
+
   handle.emit({
     event: "progress",
     data: { stage: "score", current: 0, total: topCandidates.length, label: `Scoring ${topCandidates.length} job(s)…` },
   });
 
-  // Batched concurrency (task-7b): each job's match-score call is observed at
-  // 25-60s, so scoring TOP_N_CANDIDATES sequentially cannot fit the hard run
-  // cap. Batches of SCORE_BATCH_SIZE run via Promise.all, preserving the
-  // per-job try/catch semantics below. Two deliberate trade-offs vs. the old
-  // per-job loop: (1) the daily-cap check only runs BETWEEN batches (before
-  // starting each one), so a batch already in flight always finishes — the
-  // cap can overshoot by at most one batch's worth of spend; (2) the `job`
-  // SSE event for each candidate fires as its own Promise settles, so event
-  // order WITHIN a batch may interleave (acceptable — ordering across
-  // batches, and progress/legitimacy framing around them, is preserved).
+  // Rolling concurrency pool (was task-7b batched Promise.all-per-3): up to
+  // `scoreConcurrency` jobs score at once and a finished slot immediately
+  // pulls the next candidate — no batch barrier idling a fast job behind its
+  // slow neighbours. The daily-cap gate is checked as each slot OPENS (per
+  // job): once running spend crosses the cap every not-yet-started job bails
+  // WITHOUT spending; the ≤ scoreConcurrency-1 in-flight jobs still finish, so
+  // overshoot is bounded by the pool width, not a full batch. `scored`/etc.
+  // mutate safely because JS runs these callbacks on one thread — only the
+  // awaits interleave, never the counter increments.
+  const limit = pLimit(scoreConcurrency);
   let doneCount = 0;
-  for (let i = 0; i < topCandidates.length; i += SCORE_BATCH_SIZE) {
-    if (dailyCapUsd !== undefined && spentToday >= dailyCapUsd) {
-      console.error(`search run ${row.id}: daily LLM cost cap ($${dailyCapUsd}) reached — stopping further scoring`);
-      capStopped = true;
-      break;
-    }
-
-    const batch = topCandidates.slice(i, i + SCORE_BATCH_SIZE);
-    await Promise.all(
-      batch.map(async ({ job, source }) => {
+  await Promise.all(
+    topCandidates.map(({ job, source }) =>
+      limit(async () => {
+        if (dailyCapUsd !== undefined && spentToday >= dailyCapUsd) {
+          capStopped = true;
+          return;
+        }
         try {
           const jobToScore = await ensureDescription(job, source).catch((err) => {
             console.error(`search run ${row.id}: detail fetch for job ${job.id} failed:`, err);
@@ -472,33 +475,28 @@ async function scoreTopCandidates(
           handle.emit({ event: "job", data: assembleJob({ job, score: scoreRow, source }, { isNewCutoff }) });
         } catch (err) {
           if (err instanceof EmptyJobDescriptionError) {
-            // Expected, not a failure — the connector has no fetchDetail, or
-            // its detail fetch failed (logged above, job unchanged), leaving
-            // `description` null. Recorded distinctly (stats.unscored) rather
-            // than folded into the generic tolerated-failure log below.
             unscored += 1;
           } else {
-            // A single job's scoring failure (LLM error, malformed response)
-            // is tolerated the same way a connector failure is (B5
-            // precedent) — the run keeps going rather than crashing over one
-            // bad candidate.
+            // A single job's scoring failure (LLM error, malformed response,
+            // or an aborted call once the hard cap fires — Task 2) is tolerated
+            // exactly like a connector failure: the run keeps going.
             console.error(`search run ${row.id}: scoring job ${job.id} failed:`, err);
           }
+        } finally {
+          doneCount += 1;
+          handle.emit({
+            event: "progress",
+            data: {
+              stage: "score",
+              current: doneCount,
+              total: topCandidates.length,
+              label: `${doneCount}/${topCandidates.length} scored`,
+            },
+          });
         }
       }),
-    );
-
-    doneCount += batch.length;
-    handle.emit({
-      event: "progress",
-      data: {
-        stage: "score",
-        current: doneCount,
-        total: topCandidates.length,
-        label: `${doneCount}/${topCandidates.length} scored`,
-      },
-    });
-  }
+    ),
+  );
 
   handle.emit({
     event: "progress",

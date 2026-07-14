@@ -522,20 +522,19 @@ describe("startSearch", () => {
     expect((jobEvent.data as { legitimacy: { tier: string } }).legitimacy.tier).toBe("clear");
   });
 
-  it("daily cost cap: stops scoring early once dailyCapUsd is reached BETWEEN batches, still completes (finding 3 + task-7b batching)", async () => {
+  it("daily cost cap: per-job gate stops scoring once dailyCapUsd is crossed (rolling pool, single slot), still completes", async () => {
     const runsRepo = createSearchRunsRepo(state.testDb);
     await insertResume(state.testDb, { ...resumeFixture, isActive: true });
     const good = await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
 
-    // Four matching candidates, distinct company (so dedupe.ts secondaryKey
-    // keeps them as 4 separate jobs) — SCORE_BATCH_SIZE (3) puts the first 3
-    // in batch 1 and the 4th alone in batch 2. costingLlm charges 0.02/job;
-    // cap 0.025 is BELOW even a single job's running total after job 2
-    // (0.04), so a per-job check (pre-batching behaviour) would have stopped
-    // mid-batch after 2 jobs — but the cap is only checked BETWEEN batches
-    // now, so batch 1 runs to completion (all 3, spentToday -> 0.06) before
-    // the pre-batch-2 check sees 0.06 >= 0.025 and stops; the 4th candidate
-    // is never attempted.
+    // Four matching candidates (distinct companies → 4 separate jobs).
+    // costingLlm charges 0.02/job (0.01 jd-extract + 0.01 match-score).
+    // scoreConcurrency:1 makes the rolling pool strictly sequential, so the
+    // per-slot cap gate is deterministic: job1 (spent 0→0.02) and job2
+    // (0.02→0.04) both open under the 0.025 cap and score, but job3's gate
+    // sees 0.04 >= 0.025 and bails, as does job4 → 2 scored. The old batched
+    // loop only checked BETWEEN batches of 3, so it scored all 3 of batch 1;
+    // this asserts the per-job gate the rolling pool restores.
     const postings: RawPosting[] = [
       { sourceId: good.id, url: "https://example.com/jobs/cap-1", title: "Data Engineer", company: "Acme", location: "Remote", description: "Build data pipelines with SQL." },
       { sourceId: good.id, url: "https://example.com/jobs/cap-2", title: "Data Engineer", company: "Beta Corp", location: "Remote", description: "Build more data pipelines with SQL." },
@@ -543,29 +542,24 @@ describe("startSearch", () => {
       { sourceId: good.id, url: "https://example.com/jobs/cap-4", title: "Data Engineer", company: "Delta Corp", location: "Remote", description: "Build data pipelines yet again with SQL." },
     ];
 
-    const run = await startSearch(BOOTSTRAP_ADMIN_ID, 
+    const run = await startSearch(BOOTSTRAP_ADMIN_ID,
       { persona: "remote" },
-      {
-        llm: costingLlm,
-        dailyCapUsd: 0.025,
-        connectorForSource: (source) => stubConnector(source, postings),
-      },
+      { llm: costingLlm, dailyCapUsd: 0.025, scoreConcurrency: 1, connectorForSource: (source) => stubConnector(source, postings) },
     );
 
     const finalRow = await waitForTerminal(runsRepo, run.id);
-
     expect(finalRow.status).toBe("completed");
     expect(finalRow.stats.matched).toBe(4);
-    expect(finalRow.stats.scored).toBe(3); // all of batch 1 — proves the cap wasn't enforced mid-batch
+    expect(finalRow.stats.scored).toBe(2); // per-job gate stops after 2, not 3
     expect(finalRow.stats.capStopped).toBe(true);
   });
 
-  it("batched scoring: all candidates in a single batch are scored, aggregating stats across a mix of successes and EmptyJobDescriptionError (task-7b)", async () => {
+  it("rolling pool: every candidate is scored, aggregating a mix of success and EmptyJobDescriptionError", async () => {
     const runsRepo = createSearchRunsRepo(state.testDb);
     await insertResume(state.testDb, { ...resumeFixture, isActive: true });
     const good = await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
 
-    // 3 candidates (one SCORE_BATCH_SIZE batch): 2 with a description score
+    // 3 candidates through the rolling pool: 2 with a description score
     // normally via testLlm; the 3rd has no description and the stub
     // connector has no fetchDetail, so ensureDescription leaves it null and
     // scoreJob throws EmptyJobDescriptionError -> counted unscored, not a
