@@ -8,10 +8,24 @@
 //
 // Rule: for every exported repo method (a property of the object literal
 // returned from `createXRepo(db)`), if that method's body performs a
-// `.select(`/`.update(`/`.delete(` query AND has a `.where(` clause, its own
+// `.select(`/`.update(`/`.delete(` query AGAINST ONE OF THE 9 PER-USER-OWNED
+// TABLES (profile, resumes, searchRuns, jobs, jobScores, applicationAnswers,
+// tailoredResumes, urlChecks, applications — detected from the table passed
+// to `.from(`/`.update(`/`.delete(`/`.insert(` in the method body), its own
 // text must contain EITHER the literal `userId` OR a `// GLOBAL-BY-DECISION:`
-// comment. A query with no `.where(` at all (e.g. sources.listAll — every
-// row, no filter) has nothing to scope and is not flagged.
+// comment — REGARDLESS of whether it has a `.where(` clause. A where-less
+// query against a per-user table (e.g. a hypothetical `db.select().from(
+// applications)` with no filter at all) is a full cross-tenant dump and IS
+// flagged; there is no "no `.where(` → nothing to scope" exemption for these
+// tables, because omitting the WHERE entirely is the most likely accidental
+// leak, not evidence of none existing.
+//
+// Queries that touch ONLY the global/shared tables (`sources`, `users`,
+// `sessions` — reference data and auth infra, not owned per-user) are exempt
+// from that stricter where-less rule: a where-less read of a purely global
+// table (e.g. sources.listAll, users.list) really has nothing to scope. Their
+// filtered (`.where(`) queries are still held to the same
+// userId-or-GLOBAL-BY-DECISION standard as every other repo method.
 //
 // Two ways a method can satisfy the rule without inlining `eq(t.userId, ...)`
 // itself:
@@ -26,6 +40,15 @@
 //      first test in this file asserts each such helper's own body still
 //      contains `userId` — if that regresses, THAT assertion goes red, so
 //      the allowlist can't rot silently.
+//
+// Caveat: comment-to-method attribution is positional, not AST-based — a
+// `// GLOBAL-BY-DECISION:` (or any) comment is only "seen" as part of
+// whichever top-level object-literal entry it textually falls inside once
+// `splitTopLevelEntries` cuts on top-level commas. A method spliced in
+// between an existing comment and the declaration it was written for would
+// silently inherit that neighbor's justification instead of failing the
+// gate. Appending a new method normally (after the previous method's own
+// closing comma, with its own comment if any) is unaffected.
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -40,6 +63,33 @@ const QUERY_RE = /\.(select|update|delete)\(/;
 const WHERE_RE = /\.where\(/;
 const GLOBAL_DECISION_RE = /GLOBAL-BY-DECISION/;
 const USERID_RE = /userId/;
+
+// The 9 tables that hold per-user-owned rows (schema.ts). Any of these
+// touched by a select/update/delete method must be scoped regardless of
+// `.where(` presence — see the where-less rule above. `sources`, `users`,
+// and `sessions` are deliberately excluded: they are global/shared tables,
+// not per-user resources.
+const OWNING_TABLES = new Set([
+  "profile",
+  "resumes",
+  "searchRuns",
+  "jobs",
+  "jobScores",
+  "applicationAnswers",
+  "tailoredResumes",
+  "urlChecks",
+  "applications",
+]);
+
+const TARGET_TABLE_RE = /\.(?:from|update|delete|insert)\(\s*([A-Za-z_$][\w$]*)/g;
+
+// Reads the table identifier(s) a method's query targets straight off its
+// `.from(`/`.update(`/`.delete(`/`.insert(` call sites (drizzle always takes
+// the table as that call's first argument), so table detection needs no
+// schema import or type information — just the method's own source text.
+function extractTargetTables(methodText: string): string[] {
+  return [...methodText.matchAll(TARGET_TABLE_RE)].map((m) => m[1]);
+}
 
 function repoFiles(): string[] {
   return readdirSync(REPOS_DIR)
@@ -175,7 +225,13 @@ describe("scoping-audit: every repo query method is userId-scoped or explicitly 
 
       for (const method of parseMethods(body)) {
         if (!QUERY_RE.test(method.text)) continue; // not a select/update/delete — e.g. a plain insert
-        if (!WHERE_RE.test(method.text)) continue; // no filter at all — nothing to scope
+
+        const touchesOwningTable = extractTargetTables(method.text).some((t) => OWNING_TABLES.has(t));
+        // A where-less query is only exempt when it can't possibly be a
+        // per-user table dump — i.e. it touches nothing but global tables.
+        // A where-less query against an owning table (the blind spot this
+        // gate exists to close) falls through to the scoped check below.
+        if (!touchesOwningTable && !WHERE_RE.test(method.text)) continue;
 
         const scoped =
           USERID_RE.test(method.text) ||

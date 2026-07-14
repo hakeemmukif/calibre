@@ -50,6 +50,9 @@ export function createUserRepo(db: Db) {
       const [row] = await db.select().from(users).where(eq(users.id, id)).limit(1);
       return row ?? null;
     },
+    // GLOBAL-BY-DECISION: admin user list, cross-user by design — this is
+    // the identity table itself (not a per-user-owned resource), and the
+    // caller is an admin listing every account, not one tenant's rows.
     async list(): Promise<UserRow[]> {
       return db.select().from(users).orderBy(asc(users.createdAt));
     },
