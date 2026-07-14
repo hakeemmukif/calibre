@@ -194,6 +194,7 @@ registry.registerPath({
   },
   responses: {
     202: { description: "Run queued", content: { "application/json": { schema: SearchRun } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
     409: {
       description: "A run is already active for this persona, or no résumé exists",
       content: { "application/json": { schema: ErrorEnvelope } },
@@ -216,7 +217,8 @@ registry.registerPath({
         "text/event-stream": { schema: SseEvent },
       },
     },
-    404: { description: "Unknown run id", content: { "application/json": { schema: ErrorEnvelope } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    404: { description: "Unknown run id (incl. a foreign-owned one — no existence leak)", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
 
@@ -370,6 +372,7 @@ registry.registerPath({
         },
       },
     },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
     404: { description: "Unknown job id", content: { "application/json": { schema: ErrorEnvelope } } },
     422: { description: "Zero or more than one of jobId/url/pastedForm provided", content: { "application/json": { schema: ErrorEnvelope } } },
     502: {
@@ -394,6 +397,8 @@ registry.registerPath({
   },
   responses: {
     200: { description: "Persisted, résumé-grounded answer set", content: { "application/json": { schema: ApplicationAnswers } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    404: { description: "Unknown job id (incl. a foreign-owned one — no existence leak)", content: { "application/json": { schema: ErrorEnvelope } } },
     409: { description: "No résumé exists to ground answers against", content: { "application/json": { schema: ErrorEnvelope } } },
     422: { description: "Invalid body (e.g. empty questions[])", content: { "application/json": { schema: ErrorEnvelope } } },
     502: { description: "LLM drafting failed", content: { "application/json": { schema: ErrorEnvelope } } },
@@ -415,6 +420,7 @@ registry.registerPath({
   },
   responses: {
     202: { description: "Tailor run queued", content: { "application/json": { schema: TailoredResume } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
     404: { description: "Unknown job id", content: { "application/json": { schema: ErrorEnvelope } } },
     409: { description: "No résumé exists to tailor", content: { "application/json": { schema: ErrorEnvelope } } },
   },
@@ -433,7 +439,8 @@ registry.registerPath({
         "text/event-stream": { schema: SseEvent },
       },
     },
-    404: { description: "Unknown tailor run id", content: { "application/json": { schema: ErrorEnvelope } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    404: { description: "Unknown tailor run id (incl. a foreign-owned one — no existence leak)", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
 
@@ -453,7 +460,8 @@ registry.registerPath({
   },
   responses: {
     200: { description: "TailoredResume server-rendered with only the accepted diff entries applied", content: { "application/json": { schema: TailoredResume } } },
-    404: { description: "Unknown tailor run id", content: { "application/json": { schema: ErrorEnvelope } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    404: { description: "Unknown tailor run id (incl. a foreign-owned one — no existence leak)", content: { "application/json": { schema: ErrorEnvelope } } },
     409: { description: "Run has not completed yet", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
@@ -468,7 +476,8 @@ registry.registerPath({
       description: "Binary PDF bytes",
       content: { "application/pdf": { schema: z.string().describe("Binary PDF bytes") } },
     },
-    404: { description: "Unknown tailor run id", content: { "application/json": { schema: ErrorEnvelope } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    404: { description: "Unknown tailor run id (incl. a foreign-owned one — no existence leak)", content: { "application/json": { schema: ErrorEnvelope } } },
     409: { description: "Run has not been finalized yet (POST .../finalize not yet called, or status !== 'completed')", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
@@ -489,7 +498,8 @@ registry.registerPath({
   },
   responses: {
     200: { description: "The replaced answer set", content: { "application/json": { schema: ApplicationAnswers } } },
-    404: { description: "Unknown answers id", content: { "application/json": { schema: ErrorEnvelope } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    404: { description: "Unknown answers id (incl. a foreign-owned one — no existence leak)", content: { "application/json": { schema: ErrorEnvelope } } },
     422: { description: "Empty patch (answers[] with zero entries)", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
@@ -517,7 +527,8 @@ registry.registerPath({
       description: "Server sets appliedAt, stage:0, statusLabel/statusTone via features/applied/status-map.ts",
       content: { "application/json": { schema: Application } },
     },
-    404: { description: "Unknown job id", content: { "application/json": { schema: ErrorEnvelope } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    404: { description: "Unknown job id (incl. a foreign-owned one — no existence leak)", content: { "application/json": { schema: ErrorEnvelope } } },
     409: {
       description:
         "Duplicate jobId (details: { existingId }), job exists but isn't scored yet, or no active résumé to record",
@@ -548,6 +559,7 @@ registry.registerPath({
         },
       },
     },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
     422: { description: "Unknown query parameter or invalid value", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
@@ -576,7 +588,8 @@ registry.registerPath({
   },
   responses: {
     200: { description: "The updated Application", content: { "application/json": { schema: Application } } },
-    404: { description: "Unknown application id", content: { "application/json": { schema: ErrorEnvelope } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    404: { description: "Unknown application id (incl. a foreign-owned one — no existence leak)", content: { "application/json": { schema: ErrorEnvelope } } },
     422: { description: "Empty patch (zero fields)", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });

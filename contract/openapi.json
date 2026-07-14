@@ -1437,6 +1437,16 @@
             },
             "description": "Page of tracker rows"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -1488,6 +1498,16 @@
             },
             "description": "Server sets appliedAt, stage:0, statusLabel/statusTone via features/applied/status-map.ts"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -1496,7 +1516,7 @@
                 }
               }
             },
-            "description": "Unknown job id"
+            "description": "Unknown job id (incl. a foreign-owned one — no existence leak)"
           },
           "409": {
             "content": {
@@ -1613,6 +1633,16 @@
             },
             "description": "The updated Application"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -1621,7 +1651,7 @@
                 }
               }
             },
-            "description": "Unknown application id"
+            "description": "Unknown application id (incl. a foreign-owned one — no existence leak)"
           },
           "422": {
             "content": {
@@ -1674,6 +1704,26 @@
               }
             },
             "description": "Persisted, résumé-grounded answer set"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unknown job id (incl. a foreign-owned one — no existence leak)"
           },
           "409": {
             "content": {
@@ -1753,6 +1803,16 @@
             },
             "description": "The replaced answer set"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -1761,7 +1821,7 @@
                 }
               }
             },
-            "description": "Unknown answers id"
+            "description": "Unknown answers id (incl. a foreign-owned one — no existence leak)"
           },
           "422": {
             "content": {
@@ -1828,6 +1888,16 @@
               }
             },
             "description": "Extracted questions + the posting URL they came from (null for the paste tier)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
           },
           "404": {
             "content": {
@@ -2725,6 +2795,16 @@
             },
             "description": "Run queued"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
           "409": {
             "content": {
               "application/json": {
@@ -2777,6 +2857,16 @@
             },
             "description": "JSON snapshot, or an SSE stream of progress/job/done/error (search scores top-N candidates and streams each as a `job` event — B6)"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -2785,7 +2875,7 @@
                 }
               }
             },
-            "description": "Unknown run id"
+            "description": "Unknown run id (incl. a foreign-owned one — no existence leak)"
           }
         },
         "summary": "Run status — JSON snapshot by default; SSE via Accept: text/event-stream"
@@ -2913,6 +3003,16 @@
             },
             "description": "Tailor run queued"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -2965,6 +3065,16 @@
             },
             "description": "JSON snapshot, or an SSE stream of progress/done/error (stages analyze -> rewrite -> render -> done)"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -2973,7 +3083,7 @@
                 }
               }
             },
-            "description": "Unknown tailor run id"
+            "description": "Unknown tailor run id (incl. a foreign-owned one — no existence leak)"
           }
         },
         "summary": "Tailor status + result — JSON snapshot by default; SSE via Accept: text/event-stream — F6 (B8)"
@@ -3022,6 +3132,16 @@
             },
             "description": "TailoredResume server-rendered with only the accepted diff entries applied"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -3030,7 +3150,7 @@
                 }
               }
             },
-            "description": "Unknown tailor run id"
+            "description": "Unknown tailor run id (incl. a foreign-owned one — no existence leak)"
           },
           "409": {
             "content": {
@@ -3070,6 +3190,16 @@
             },
             "description": "Binary PDF bytes"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -3078,7 +3208,7 @@
                 }
               }
             },
-            "description": "Unknown tailor run id"
+            "description": "Unknown tailor run id (incl. a foreign-owned one — no existence leak)"
           },
           "409": {
             "content": {
