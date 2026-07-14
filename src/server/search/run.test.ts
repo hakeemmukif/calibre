@@ -4,10 +4,11 @@ import type { LlmClient } from "@/lib/llm/client";
 import { makeMockLlm } from "@/lib/llm/mock";
 import { insertProfile, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
 import { createSearchRunsRepo, type SearchRunRow } from "@/server/persistence/repos/searchRuns";
-import { jobs, jobScores, resumes, searchRuns, sources } from "@/server/persistence/schema";
+import { jobs, jobScores, resumes, searchRuns, sources, users } from "@/server/persistence/schema";
 import type { SourceRow } from "@/server/persistence/repos/sources";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import type { RawPosting, SourceConnector } from "./connector";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 // Scoring is wired into the run (B6) — every startSearch() call that
 // actually upserts a matched job reaches scoreTopCandidates, which needs an
@@ -133,10 +134,13 @@ function stubConnector(source: SourceRow, behavior: StubBehavior): SourceConnect
   };
 }
 
-async function waitForTerminal(repo: ReturnType<typeof createSearchRunsRepo>, id: string): Promise<SearchRunRow> {
+// Polls the raw table (not the userId-scoped repo) — this helper is used by
+// both single- and multi-user tests below and just needs "has this run
+// finished", regardless of which user owns it.
+async function waitForTerminal(_repo: ReturnType<typeof createSearchRunsRepo>, id: string): Promise<SearchRunRow> {
   const deadline = Date.now() + 3000;
   while (Date.now() < deadline) {
-    const row = await repo.getById(id);
+    const [row] = await state.testDb.select().from(searchRuns).where(eq(searchRuns.id, id)).limit(1);
     if (row && (row.status === "completed" || row.status === "failed")) return row;
     await new Promise((r) => setTimeout(r, 5));
   }
@@ -198,7 +202,7 @@ describe("startSearch", () => {
       location: "Remote",
     };
 
-    const run = await startSearch(
+    const run = await startSearch(BOOTSTRAP_ADMIN_ID, 
       { persona: "remote" },
       {
         concurrency: 5,
@@ -262,7 +266,7 @@ describe("startSearch", () => {
       description: "Manage warehouse inventory.",
     };
 
-    const run = await startSearch(
+    const run = await startSearch(BOOTSTRAP_ADMIN_ID, 
       { persona: "remote" },
       {
         llm: testLlm,
@@ -286,7 +290,7 @@ describe("startSearch", () => {
   it("throws NoActiveResumeError when no résumé exists", async () => {
     const originalDb = state.testDb;
     state.testDb = await createTestDb(); // fresh, résumé-less DB
-    await expect(startSearch({ persona: "remote" })).rejects.toThrow(NoActiveResumeError);
+    await expect(startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" })).rejects.toThrow(NoActiveResumeError);
     state.testDb = originalDb;
   });
 
@@ -296,7 +300,7 @@ describe("startSearch", () => {
 
     let caught: unknown;
     try {
-      await startSearch({ persona: "remote", sources: ["src-good", "typo-id"] });
+      await startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote", sources: ["src-good", "typo-id"] });
     } catch (err) {
       caught = err;
     }
@@ -317,14 +321,14 @@ describe("startSearch", () => {
     });
     await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
 
-    const runPromise = startSearch(
+    const runPromise = startSearch(BOOTSTRAP_ADMIN_ID, 
       { persona: "remote" },
       { connectorForSource: (source) => stubConnector(source, []) },
     );
     // Subscribe via the synchronously-reserved persona slot (finding 4's
     // fix) before awaiting — guarantees we're listening before the crash,
     // which only happens after an internal DB await resolves.
-    const reservedId = getActiveRunForPersona("remote")!;
+    const reservedId = getActiveRunForPersona(BOOTSTRAP_ADMIN_ID, "remote")!;
     const handle = getRunHandle(reservedId)!;
     const events: string[] = [];
     handle.subscribe((event) => events.push(event.event));
@@ -336,21 +340,21 @@ describe("startSearch", () => {
     expect(finalRow.status).toBe("failed");
     expect(finalRow.error).toBeTruthy();
     expect(events).toContain("error");
-    expect(getActiveRunForPersona("remote")).toBeUndefined();
+    expect(getActiveRunForPersona(BOOTSTRAP_ADMIN_ID, "remote")).toBeUndefined();
   });
 
   it("throws ActiveRunConflictError with the running run's id when a run is already active for that persona", async () => {
     await insertResume(state.testDb, { ...resumeFixture, isActive: true });
     await insertSource(state.testDb, { id: "src-slow", kind: "ats", persona: "remote" });
 
-    const first = await startSearch(
+    const first = await startSearch(BOOTSTRAP_ADMIN_ID, 
       { persona: "remote" },
       { connectorForSource: (s) => stubConnector(s, "hang-until-aborted"), hardRunTimeoutMs: 200 },
     );
 
     let caught: unknown;
     try {
-      await startSearch({ persona: "remote" });
+      await startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" });
     } catch (err) {
       caught = err;
     }
@@ -358,12 +362,44 @@ describe("startSearch", () => {
     expect((caught as InstanceType<typeof ActiveRunConflictError>).activeRunId).toBe(first.id);
   });
 
+  it("the 409 active-run mutex is per-user (Fable design review) — A's active run for a persona does NOT block B from starting one", async () => {
+    const runsRepo = createSearchRunsRepo(state.testDb);
+    await insertResume(state.testDb, { ...resumeFixture, isActive: true });
+    await insertSource(state.testDb, { id: "src-slow", kind: "ats", persona: "remote" });
+
+    const [userB] = await state.testDb
+      .insert(users)
+      .values({ email: "user-b-search-mutex@example.com", passwordHash: "h", role: "user" })
+      .returning();
+    await insertProfile(state.testDb, { id: "profile-b", userId: userB.id });
+    await insertResume(state.testDb, { ...resumeFixture, userId: userB.id, isActive: true });
+
+    // A starts a slow (never-completing-in-time) run for "remote" — reserves
+    // A's persona slot.
+    await startSearch(
+      BOOTSTRAP_ADMIN_ID,
+      { persona: "remote" },
+      { connectorForSource: (s) => stubConnector(s, "hang-until-aborted"), hardRunTimeoutMs: 200 },
+    );
+
+    // B starting a run for the SAME persona must NOT see A's active run.
+    const bRun = await startSearch(
+      userB.id,
+      { persona: "remote" },
+      { connectorForSource: (s) => stubConnector(s, "hang-until-aborted"), hardRunTimeoutMs: 200 },
+    );
+    expect(bRun.status).toBe("queued");
+
+    const bFinal = await waitForTerminal(runsRepo, bRun.id);
+    expect(bFinal.userId).toBe(userB.id);
+  });
+
   it("hard runtime cap: aborts an unresponsive connector, records it as a per-source error, and still completes", async () => {
     const runsRepo = createSearchRunsRepo(state.testDb);
     await insertResume(state.testDb, { ...resumeFixture, isActive: true });
     await insertSource(state.testDb, { id: "src-hangs", kind: "ats", persona: "remote" });
 
-    const run = await startSearch(
+    const run = await startSearch(BOOTSTRAP_ADMIN_ID, 
       { persona: "remote" },
       {
         hardRunTimeoutMs: 20,
@@ -406,7 +442,7 @@ describe("startSearch", () => {
     };
 
     // Run 1 — only the ATS posting is found.
-    const run1 = await startSearch({ persona: "remote" }, deps);
+    const run1 = await startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" }, deps);
     await waitForTerminal(runsRepo, run1.id);
 
     const dedupeKey = "ats.example.com/jobs/data-engineer";
@@ -416,7 +452,7 @@ describe("startSearch", () => {
     // Run 2 — the board also finds it now (same secondaryKey, different URL)
     // → its URL is appended as an alias (ATS stays canonical).
     boardYields = [boardPosting];
-    const run2 = await startSearch({ persona: "remote" }, deps);
+    const run2 = await startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" }, deps);
     await waitForTerminal(runsRepo, run2.id);
 
     const afterRun2 = await findJobByDedupeKey(state.testDb, dedupeKey);
@@ -425,7 +461,7 @@ describe("startSearch", () => {
     // Run 3 — the board doesn't come up this time; the alias it contributed
     // in run 2 must NOT be wiped (task-B5-brief.md alias-merge requirement).
     boardYields = [];
-    const run3 = await startSearch({ persona: "remote" }, deps);
+    const run3 = await startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" }, deps);
     await waitForTerminal(runsRepo, run3.id);
 
     const afterRun3 = await findJobByDedupeKey(state.testDb, dedupeKey);
@@ -446,11 +482,11 @@ describe("startSearch", () => {
       description: "Build data pipelines with SQL.",
     };
 
-    const runPromise = startSearch(
+    const runPromise = startSearch(BOOTSTRAP_ADMIN_ID, 
       { persona: "remote" },
       { llm: testLlm, connectorForSource: (source) => stubConnector(source, [posting]) },
     );
-    const reservedId = getActiveRunForPersona("remote")!;
+    const reservedId = getActiveRunForPersona(BOOTSTRAP_ADMIN_ID, "remote")!;
     const handle = getRunHandle(reservedId)!;
     const events: { event: string; data: unknown }[] = [];
     handle.subscribe((event) => events.push({ event: event.event, data: event.data }));
@@ -507,7 +543,7 @@ describe("startSearch", () => {
       { sourceId: good.id, url: "https://example.com/jobs/cap-4", title: "Data Engineer", company: "Delta Corp", location: "Remote", description: "Build data pipelines yet again with SQL." },
     ];
 
-    const run = await startSearch(
+    const run = await startSearch(BOOTSTRAP_ADMIN_ID, 
       { persona: "remote" },
       {
         llm: costingLlm,
@@ -540,7 +576,7 @@ describe("startSearch", () => {
       { sourceId: good.id, url: "https://example.com/jobs/mix-3", title: "Data Engineer", company: "Gamma Corp", location: "Remote" },
     ];
 
-    const run = await startSearch(
+    const run = await startSearch(BOOTSTRAP_ADMIN_ID, 
       { persona: "remote" },
       { llm: testLlm, connectorForSource: (source) => stubConnector(source, postings) },
     );

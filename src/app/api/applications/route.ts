@@ -5,6 +5,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z, ZodError } from "zod";
 import { InvalidCursorError } from "@/server/persistence/repos/cursor";
 import { UuidParam } from "@/server/http/params";
+import { UnauthorizedError } from "@/server/auth/errors";
+import { requireUser } from "@/server/auth/session";
 import {
   ApplicationConflictError,
   JobNotScoredError,
@@ -52,10 +54,12 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    const session = await requireUser();
     const body = RequestBody.parse(json);
-    const app = await markApplied(body);
+    const app = await markApplied(session.id, body);
     return NextResponse.json(app, { status: 201 });
   } catch (err) {
+    if (err instanceof UnauthorizedError) return errorResponse(401, "UNAUTHORIZED", err.message);
     if (err instanceof ZodError) {
       return errorResponse(422, "VALIDATION_ERROR", "Invalid application request.", err.issues);
     }
@@ -84,6 +88,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    const session = await requireUser();
     const query = QuerySchema.parse({
       stage: searchParams.get("stage") ?? undefined,
       statusTone: searchParams.get("statusTone") ?? undefined,
@@ -91,9 +96,10 @@ export async function GET(request: NextRequest) {
       limit: searchParams.get("limit") ?? undefined,
     });
 
-    const result = await listApplications(query);
+    const result = await listApplications(query, session.id);
     return NextResponse.json(result, { status: 200 });
   } catch (err) {
+    if (err instanceof UnauthorizedError) return errorResponse(401, "UNAUTHORIZED", err.message);
     if (err instanceof ZodError) {
       return errorResponse(422, "VALIDATION_ERROR", "Invalid applications query.", err.issues);
     }

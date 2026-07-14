@@ -1,15 +1,23 @@
 import { NextRequest } from "next/server";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { readAllSseEvents } from "@/app/api/__test-utils__/sse";
 import { insertProfile, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
 import type { SourceRow } from "@/server/persistence/repos/sources";
-import { jobs, resumes, searchRuns, sources } from "@/server/persistence/schema";
+import { jobs, resumes, searchRuns, sources, users } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import type { RawPosting, SourceConnector } from "@/server/search/connector";
 import { ErrorEnvelope } from "@/types";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
+import { UnauthorizedError } from "@/server/auth/errors";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb, hang: false }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
+
+const { requireUser } = vi.hoisted(() => ({ requireUser: vi.fn() }));
+vi.mock("@/server/auth/session", async (orig) => ({
+  ...(await orig<typeof import("@/server/auth/session")>()),
+  requireUser: () => requireUser(),
+}));
 
 function stubConnector(source: SourceRow): SourceConnector {
   return {
@@ -44,6 +52,11 @@ describe("GET /api/search/:id", () => {
     await insertProfile(state.testDb); // startSearch requires the operator profile (spec §4)
   });
 
+  beforeEach(() => {
+    requireUser.mockReset();
+    requireUser.mockResolvedValue({ id: BOOTSTRAP_ADMIN_ID, email: "admin@example.com", role: "admin" });
+  });
+
   afterEach(async () => {
     state.hang = false;
     __resetForTests();
@@ -51,6 +64,13 @@ describe("GET /api/search/:id", () => {
     await state.testDb.delete(searchRuns);
     await state.testDb.delete(sources);
     await state.testDb.delete(resumes);
+  });
+
+  it("401s with UNAUTHORIZED when there is no session", async () => {
+    requireUser.mockRejectedValue(new UnauthorizedError());
+    const res = await GET(getRequest(crypto.randomUUID()), { params: Promise.resolve({ id: crypto.randomUUID() }) });
+    expect(res.status).toBe(401);
+    expect((await res.json()).error.code).toBe("UNAUTHORIZED");
   });
 
   it("returns 404 for an unknown run id", async () => {
@@ -136,7 +156,7 @@ describe("GET /api/search/:id", () => {
     const repo = (await import("@/server/persistence/repos/searchRuns")).createSearchRunsRepo(state.testDb);
     const deadline = Date.now() + 2000;
     while (Date.now() < deadline) {
-      const row = await repo.getById(run.id);
+      const row = await repo.getById(run.id, BOOTSTRAP_ADMIN_ID);
       if (row?.status === "completed") break;
       await new Promise((r) => setTimeout(r, 5));
     }
@@ -153,6 +173,7 @@ describe("GET /api/search/:id", () => {
     const resume = await insertResume(state.testDb, { isActive: true });
     const repo = (await import("@/server/persistence/repos/searchRuns")).createSearchRunsRepo(state.testDb);
     const runningRun = await repo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
       resumeId: resume.id,
       personas: ["remote"],
       status: "running",
@@ -172,6 +193,7 @@ describe("GET /api/search/:id", () => {
     const resume = await insertResume(state.testDb, { isActive: true });
     const repo = (await import("@/server/persistence/repos/searchRuns")).createSearchRunsRepo(state.testDb);
     const failedRun = await repo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
       resumeId: resume.id,
       personas: ["remote"],
       status: "failed",
@@ -188,5 +210,31 @@ describe("GET /api/search/:id", () => {
     expect(last.event).toBe("error");
     const parsed = ErrorEnvelope.parse(last.data);
     expect(parsed.error.code).toBe("INTERNAL");
+  });
+
+  it("SSE ownership (Fable design review): B cannot open A's run stream — 404 before the run handle is ever touched", async () => {
+    const resume = await insertResume(state.testDb, { isActive: true });
+    const repo = (await import("@/server/persistence/repos/searchRuns")).createSearchRunsRepo(state.testDb);
+    const runA = await repo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
+      resumeId: resume.id,
+      personas: ["remote"],
+      status: "running",
+      stats: { scanned: 0, matched: 0, scored: 0, worth: 0, ghosts: 0, perSource: [], unscored: 0, capStopped: false },
+    });
+    const [userB] = await state.testDb
+      .insert(users)
+      .values({ email: "user-b-search-sse@example.com", passwordHash: "h", role: "user" })
+      .returning();
+
+    requireUser.mockResolvedValue({ id: userB.id, email: userB.email, role: "user" });
+
+    const jsonRes = await GET(getRequest(runA.id), { params: Promise.resolve({ id: runA.id }) });
+    expect(jsonRes.status).toBe(404);
+    expect((await jsonRes.json()).error.code).toBe("NOT_FOUND");
+
+    const sseRes = await GET(getRequest(runA.id, { accept: "text/event-stream" }), { params: Promise.resolve({ id: runA.id }) });
+    expect(sseRes.status).toBe(404);
+    expect((await sseRes.json()).error.code).toBe("NOT_FOUND");
   });
 });

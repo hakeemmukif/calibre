@@ -1,14 +1,18 @@
 import { readFileSync } from "node:fs";
-import { rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { NextRequest } from "next/server";
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LlmClient } from "@/lib/llm/client";
 import { makeMockLlm } from "@/lib/llm/mock";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
+import { UnauthorizedError } from "@/server/auth/errors";
+import { users } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
+import { resolveUpload } from "@/server/resume/uploads";
 import type { ResumeStore } from "@/server/resume/resume-store";
 
-const UPLOADS_DIR = join(process.cwd(), "data", "uploads");
 const PDF_FIXTURE = join(process.cwd(), "src/server/resume/__fixtures__/tiny.pdf");
 const DOCX_FIXTURE = join(process.cwd(), "src/server/resume/__fixtures__/tiny.docx");
 
@@ -29,6 +33,12 @@ vi.mock("@/lib/llm/client", async (importOriginal) => {
     },
   };
 });
+
+const { requireUser } = vi.hoisted(() => ({ requireUser: vi.fn() }));
+vi.mock("@/server/auth/session", async (orig) => ({
+  ...(await orig<typeof import("@/server/auth/session")>()),
+  requireUser: () => requireUser(),
+}));
 
 const { GET, POST } = await import("./route");
 
@@ -70,25 +80,80 @@ function fileRequest(bytes: Uint8Array, mime: string, filename: string): NextReq
 }
 
 describe("/api/resume", () => {
+  let tmpUploadsDir: string;
+
   beforeAll(async () => {
     state.testDb = await createTestDb();
+    tmpUploadsDir = await mkdtemp(join(tmpdir(), "caliber-uploads-"));
+    process.env.CALIBER_UPLOADS_DIR = tmpUploadsDir;
+  });
+
+  afterAll(async () => {
+    await rm(tmpUploadsDir, { recursive: true, force: true });
   });
 
   beforeEach(() => {
     state.llm = makeMockLlm({ "resume-extract": structuredFixture() });
     state.llmError = undefined;
+    requireUser.mockReset();
+    requireUser.mockResolvedValue({ id: BOOTSTRAP_ADMIN_ID, email: "admin@example.com", role: "admin" });
   });
 
   afterEach(async () => {
     const { resumes } = await import("@/server/persistence/schema");
     await state.testDb.delete(resumes);
-    await rm(UPLOADS_DIR, { recursive: true, force: true });
+    await rm(tmpUploadsDir, { recursive: true, force: true });
   });
 
   it("GET returns 404 when no résumé has been uploaded", async () => {
     const res = await GET();
     expect(res.status).toBe(404);
     expect((await res.json()).error.code).toBe("NOT_FOUND");
+  });
+
+  it("GET 401s with UNAUTHORIZED when there is no session", async () => {
+    requireUser.mockRejectedValue(new UnauthorizedError());
+    const res = await GET();
+    expect(res.status).toBe(401);
+    expect((await res.json()).error.code).toBe("UNAUTHORIZED");
+  });
+
+  it("POST 401s with UNAUTHORIZED when there is no session", async () => {
+    requireUser.mockRejectedValue(new UnauthorizedError());
+    const res = await POST(jsonRequest({ text: "a".repeat(120) }));
+    expect(res.status).toBe(401);
+    expect((await res.json()).error.code).toBe("UNAUTHORIZED");
+  });
+
+  it("a second user's active résumé is invisible to the first (cross-tenant isolation)", async () => {
+    const [userB] = await state.testDb
+      .insert(users)
+      .values({ email: "user-b-resume-route@example.com", passwordHash: "h", role: "user" })
+      .returning();
+
+    const uploaded = await POST(jsonRequest({ text: "a".repeat(120) }));
+    const resumeA = await uploaded.json();
+
+    requireUser.mockResolvedValue({ id: userB.id, email: userB.email, role: "user" });
+    const res = await GET();
+    expect(res.status).toBe(404);
+    expect((await res.json()).error.code).toBe("NOT_FOUND");
+
+    state.llm = makeMockLlm({
+      "resume-extract": structuredFixture({ summary: "User B's own résumé summary, distinct from A's." }),
+    });
+    const uploadedB = await POST(jsonRequest({ text: "b".repeat(120) }));
+    const resumeB = await uploadedB.json();
+    expect(resumeB.id).not.toBe(resumeA.id);
+
+    const getResB = await GET();
+    expect(getResB.status).toBe(200);
+    expect((await getResB.json()).id).toBe(resumeB.id);
+
+    requireUser.mockResolvedValue({ id: BOOTSTRAP_ADMIN_ID, email: "admin@example.com", role: "admin" });
+    const getResA = await GET();
+    expect(getResA.status).toBe(200);
+    expect((await getResA.json()).id).toBe(resumeA.id); // unaffected by userB's upload
   });
 
   it("maps an LLM-client construction failure (e.g. missing OPENROUTER_API_KEY) to a 502 PARSE_FAILED envelope, not a bare 500", async () => {
@@ -112,6 +177,10 @@ describe("/api/resume", () => {
     const getRes = await GET();
     expect(getRes.status).toBe(200);
     expect((await getRes.json()).id).toBe(resume.id);
+
+    const { resumesRepo } = await import("@/server/persistence/repos/resumes");
+    const row = await resumesRepo.getActive(BOOTSTRAP_ADMIN_ID);
+    expect(row?.originalPath).toBeNull();
   });
 
   it("a second upload supersedes the first — only one active résumé", async () => {
@@ -164,10 +233,12 @@ describe("/api/resume", () => {
     expect(resume.rawText).toContain("Hello resume world");
 
     const { resumesRepo } = await import("@/server/persistence/repos/resumes");
-    const row = await resumesRepo.getActive();
+    const row = await resumesRepo.getActive(BOOTSTRAP_ADMIN_ID);
     expect(row?.sourceKind).toBe("pdf");
     expect(row?.originalPath).toBeTruthy();
-    expect(readFileSync(row!.originalPath!)).toEqual(Buffer.from(bytes));
+    expect(row!.originalPath!.startsWith("/")).toBe(false);
+    expect(row!.originalPath!.startsWith(`${BOOTSTRAP_ADMIN_ID}/resumes/`)).toBe(true);
+    expect(readFileSync(resolveUpload(row!.originalPath!))).toEqual(Buffer.from(bytes));
   });
 
   it("accepts a DOCX upload through the multipart route (mammoth path)", async () => {
@@ -181,10 +252,37 @@ describe("/api/resume", () => {
     expect(resume.rawText).toContain("Jane Doe resume docx fixture");
 
     const { resumesRepo } = await import("@/server/persistence/repos/resumes");
-    const row = await resumesRepo.getActive();
+    const row = await resumesRepo.getActive(BOOTSTRAP_ADMIN_ID);
     expect(row?.sourceKind).toBe("docx");
     expect(row?.originalPath).toBeTruthy();
-    expect(readFileSync(row!.originalPath!)).toEqual(Buffer.from(bytes));
+    expect(row!.originalPath!.startsWith("/")).toBe(false);
+    expect(readFileSync(resolveUpload(row!.originalPath!))).toEqual(Buffer.from(bytes));
+  });
+
+  it("two different users uploading identical bytes get distinct per-user physical files", async () => {
+    const [userB] = await state.testDb
+      .insert(users)
+      .values({ email: "user-b-upload@example.com", passwordHash: "h", role: "user" })
+      .returning();
+
+    const bytes = new Uint8Array(readFileSync(PDF_FIXTURE));
+
+    const resA = await POST(fileRequest(bytes, "application/pdf", "resume.pdf"));
+    expect(resA.status).toBe(200);
+
+    requireUser.mockResolvedValue({ id: userB.id, email: userB.email, role: "user" });
+    const resB = await POST(fileRequest(bytes, "application/pdf", "resume.pdf"));
+    expect(resB.status).toBe(200);
+
+    const { resumesRepo } = await import("@/server/persistence/repos/resumes");
+    const rowA = await resumesRepo.getActive(BOOTSTRAP_ADMIN_ID);
+    const rowB = await resumesRepo.getActive(userB.id);
+
+    expect(rowA?.originalPath).not.toBe(rowB?.originalPath);
+    expect(rowA!.originalPath!.startsWith(`${BOOTSTRAP_ADMIN_ID}/resumes/`)).toBe(true);
+    expect(rowB!.originalPath!.startsWith(`${userB.id}/resumes/`)).toBe(true);
+    expect(readFileSync(resolveUpload(rowA!.originalPath!))).toEqual(Buffer.from(bytes));
+    expect(readFileSync(resolveUpload(rowB!.originalPath!))).toEqual(Buffer.from(bytes));
   });
 
   it("LLM structuring failure returns 502 PARSE_FAILED and persists no row", async () => {

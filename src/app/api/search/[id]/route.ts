@@ -4,6 +4,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { get as getRunHandle } from "@/server/runs/registry";
 import { isUuid } from "@/server/http/params";
+import { UnauthorizedError } from "@/server/auth/errors";
+import { requireUser } from "@/server/auth/session";
 import { searchRunsRepo } from "@/server/persistence/repos/searchRuns";
 import { toSearchRun } from "@/server/search/assemble-run";
 import type { ErrorEnvelope } from "@/types";
@@ -22,7 +24,21 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (!isUuid(id)) {
     return errorResponse(404, "NOT_FOUND", `No search run with id "${id}".`);
   }
-  const row = await searchRunsRepo.getById(id);
+
+  let session;
+  try {
+    session = await requireUser();
+  } catch (err) {
+    if (err instanceof UnauthorizedError) return errorResponse(401, "UNAUTHORIZED", err.message);
+    throw err;
+  }
+
+  // SSE ownership (Fable design review): resolve the row via the scoped
+  // getById BEFORE ever touching the in-memory run handle — EventSource
+  // can't send headers, so the cookie session requireUser() just read is the
+  // only auth. A foreign run id 404s here, same as an unknown one — the
+  // RunHandle itself carries no owner field; the DB row's user_id is the gate.
+  const row = await searchRunsRepo.getById(id, session.id);
   if (!row) {
     return errorResponse(404, "NOT_FOUND", `No search run with id "${id}".`);
   }

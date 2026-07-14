@@ -8,8 +8,10 @@
 // connector (persona 'local'), live-verified in Step 8 of task-2-brief.md.
 import { fileURLToPath } from "node:url";
 import { getDb } from "./db";
-import { profile, sources } from "./schema";
+import { profile, sources, users } from "./schema";
 import type { Db } from "./repos/db";
+import { hashPassword } from "@/server/auth/password";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 // config.geo.scope / config.country are the eligibility annotations (spec
 // 2026-07-12-remote-local-eligibility-design.md §6, operator-confirmed):
@@ -56,6 +58,7 @@ export async function seedSources(db: Db) {
 // 2026-07-12-remote-local-eligibility-design.md §4); runtime never defaults.
 export const profileSeed: typeof profile.$inferInsert = {
   id: "default",
+  userId: BOOTSTRAP_ADMIN_ID,
   baseCountry: "MY",
   relocation: "stay",
   scheduleFlex: "any-hours",
@@ -66,12 +69,32 @@ export async function seedProfile(db: Db) {
   return db.insert(profile).values(profileSeed).onConflictDoNothing().returning();
 }
 
+// The bootstrap admin — fixed UUID (BOOTSTRAP_ADMIN_ID), upserted from
+// ADMIN_EMAIL/ADMIN_PASSWORD so re-running the seed rotates creds instead of
+// duplicating the row. Never a default identity: the module-main guard
+// below fails loud if the env vars are unset.
+export async function seedAdmin(db: Db, creds: { email: string; password: string }) {
+  const passwordHash = await hashPassword(creds.password);
+  const email = creds.email.trim().toLowerCase();
+  return db
+    .insert(users)
+    .values({ id: BOOTSTRAP_ADMIN_ID, email, passwordHash, role: "admin" })
+    .onConflictDoUpdate({ target: users.id, set: { email, passwordHash, role: "admin" } })
+    .returning();
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const db = getDb();
+  const email = process.env.ADMIN_EMAIL;
+  const password = process.env.ADMIN_PASSWORD;
+  if (!email || !password) {
+    throw new Error("ADMIN_EMAIL and ADMIN_PASSWORD must be set to seed the admin.");
+  }
   seedSources(db)
     .then(async (rows) => {
+      const admin = await seedAdmin(db, { email, password });
       const prof = await seedProfile(db);
-      console.log(`Seeded ${rows.length} source(s), ${prof.length} profile row(s)`);
+      console.log(`Seeded ${rows.length} source(s), ${prof.length} profile row(s), ${admin.length} admin row(s)`);
       // The postgres-js pool otherwise keeps the tsx process alive forever.
       process.exit(0);
     })

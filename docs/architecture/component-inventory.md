@@ -48,6 +48,21 @@ Eligibility mirrors the same pattern (2026-07-12 spec §8): `Job.eligibility { t
 | **Tracker** | F5 console table (treatment C) | `{ rows: Application[]; sort: SortSpec; onSort; onOpen(id); onLogUpdate(id) }` | Card table, ScoreBadge, Tag (statusTone), **StagePips** `{ stage: 0\|1\|2\|3 }`, Tabs (Active·Closed) | empty (CTA to feed) / populated / sorted / closed-only / tailored-flag row |
 | **AppShellHeader** | §11.8 top row | `{ persona; onPersona; evalStatus; onEval; alertCount: number }` | PersonaToggle, UrlEvalBar, NotificationBell (IconButton + count) | default / evaluating / alerts>0 |
 
+## 1a. Auth, onboarding & admin (multi-tenant additions)
+
+Added by the auth-core + multi-tenant migration; not covered by the original spine §1–§4 design. Route groups: `(auth)` (login/register, chrome-free — no `AppShell`) vs `(app)` (session+profile-guarded, wrapped in `AppShell`) vs `(onboarding)` (session-guarded, profile-less only).
+
+| Component | Purpose | Key props (TS) | Composes | States/variants |
+|---|---|---|---|---|
+| **AuthCard** | `(auth)` login/register form | `{ mode: 'login'\|'register'; onSubmit(email, password): void; busy: boolean; error?: string; switchHref: string; switchLabel: string }` | Card, Input×2, Button, Icon | login / register / busy / server error (shown verbatim, no client-side auth logic) |
+| **OnboardingPage** (`(onboarding)/onboarding`) | Profile-less registrant's only reachable destination | local (unsaved) `Profile` state → `PUT /api/profile` (upsert) on Save → `/feed` | Card, `ProfileTargets`, Button | idle / busy / save error |
+| **AppSidebar** | The real app shell's left nav, added by the migration — distinct from `AppShellHeader` below (feed page's top bar for persona/eval, unaffected by auth) | `{ user?: AuthUser; activeId?: string; onSelect?(id): void; onLogout?(): void }` | `SidebarNav`, **`ProfileChip`** (footer) | signed-out (no footer) / signed-in / admin (Admin section appended) |
+| **ProfileChip** | Signed-in identity + logout affordance, sidebar footer | `{ user: AuthUser; onLogout?(): void }` | Avatar, IconButton | always the real session's email/role — never a placeholder name |
+| **AdminUsersTable** | `/admin` roster — every account + per-user counts | `{ users: AdminUser[] }` | Card (table), Tag (role) | empty ("No users yet.") / populated |
+| **AdminPage** (`(app)/admin`) | Wraps `AdminUsersTable`, calls `GET /api/admin/users` | — | AdminUsersTable, Button, Icon | loading / populated / error+retry / 403 forbidden ("You do not have access to this page.") — a non-admin who reaches the URL directly gets this state, not the generic error banner |
+
+`AppShell` (`src/app/AppShell.tsx`) mounts `AppSidebar` around every `(app)` page, drives active-tab from the router pathname, and resets client-side stores (e.g. the url-check dock) when the signed-in user id changes between sessions. The **Admin** sidebar section (`ADMIN_SIDEBAR_ITEMS`, id `admin-users` → `/admin`) is appended only when `user.role === 'admin'` — a non-admin never sees the nav entry, and the API still enforces `requireAdmin()` independently (defense in depth, not a second authorization system).
+
 ## 2. F4 — ApplyQuestionsAssistant (the novel piece)
 
 **Flow:** intake → extract → review questions → draft → edit/copy. Launched from `JobDetail`; renders as a full page (`/jobs/[id]/questions`), not a modal — answers are long-form work.

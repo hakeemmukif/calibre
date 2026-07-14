@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { getDb } from "./db";
 import { profile, sources } from "./schema";
 import type { Db } from "./repos/db";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 // geo annotations mirror seed.ts's shapes (spec §6): greenhouse "anywhere"
 // makes its bare-"Remote" fixture posting classify `anywhere`; lever
@@ -21,12 +22,12 @@ export async function seedTestSources(db: Db) {
   return db.insert(sources).values(testSourceSeeds).onConflictDoNothing().returning();
 }
 
-// Same operator-profile singleton as seed.ts — e2e's scratch DB needs it too.
+// Same bootstrap-admin profile row as seed.ts — e2e's scratch DB needs it too.
 export async function seedTestProfile(db: Db) {
   return db
     .insert(profile)
     .values({
-      id: "default", baseCountry: "MY", relocation: "stay",
+      id: "default", userId: BOOTSTRAP_ADMIN_ID, baseCountry: "MY", relocation: "stay",
       scheduleFlex: "any-hours", employmentPref: "any",
     })
     .onConflictDoNothing()

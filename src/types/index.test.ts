@@ -11,6 +11,11 @@ import {
   Legitimacy,
   UrlCheckRequest,
   UrlCheck,
+  AuthUser,
+  RegisterRequest,
+  ScheduleFlex,
+  EmploymentPref,
+  Profile,
 } from "./index";
 
 describe("Persona / ScanPersona", () => {
@@ -208,8 +213,6 @@ describe("UrlCheck", () => {
   });
 });
 
-import { ScheduleFlex, EmploymentPref, Profile } from "./index";
-
 describe("ScheduleFlex / EmploymentPref", () => {
   it("ScheduleFlex accepts the three ordered levels and rejects others", () => {
     expect(ScheduleFlex.parse("base-hours")).toBe("base-hours");
@@ -232,4 +235,18 @@ describe("ScheduleFlex / EmploymentPref", () => {
     });
     expect(p.scheduleFlex).toBe("any-hours");
   });
+});
+
+it("ErrorCode includes the auth codes", () => {
+  expect(ErrorCode.options).toContain("UNAUTHORIZED");
+  expect(ErrorCode.options).toContain("FORBIDDEN");
+});
+
+it("AuthUser never carries a password hash", () => {
+  const parsed = AuthUser.parse({ id: "u1", email: "a@b.co", role: "user", passwordHash: "leak" });
+  expect(parsed).not.toHaveProperty("passwordHash"); // strip via .parse
+});
+
+it("RegisterRequest enforces a minimum password length", () => {
+  expect(RegisterRequest.safeParse({ email: "a@b.co", password: "short" }).success).toBe(false);
 });

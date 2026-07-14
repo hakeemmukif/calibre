@@ -6,6 +6,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z, ZodError } from "zod";
 import { UnknownAnswersIdError, patchAnswers } from "@/server/apply-assistant/answer";
 import { isUuid } from "@/server/http/params";
+import { UnauthorizedError } from "@/server/auth/errors";
+import { requireUser } from "@/server/auth/session";
 import { ApplicationAnswer, type ErrorEnvelope } from "@/types";
 
 const RequestBody = z.object({ answers: z.array(ApplicationAnswer).min(1) });
@@ -29,10 +31,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   }
 
   try {
+    const session = await requireUser();
     const body = RequestBody.parse(json);
-    const result = await patchAnswers(id, body.answers);
+    const result = await patchAnswers(id, session.id, body.answers);
     return NextResponse.json(result, { status: 200 });
   } catch (err) {
+    if (err instanceof UnauthorizedError) return errorResponse(401, "UNAUTHORIZED", err.message);
     if (err instanceof ZodError) {
       return errorResponse(422, "VALIDATION_ERROR", "Invalid apply/answers patch.", err.issues);
     }

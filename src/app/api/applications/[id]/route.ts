@@ -4,6 +4,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z, ZodError } from "zod";
 import { isUuid } from "@/server/http/params";
+import { UnauthorizedError } from "@/server/auth/errors";
+import { requireUser } from "@/server/auth/session";
 import { patchApplication } from "@/server/tracker";
 import type { ErrorEnvelope } from "@/types";
 
@@ -41,13 +43,15 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   }
 
   try {
+    const session = await requireUser();
     const body = RequestBody.parse(json);
-    const app = await patchApplication(id, body);
+    const app = await patchApplication(id, session.id, body);
     if (!app) {
       return errorResponse(404, "NOT_FOUND", `No application with id "${id}".`);
     }
     return NextResponse.json(app, { status: 200 });
   } catch (err) {
+    if (err instanceof UnauthorizedError) return errorResponse(401, "UNAUTHORIZED", err.message);
     if (err instanceof ZodError) {
       return errorResponse(422, "VALIDATION_ERROR", "Invalid application patch.", err.issues);
     }

@@ -50,6 +50,12 @@ import {
   UrlCheck,
   UrlCheckRequest,
   UrlChecksSnapshot,
+  AuthUser,
+  RegisterRequest,
+  LoginRequest,
+  SessionResponse,
+  AdminUser,
+  AdminUsersResponse,
 } from "@/types";
 
 const entitySchemas: Record<string, z.ZodType> = {
@@ -79,6 +85,12 @@ const entitySchemas: Record<string, z.ZodType> = {
   UrlCheck,
   UrlCheckRequest,
   UrlChecksSnapshot,
+  AuthUser,
+  RegisterRequest,
+  LoginRequest,
+  SessionResponse,
+  AdminUser,
+  AdminUsersResponse,
 };
 
 for (const [name, schema] of Object.entries(entitySchemas)) {
@@ -106,21 +118,22 @@ registry.registerPath({
 registry.registerPath({
   method: "get",
   path: "/api/profile",
-  summary: "Operator profile — base country + relocation preference",
+  summary: "The caller's profile — base country + relocation preference",
   responses: {
-    200: { description: "The singleton profile", content: { "application/json": { schema: Profile } } },
-    404: { description: "Profile row missing (unseeded install)", content: { "application/json": { schema: ErrorEnvelope } } },
+    200: { description: "The caller's profile", content: { "application/json": { schema: Profile } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    404: { description: "The caller has no profile row yet (PUT to onboard)", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
 
 registry.registerPath({
   method: "put",
   path: "/api/profile",
-  summary: "Full-replace the operator profile",
+  summary: "Create-or-replace the caller's profile (onboarding path)",
   request: { body: { content: { "application/json": { schema: Profile.omit({ updatedAt: true }) } } } },
   responses: {
-    200: { description: "The updated profile", content: { "application/json": { schema: Profile } } },
-    404: { description: "Profile row missing", content: { "application/json": { schema: ErrorEnvelope } } },
+    200: { description: "The created/updated profile", content: { "application/json": { schema: Profile } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
     422: { description: "Invalid body", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
@@ -143,6 +156,7 @@ registry.registerPath({
   },
   responses: {
     200: { description: "Parsed résumé", content: { "application/json": { schema: Resume } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
     413: { description: "File exceeds the 10MB limit", content: { "application/json": { schema: ErrorEnvelope } } },
     422: {
       description: "Bad mime type or too-short/missing text",
@@ -161,6 +175,7 @@ registry.registerPath({
   summary: "Fetch the current résumé",
   responses: {
     200: { description: "Current résumé", content: { "application/json": { schema: Resume } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
     404: { description: "No résumé uploaded yet", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
@@ -183,6 +198,7 @@ registry.registerPath({
   },
   responses: {
     202: { description: "Run queued", content: { "application/json": { schema: SearchRun } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
     409: {
       description: "A run is already active for this persona, or no résumé exists",
       content: { "application/json": { schema: ErrorEnvelope } },
@@ -205,7 +221,8 @@ registry.registerPath({
         "text/event-stream": { schema: SseEvent },
       },
     },
-    404: { description: "Unknown run id", content: { "application/json": { schema: ErrorEnvelope } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    404: { description: "Unknown run id (incl. a foreign-owned one — no existence leak)", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
 
@@ -233,6 +250,7 @@ registry.registerPath({
         },
       },
     },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
     422: { description: "Unknown query parameter or invalid value", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
@@ -244,6 +262,7 @@ registry.registerPath({
   request: { params: z.object({ id: z.string() }) },
   responses: {
     200: { description: "The frozen Job (no separate detail entity)", content: { "application/json": { schema: Job } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
     404: { description: "Unknown job id", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
@@ -255,6 +274,7 @@ registry.registerPath({
   request: { params: z.object({ id: z.string() }) },
   responses: {
     204: { description: "Deleted" },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
     404: { description: "Unknown job id", content: { "application/json": { schema: ErrorEnvelope } } },
     409: {
       description: "Job is not persona 'pasted', or a tracked application exists",
@@ -270,6 +290,7 @@ registry.registerPath({
   request: { params: z.object({ id: z.string() }) },
   responses: {
     200: { description: "The freshly re-scored, frozen Job", content: { "application/json": { schema: Job } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
     404: { description: "Malformed or unknown job id", content: { "application/json": { schema: ErrorEnvelope } } },
     409: { description: "No active résumé to score against", content: { "application/json": { schema: ErrorEnvelope } } },
     422: { description: "No job description obtainable — nothing to extract facts from", content: { "application/json": { schema: ErrorEnvelope } } },
@@ -294,6 +315,7 @@ registry.registerPath({
       content: { "application/json": { schema: UrlCheck } },
     },
     202: { description: "Pipeline queued", content: { "application/json": { schema: UrlCheck } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
     409: { description: "No active résumé to score against", content: { "application/json": { schema: ErrorEnvelope } } },
     422: {
       description: "Invalid body/URL, or pasted text exceeds the 40k-character cap",
@@ -314,6 +336,7 @@ registry.registerPath({
   },
   responses: {
     200: { description: "The requested url_checks, plus worker pause state", content: { "application/json": { schema: UrlChecksSnapshot } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
     422: { description: "Neither ?active=1 nor ?ids= was provided", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
@@ -325,7 +348,8 @@ registry.registerPath({
   request: { params: z.object({ id: z.string() }) },
   responses: {
     200: { description: "The UrlCheck row", content: { "application/json": { schema: UrlCheck } } },
-    404: { description: "Unknown check id", content: { "application/json": { schema: ErrorEnvelope } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    404: { description: "Unknown or foreign-owned check id", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
 
@@ -355,6 +379,7 @@ registry.registerPath({
         },
       },
     },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
     404: { description: "Unknown job id", content: { "application/json": { schema: ErrorEnvelope } } },
     422: { description: "Zero or more than one of jobId/url/pastedForm provided", content: { "application/json": { schema: ErrorEnvelope } } },
     502: {
@@ -379,6 +404,8 @@ registry.registerPath({
   },
   responses: {
     200: { description: "Persisted, résumé-grounded answer set", content: { "application/json": { schema: ApplicationAnswers } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    404: { description: "Unknown job id (incl. a foreign-owned one — no existence leak)", content: { "application/json": { schema: ErrorEnvelope } } },
     409: { description: "No résumé exists to ground answers against", content: { "application/json": { schema: ErrorEnvelope } } },
     422: { description: "Invalid body (e.g. empty questions[])", content: { "application/json": { schema: ErrorEnvelope } } },
     502: { description: "LLM drafting failed", content: { "application/json": { schema: ErrorEnvelope } } },
@@ -400,6 +427,7 @@ registry.registerPath({
   },
   responses: {
     202: { description: "Tailor run queued", content: { "application/json": { schema: TailoredResume } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
     404: { description: "Unknown job id", content: { "application/json": { schema: ErrorEnvelope } } },
     409: { description: "No résumé exists to tailor", content: { "application/json": { schema: ErrorEnvelope } } },
   },
@@ -418,7 +446,8 @@ registry.registerPath({
         "text/event-stream": { schema: SseEvent },
       },
     },
-    404: { description: "Unknown tailor run id", content: { "application/json": { schema: ErrorEnvelope } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    404: { description: "Unknown tailor run id (incl. a foreign-owned one — no existence leak)", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
 
@@ -438,7 +467,8 @@ registry.registerPath({
   },
   responses: {
     200: { description: "TailoredResume server-rendered with only the accepted diff entries applied", content: { "application/json": { schema: TailoredResume } } },
-    404: { description: "Unknown tailor run id", content: { "application/json": { schema: ErrorEnvelope } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    404: { description: "Unknown tailor run id (incl. a foreign-owned one — no existence leak)", content: { "application/json": { schema: ErrorEnvelope } } },
     409: { description: "Run has not completed yet", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
@@ -453,7 +483,8 @@ registry.registerPath({
       description: "Binary PDF bytes",
       content: { "application/pdf": { schema: z.string().describe("Binary PDF bytes") } },
     },
-    404: { description: "Unknown tailor run id", content: { "application/json": { schema: ErrorEnvelope } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    404: { description: "Unknown tailor run id (incl. a foreign-owned one — no existence leak)", content: { "application/json": { schema: ErrorEnvelope } } },
     409: { description: "Run has not been finalized yet (POST .../finalize not yet called, or status !== 'completed')", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
@@ -474,7 +505,8 @@ registry.registerPath({
   },
   responses: {
     200: { description: "The replaced answer set", content: { "application/json": { schema: ApplicationAnswers } } },
-    404: { description: "Unknown answers id", content: { "application/json": { schema: ErrorEnvelope } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    404: { description: "Unknown answers id (incl. a foreign-owned one — no existence leak)", content: { "application/json": { schema: ErrorEnvelope } } },
     422: { description: "Empty patch (answers[] with zero entries)", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
@@ -502,7 +534,8 @@ registry.registerPath({
       description: "Server sets appliedAt, stage:0, statusLabel/statusTone via features/applied/status-map.ts",
       content: { "application/json": { schema: Application } },
     },
-    404: { description: "Unknown job id", content: { "application/json": { schema: ErrorEnvelope } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    404: { description: "Unknown job id (incl. a foreign-owned one — no existence leak)", content: { "application/json": { schema: ErrorEnvelope } } },
     409: {
       description:
         "Duplicate jobId (details: { existingId }), job exists but isn't scored yet, or no active résumé to record",
@@ -533,6 +566,7 @@ registry.registerPath({
         },
       },
     },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
     422: { description: "Unknown query parameter or invalid value", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
@@ -561,7 +595,8 @@ registry.registerPath({
   },
   responses: {
     200: { description: "The updated Application", content: { "application/json": { schema: Application } } },
-    404: { description: "Unknown application id", content: { "application/json": { schema: ErrorEnvelope } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    404: { description: "Unknown application id (incl. a foreign-owned one — no existence leak)", content: { "application/json": { schema: ErrorEnvelope } } },
     422: { description: "Empty patch (zero fields)", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
@@ -575,6 +610,7 @@ registry.registerPath({
       description: "All source rows",
       content: { "application/json": { schema: z.object({ items: z.array(Source) }) } },
     },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
 
@@ -594,8 +630,137 @@ registry.registerPath({
   },
   responses: {
     200: { description: "The updated Source", content: { "application/json": { schema: Source } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    403: { description: "Caller is not an admin", content: { "application/json": { schema: ErrorEnvelope } } },
     404: { description: "Unknown source id", content: { "application/json": { schema: ErrorEnvelope } } },
     422: { description: "Invalid body (enabled must be a boolean)", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/admin/users",
+  summary: "Admin: every account with per-user résumé/job/application counts",
+  responses: {
+    200: { description: "All users with counts", content: { "application/json": { schema: AdminUsersResponse } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    403: { description: "Caller is not an admin", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/admin/users/{id}/resume",
+  summary: "Admin: fetch the target user's résumé (decision #7 full content access)",
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: { description: "Target user's current résumé", content: { "application/json": { schema: Resume } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    403: { description: "Caller is not an admin", content: { "application/json": { schema: ErrorEnvelope } } },
+    404: { description: "Unknown/non-uuid user id, or the target has no résumé", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/admin/users/{id}/jobs",
+  summary: "Admin: the target user's scored feed (decision #7 full content access)",
+  request: {
+    params: z.object({ id: z.string() }),
+    query: z.object({
+      persona: Persona.optional(),
+      tier: z.array(LegitimacyTier).optional().describe("repeatable"),
+      minScore: z.number().min(0).max(5).optional(),
+      isNew: z.boolean().optional(),
+      q: z.string().optional(),
+      cursor: z.string().optional(),
+      limit: z.number().int().min(1).max(100).optional().describe("default 25"),
+    }),
+  },
+  responses: {
+    200: {
+      description:
+        "Page of the target user's scored jobs + hero stats; an empty feed (not an error) when the target has no profile yet",
+      content: {
+        "application/json": {
+          schema: z.object({ items: z.array(Job), nextCursor: z.string().nullable(), stats: SummaryStripStats }),
+        },
+      },
+    },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    403: { description: "Caller is not an admin", content: { "application/json": { schema: ErrorEnvelope } } },
+    404: { description: "Non-uuid user id", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/admin/users/{id}/applications",
+  summary: "Admin: the target user's tracker rows (decision #7 full content access)",
+  request: {
+    params: z.object({ id: z.string() }),
+    query: z.object({
+      stage: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]).optional(),
+      statusTone: z.enum(["good", "verified", "neutral"]).optional(),
+      cursor: z.string().optional(),
+      limit: z.number().int().min(1).max(100).optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Page of the target user's tracker rows",
+      content: {
+        "application/json": {
+          schema: z.object({ items: z.array(Application), nextCursor: z.string().nullable() }),
+        },
+      },
+    },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    403: { description: "Caller is not an admin", content: { "application/json": { schema: ErrorEnvelope } } },
+    404: { description: "Non-uuid user id", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/auth/register",
+  summary: "Register an account (auto-login)",
+  request: { body: { content: { "application/json": { schema: RegisterRequest } } } },
+  responses: {
+    201: { description: "Created + session cookie set", content: { "application/json": { schema: SessionResponse } } },
+    409: { description: "Email already registered", content: { "application/json": { schema: ErrorEnvelope } } },
+    422: { description: "Validation error", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/auth/login",
+  summary: "Log in with email + password",
+  request: { body: { content: { "application/json": { schema: LoginRequest } } } },
+  responses: {
+    200: { description: "Session cookie set", content: { "application/json": { schema: SessionResponse } } },
+    401: { description: "Invalid credentials", content: { "application/json": { schema: ErrorEnvelope } } },
+    422: { description: "Validation error", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/auth/logout",
+  summary: "Log out",
+  responses: {
+    204: { description: "Logged out; session cookie cleared" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/auth/session",
+  summary: "Current session",
+  responses: {
+    200: { description: "Active session", content: { "application/json": { schema: SessionResponse } } },
+    401: { description: "No active session", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
 

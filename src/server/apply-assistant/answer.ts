@@ -57,12 +57,13 @@ function toApplicationAnswers(row: ApplicationAnswersRow): ApplicationAnswers {
 }
 
 export async function draftAnswers(
+  userId: string,
   input: { jobId: string; questions: ApplicationQuestion[] },
   deps: { llm?: LlmClient } = {},
 ): Promise<ApplicationAnswers> {
-  if (!(await jobsRepo.existsById(input.jobId))) throw new UnknownJobError(input.jobId);
+  if (!(await jobsRepo.existsById(input.jobId, userId))) throw new UnknownJobError(input.jobId);
 
-  const resumeRow = await resumesRepo.getActive();
+  const resumeRow = await resumesRepo.getActive(userId);
   if (!resumeRow) throw new NoActiveResumeError();
 
   const scoreRow = await jobScoresRepo.getLatestByJobId(input.jobId);
@@ -87,6 +88,7 @@ export async function draftAnswers(
   }
 
   const inserted = await applicationAnswersRepo.insert({
+    userId,
     jobId: input.jobId,
     resumeId: resumeRow.id,
     // KNOWN GAP: neither draftAnswers' locked input ({jobId, questions}) nor
@@ -104,8 +106,11 @@ export async function draftAnswers(
   return toApplicationAnswers(inserted);
 }
 
-export async function patchAnswers(id: string, answers: ApplicationAnswer[]): Promise<ApplicationAnswers> {
-  const updated = await applicationAnswersRepo.update(id, answers);
+export async function patchAnswers(id: string, userId: string, answers: ApplicationAnswer[]): Promise<ApplicationAnswers> {
+  // By-uuid PATCH leak fix (Fable design review, CRITICAL): scoped by userId
+  // — a foreign answers id 404s (UnknownAnswersIdError) instead of
+  // overwriting another tenant's drafted answers.
+  const updated = await applicationAnswersRepo.update(id, userId, answers);
   if (!updated) throw new UnknownAnswersIdError(id);
   return toApplicationAnswers(updated);
 }

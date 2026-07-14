@@ -1,13 +1,21 @@
 import { eq } from "drizzle-orm";
 import { NextRequest } from "next/server";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
+import { UnauthorizedError } from "@/server/auth/errors";
 import { insertJob, insertProfile, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
-import { jobs, jobScores, resumes, sources } from "@/server/persistence/schema";
+import { jobs, jobScores, resumes, sources, users } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
 vi.mock("@/server/score/liveness", () => ({ probeLivenessDeep: vi.fn().mockResolvedValue("active") }));
+
+const { requireUser } = vi.hoisted(() => ({ requireUser: vi.fn() }));
+vi.mock("@/server/auth/session", async (orig) => ({
+  ...(await orig<typeof import("@/server/auth/session")>()),
+  requireUser: () => requireUser(),
+}));
 
 const { POST } = await import("./route");
 const { probeLivenessDeep } = await import("@/server/score/liveness");
@@ -22,12 +30,40 @@ describe("POST /api/jobs/:id/evaluate", () => {
     await insertProfile(state.testDb); // scoreJob's Layer-C refresh requires the operator profile
   });
 
+  beforeEach(() => {
+    requireUser.mockReset();
+    requireUser.mockResolvedValue({ id: BOOTSTRAP_ADMIN_ID, email: "admin@example.com", role: "admin" });
+  });
+
   afterEach(async () => {
     vi.unstubAllEnvs();
     await state.testDb.delete(jobScores);
     await state.testDb.delete(jobs);
     await state.testDb.delete(sources);
     await state.testDb.delete(resumes);
+  });
+
+  it("401s with UNAUTHORIZED when there is no session", async () => {
+    requireUser.mockRejectedValue(new UnauthorizedError());
+    const id = crypto.randomUUID();
+    const res = await POST(req(id), { params: Promise.resolve({ id }) });
+    expect(res.status).toBe(401);
+    expect((await res.json()).error.code).toBe("UNAUTHORIZED");
+  });
+
+  it("returns 404 NOT_FOUND for a foreign-owned job id (cross-tenant isolation)", async () => {
+    const [userB] = await state.testDb
+      .insert(users)
+      .values({ email: "user-b-evaluate-route@example.com", passwordHash: "h", role: "user" })
+      .returning();
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id, { description: "Backend role at Acme." });
+    await insertResume(state.testDb, { isActive: true });
+
+    requireUser.mockResolvedValue({ id: userB.id, email: userB.email, role: "user" });
+    const res = await POST(req(job.id), { params: Promise.resolve({ id: job.id }) });
+    expect(res.status).toBe(404);
+    expect((await res.json()).error.code).toBe("NOT_FOUND");
   });
 
   it("returns 404 NOT_FOUND for a malformed (non-uuid) id, never a 500", async () => {

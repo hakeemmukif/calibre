@@ -4,6 +4,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z, ZodError } from "zod";
 import { UuidParam } from "@/server/http/params";
+import { UnauthorizedError } from "@/server/auth/errors";
+import { requireUser } from "@/server/auth/session";
 import { NoActiveResumeError, UnknownJobError, startTailor } from "@/server/tailor";
 import type { ErrorEnvelope } from "@/types";
 
@@ -23,10 +25,12 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    const session = await requireUser();
     const body = RequestBody.parse(json);
-    const run = await startTailor(body);
+    const run = await startTailor(session.id, body);
     return NextResponse.json(run, { status: 202 });
   } catch (err) {
+    if (err instanceof UnauthorizedError) return errorResponse(401, "UNAUTHORIZED", err.message);
     if (err instanceof ZodError) {
       return errorResponse(422, "VALIDATION_ERROR", "Invalid tailor request.", err.issues);
     }

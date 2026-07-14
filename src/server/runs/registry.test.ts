@@ -1,6 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import { insertResume } from "@/server/persistence/repos/__fixtures__/helpers";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
@@ -26,18 +27,28 @@ describe("run registry", () => {
   });
 
   it("tracks one active run id per persona and releases it on completion", () => {
-    create("search", "run-1", "remote");
-    expect(getActiveRunForPersona("remote")).toBe("run-1");
+    create("search", "run-1", "user-a", "remote");
+    expect(getActiveRunForPersona("user-a", "remote")).toBe("run-1");
 
-    release("run-1", "remote");
-    expect(getActiveRunForPersona("remote")).toBeUndefined();
+    release("run-1", "user-a", "remote");
+    expect(getActiveRunForPersona("user-a", "remote")).toBeUndefined();
   });
 
   it("release is a no-op when the given id no longer owns the persona slot (superseded)", () => {
-    create("search", "run-1", "remote");
-    create("search", "run-2", "remote"); // run-2 supersedes run-1's slot
-    release("run-1", "remote");
-    expect(getActiveRunForPersona("remote")).toBe("run-2");
+    create("search", "run-1", "user-a", "remote");
+    create("search", "run-2", "user-a", "remote"); // run-2 supersedes run-1's slot
+    release("run-1", "user-a", "remote");
+    expect(getActiveRunForPersona("user-a", "remote")).toBe("run-2");
+  });
+
+  it("the per-persona mutex is per-user — user A's active run never blocks user B (Fable design review)", () => {
+    create("search", "run-1", "user-a", "remote");
+    expect(getActiveRunForPersona("user-a", "remote")).toBe("run-1");
+    expect(getActiveRunForPersona("user-b", "remote")).toBeUndefined();
+
+    create("search", "run-2", "user-b", "remote");
+    expect(getActiveRunForPersona("user-a", "remote")).toBe("run-1");
+    expect(getActiveRunForPersona("user-b", "remote")).toBe("run-2");
   });
 
   it("emit() delivers events in order with monotonically increasing ids, and marks terminal state", () => {
@@ -75,15 +86,15 @@ describe("run registry", () => {
   it("markStaleRunningOnBoot flips a leftover 'running' row to 'failed' and leaves others untouched", async () => {
     const repo = createSearchRunsRepo(state.testDb);
     const resume = await insertResume(state.testDb);
-    const base = { resumeId: resume.id, personas: ["remote" as const], stats: { scanned: 0, matched: 0, scored: 0, worth: 0, ghosts: 0, perSource: [] } };
+    const base = { userId: BOOTSTRAP_ADMIN_ID, resumeId: resume.id, personas: ["remote" as const], stats: { scanned: 0, matched: 0, scored: 0, worth: 0, ghosts: 0, perSource: [] } };
 
     const running = await repo.insert({ ...base, status: "running" });
     const completed = await repo.insert({ ...base, status: "completed" });
 
     await markStaleRunningOnBoot();
 
-    expect((await repo.getById(running.id))?.status).toBe("failed");
-    expect((await repo.getById(running.id))?.error).toMatch(/stale/i);
-    expect((await repo.getById(completed.id))?.status).toBe("completed");
+    expect((await repo.getById(running.id, BOOTSTRAP_ADMIN_ID))?.status).toBe("failed");
+    expect((await repo.getById(running.id, BOOTSTRAP_ADMIN_ID))?.error).toMatch(/stale/i);
+    expect((await repo.getById(completed.id, BOOTSTRAP_ADMIN_ID))?.status).toBe("completed");
   });
 });

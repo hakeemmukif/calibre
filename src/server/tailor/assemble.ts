@@ -32,7 +32,9 @@ export async function toTailoredResume(row: TailoredResumeRow): Promise<Tailored
     if (!row.acceptedIndices) {
       throw new Error(`tailored_resumes ${row.id}: finalizedAt is set but acceptedIndices is null`);
     }
-    const baseResumeRow = await resumesRepo.getById(row.baseResumeId);
+    // row.userId is the tailored_resumes row's real owner (a DB fact, not a
+    // scaffold) — the base résumé it points to was inserted for that same user.
+    const baseResumeRow = await resumesRepo.getById(row.baseResumeId, row.userId);
     if (!baseResumeRow) {
       throw new Error(`tailored_resumes ${row.id}: base résumé ${row.baseResumeId} no longer exists`);
     }

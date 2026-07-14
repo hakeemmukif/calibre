@@ -4,10 +4,11 @@
 // Zero LLM cost. Run after changing geo.ts tables, priors, or the resolver:
 // `npm run eligibility:recompute`.
 import { fileURLToPath } from "node:url";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "../persistence/db";
+import { jobsRepo } from "../persistence/repos/jobs";
 import { jobs, jobScores, sources } from "../persistence/schema";
-import { profileRepo } from "../persistence/repos/profile";
+import { profileRepo, ProfileMissingError, type ProfileRow } from "../persistence/repos/profile";
 import { parseSourceGeo } from "../search/geo";
 import { resolveEligibility } from "./eligibility";
 import type { JdFacts } from "./jdFacts";
@@ -15,15 +16,31 @@ import { probeTzToken, resolveTzBand } from "./tzBand";
 
 export async function recomputeEligibility() {
   const db = getDb();
-  const prof = await profileRepo.get();
   const rows = await db
     .select({ job: jobs, source: sources })
     .from(jobs)
     .innerJoin(sources, eq(sources.id, jobs.sourceId));
 
+  const profileCache = new Map<string, ProfileRow>();
   let changed = 0;
   let tzChanged = 0;
+  let skipped = 0;
   for (const { job, source } of rows) {
+    let prof = profileCache.get(job.userId);
+    if (!prof) {
+      try {
+        prof = await profileRepo.get(job.userId);
+      } catch (err) {
+        if (err instanceof ProfileMissingError) {
+          console.warn(`recompute-eligibility: skipping job ${job.id} — owner ${job.userId} has no profile yet`);
+          skipped += 1;
+          continue;
+        }
+        throw err;
+      }
+      profileCache.set(job.userId, prof);
+    }
+
     const [latestScore] = await db
       .select({ jdFacts: jobScores.jdFacts })
       .from(jobScores)
@@ -39,7 +56,7 @@ export async function recomputeEligibility() {
       jdFacts,
     });
     if (tier !== job.eligibility || evidence !== job.eligibilityEvidence) {
-      await db.update(jobs).set({ eligibility: tier, eligibilityEvidence: evidence }).where(eq(jobs.id, job.id));
+      await jobsRepo.updateEligibility(job.id, job.userId, tier, evidence);
       changed += 1;
     }
 
@@ -58,17 +75,19 @@ export async function recomputeEligibility() {
     const tz = resolveTzBand({ statedTz, location: job.location || undefined });
     const nextBand = tz?.band ?? null;
     if (nextBand !== job.tzBand) {
-      await db.update(jobs).set({ tzBand: nextBand }).where(eq(jobs.id, job.id));
+      await db.update(jobs).set({ tzBand: nextBand }).where(and(eq(jobs.id, job.id), eq(jobs.userId, job.userId)));
       tzChanged += 1;
     }
   }
-  return { total: rows.length, changed, tzChanged };
+  return { total: rows.length, changed, tzChanged, skipped };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   recomputeEligibility()
-    .then(({ total, changed, tzChanged }) => {
-      console.log(`Recomputed eligibility for ${total} job(s); ${changed} changed, ${tzChanged} tz_band changed.`);
+    .then(({ total, changed, tzChanged, skipped }) => {
+      console.log(
+        `Recomputed eligibility for ${total} job(s); ${changed} changed, ${tzChanged} tz_band changed, ${skipped} skipped (no profile).`,
+      );
       process.exit(0);
     })
     .catch((err) => {

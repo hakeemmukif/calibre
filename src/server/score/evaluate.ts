@@ -19,18 +19,18 @@ export class UnknownJobError extends Error {
   }
 }
 
-export async function evaluateJob(jobId: string, deps: { llm?: LlmClient } = {}): Promise<Job> {
-  const found = await jobsRepo.getRowWithSourceById(jobId);
+export async function evaluateJob(jobId: string, userId: string, deps: { llm?: LlmClient } = {}): Promise<Job> {
+  const found = await jobsRepo.getRowWithSourceById(jobId, userId);
   if (!found) throw new UnknownJobError(jobId);
-  const resume = await resumesRepo.getActive();
+  const resume = await resumesRepo.getActive(userId);
   if (!resume) throw new NoActiveResumeError();
-  const profile = await profileRepo.get();
+  const profile = await profileRepo.get(userId);
   const job = await ensureDescription(found.job, found.source).catch((err) => {
     console.error(`evaluateJob ${jobId}: detail fetch failed:`, err);
     return found.job;
   });
   const llm = deps.llm ?? getLlm();
   const score = await scoreJob({ job, source: found.source, profile, resume, llm });
-  const isNewCutoff = await resolveIsNewCutoff(found.job.persona);
+  const isNewCutoff = await resolveIsNewCutoff(userId, found.job.persona);
   return assembleJob({ job, score, source: found.source }, { isNewCutoff });
 }

@@ -263,6 +263,8 @@ export const ErrorCode = z.enum([
   "FETCH_BLOCKED",
   "NOT_A_JOB_POSTING",
   "INTERNAL",
+  "UNAUTHORIZED",
+  "FORBIDDEN",
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 
@@ -326,3 +328,42 @@ export const UrlChecksSnapshot = z.object({
   paused: z.boolean(), // true ⇔ worker is holding claims on the daily cost cap
 });
 export type UrlChecksSnapshot = z.infer<typeof UrlChecksSnapshot>;
+
+export const AuthUser = z.object({
+  id: z.string(),
+  email: z.string().email(),
+  role: z.enum(["user", "admin"]),
+}); // .parse() strips unknown keys (e.g. passwordHash) by default
+export type AuthUser = z.infer<typeof AuthUser>;
+
+export const RegisterRequest = z.object({
+  email: z.string().email(),
+  password: z.string().min(8).max(200),
+});
+export type RegisterRequest = z.infer<typeof RegisterRequest>;
+
+export const LoginRequest = z.object({
+  email: z.string().email(),
+  password: z.string().min(1).max(200),
+});
+export type LoginRequest = z.infer<typeof LoginRequest>;
+
+export const SessionResponse = z.object({ user: AuthUser });
+export type SessionResponse = z.infer<typeof SessionResponse>;
+
+// AdminUser — GET /api/admin/users row shape. `.parse()` strips unknown keys
+// (e.g. passwordHash) by default, same as AuthUser above — never add a hash
+// field to this schema.
+export const AdminUser = z.object({
+  id: z.string(),
+  email: z.string().email(),
+  role: z.enum(["user", "admin"]),
+  createdAt: z.string().datetime(),
+  resumeCount: z.number().int(),
+  jobCount: z.number().int(),
+  applicationCount: z.number().int(),
+});
+export type AdminUser = z.infer<typeof AdminUser>;
+
+export const AdminUsersResponse = z.object({ items: z.array(AdminUser) });
+export type AdminUsersResponse = z.infer<typeof AdminUsersResponse>;

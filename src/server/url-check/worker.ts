@@ -80,19 +80,25 @@ export function createUrlCheckWorker(overrides: UrlCheckWorkerDeps = {}) {
       }
 
       // A duplicate that got scored while this row waited finishes as alreadyKnown
-      // with zero LLM spend (spec §4.3 claim-time re-check).
-      const existingJob = await jobsRepo.getByDedupeKey(row.dedupeKey);
-      if (existingJob && (await jobsRepo.hasAnyScore(existingJob.id))) {
+      // with zero LLM spend (spec §4.3 claim-time re-check). Every read below is
+      // scoped to row.userId — the claimed row's OWN userId, never a session
+      // (this is a boot-started worker, no request in flight) and never
+      // BOOTSTRAP_ADMIN_ID (Step 3 task 5's closed leak: an unscoped lookup here
+      // let B's queued check resolve A's job and complete as alreadyKnown
+      // pointing at A's jobId — a cross-tenant leak, and a 404 in B's UI since
+      // jobsRepo.getById is scoped to the caller).
+      const existingJob = await jobsRepo.getByDedupeKey(row.dedupeKey, row.userId);
+      if (existingJob && (await jobsRepo.hasAnyScore(existingJob.id, row.userId))) {
         await urlChecksRepo.complete(row.id, { jobId: existingJob.id, alreadyKnown: true }, attempt);
         return;
       }
 
-      const resumeRow = await resumesRepo.getActive();
+      const resumeRow = await resumesRepo.getActive(row.userId);
       if (!resumeRow) {
         await urlChecksRepo.fail(row.id, { code: "INTERNAL", message: "no active résumé at claim time", needsText: false }, attempt);
         return;
       }
-      const profile = await profileRepo.get();
+      const profile = await profileRepo.get(row.userId);
       const deps = overrides.pipelineDeps ?? { fetchPageText, searchForPosting, fetchGhostWebEvidence, scoreJob };
       const llm = overrides.llm ?? getLlm();
       // Resolved at call time, not construction time: worker.ts <-> run.ts is a
@@ -102,7 +108,7 @@ export function createUrlCheckWorker(overrides: UrlCheckWorkerDeps = {}) {
       // load. By the time processRow actually runs (kick()/drainOnce(), always
       // after load finishes), the binding is safely resolved.
       const run = overrides.runPipeline ?? runPipeline;
-      await run(row.id, req, { llm, resumeRow, profile, deps, attempt });
+      await run(row.id, req, { llm, resumeRow, profile, deps, attempt, userId: row.userId });
     } catch (err) {
       // Last-resort net (used to be the caller's `void runPipeline(...).catch(...)`
       // before the worker cutover): any unexpected throw here — a transient DB

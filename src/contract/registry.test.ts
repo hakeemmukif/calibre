@@ -38,11 +38,11 @@ describe('contract document', () => {
     expect(health?.get?.responses?.['200']).toBeDefined();
   });
 
-  it('carries the v1 auth-none note in info', () => {
+  it('carries the session-auth note in info', () => {
     const doc = buildDocument();
     const description = (doc.info.description ?? '').toLowerCase();
     expect(description).toContain('auth');
-    expect(description).toContain('none');
+    expect(description).toContain('session');
   });
 
   it('produces byte-identical serialized output across builds', () => {

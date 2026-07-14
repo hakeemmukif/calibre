@@ -11,7 +11,7 @@ import { allowedBandsFor, allowedStructuresFor } from "@/server/score/tzBand";
 import { EligibilityTier } from "@/types";
 import type { HiringStructure, Job, Persona, SummaryStripStats, TzBand } from "@/types";
 
-export type FeedQuery = Omit<JobsQuery, "isNew"> & {
+export type FeedQuery = Omit<JobsQuery, "isNew" | "userId"> & {
   // Wire boolean (api-contract.md §3 `isNew?`) — translated to the repo's
   // Date-cutoff `JobsQuery.isNew` inside this module using the same
   // previous-completed-run baseline `resolveIsNewCutoff` computes.
@@ -22,12 +22,12 @@ export type FeedQuery = Omit<JobsQuery, "isNew"> & {
 // `stats.sinceLast` count (task-B6-brief.md): the previous COMPLETED search
 // run's `finishedAt` for the query's persona (or the latest completed run of
 // any persona when unscoped). `null` when no completed run exists yet.
-export async function resolveIsNewCutoff(persona?: Persona): Promise<Date | null> {
+export async function resolveIsNewCutoff(userId: string, persona?: Persona): Promise<Date | null> {
   // Pasted jobs are never isNew (spec §2.10) — no scan run exists for the
   // scope, and short-circuiting before the repo call avoids widening
   // searchRunsRepo.getLatestCompleted beyond ScanPersona.
   if (persona === "pasted") return null;
-  const run = await searchRunsRepo.getLatestCompleted(persona);
+  const run = await searchRunsRepo.getLatestCompleted(userId, persona);
   return run?.finishedAt ?? null;
 }
 
@@ -44,9 +44,10 @@ const ALL_STRUCTURES: HiringStructure[] = ["local-entity", "eor", "contractor"];
 
 export async function listJobsFeed(
   query: FeedQuery,
+  userId: string,
 ): Promise<{ items: Job[]; nextCursor: string | null; stats: SummaryStripStats }> {
-  const profile = await profileRepo.get(); // the predicate needs it — fail loud when unseeded
-  const cutoff = await resolveIsNewCutoff(query.persona);
+  const profile = await profileRepo.get(userId); // the predicate needs it — fail loud when unseeded
+  const cutoff = await resolveIsNewCutoff(userId, query.persona);
   // The operator pasted these deliberately — hiding a pasted `abroad` job
   // from its own scope would be absurd (spec §2.12). The tag still warns.
   const isPastedScope = query.persona === "pasted";
@@ -66,7 +67,7 @@ export async function listJobsFeed(
   const eligibility = !isPastedScope && profile.relocation === "stay" ? STAY_TIERS : undefined;
   const tzBands = !isPastedScope ? (allowedBandsFor(profile.scheduleFlex) ?? undefined) : undefined;
   const hiringStructures = !isPastedScope ? (allowedStructuresFor(profile.employmentPref) ?? undefined) : undefined;
-  const filterScope = { ...rest, isNew: isNewFilter, eligibility, tzBands, hiringStructures };
+  const filterScope = { ...rest, userId, isNew: isNewFilter, eligibility, tzBands, hiringStructures };
 
   const { items, nextCursor } = await jobsRepo.listScored({ ...filterScope, cursor, limit });
   // `stats` is computed over the SAME filter scope (task-B6-brief.md: "the
@@ -75,17 +76,18 @@ export async function listJobsFeed(
   // filter (redundant-but-consistent when they did).
   const base = await jobsRepo.statsForQuery(filterScope, cutoff);
   // The trust signal for what vanished (spec §8): all jobs any of the three
-  // gates hid, scored or not. Each hidden set is the gate's complement — `[]`
-  // when the gate variable above is `undefined` (Pasted scope, or a `null`
-  // allowed-set), which is what makes the permissive seed's excluded stay 0.
-  // Deliberately NOT spreading `rest` into the count query — tier/minScore
-  // are job_scores columns and this answers "what did the three gates hide",
-  // not "what would also have passed your score filters".
+  // gates hid, scored or not, scoped to the caller's own jobs. Each hidden
+  // set is the gate's complement — `[]` when the gate variable above is
+  // `undefined` (Pasted scope, or a `null` allowed-set), which is what makes
+  // the permissive seed's excluded stay 0. Deliberately NOT spreading `rest`
+  // into the count query — tier/minScore are job_scores columns and this
+  // answers "what did the three gates hide", not "what would also have
+  // passed your score filters".
   const hiddenTiers = eligibility ? HIDDEN_TIERS : [];
   const hiddenBands = tzBands ? ALL_BANDS.filter((b) => !tzBands.includes(b)) : [];
   const hiddenStructures = hiringStructures ? ALL_STRUCTURES.filter((s) => !hiringStructures.includes(s)) : [];
   const excluded = await jobsRepo.countHidden(
-    { persona: rest.persona, q: rest.q, isNew: isNewFilter },
+    { userId, persona: rest.persona, q: rest.q, isNew: isNewFilter },
     { tiers: hiddenTiers, bands: hiddenBands, structures: hiddenStructures },
   );
 

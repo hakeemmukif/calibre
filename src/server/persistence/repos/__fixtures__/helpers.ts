@@ -3,6 +3,7 @@
 // every test file repeating it.
 import { jobs, jobScores, profile, resumes, sources } from "../../schema";
 import type { Db } from "../db";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 let counter = 0;
 function unique(prefix: string): string {
@@ -28,13 +29,13 @@ export async function insertSource(db: Db, overrides: Partial<typeof sources.$in
   return row;
 }
 
-// The operator-profile singleton every startSearch/feed path requires
-// (spec §4) — same shape seed.ts installs.
+// A per-user profile row every startSearch/feed path requires (spec §4) —
+// same shape seed.ts installs for the bootstrap admin.
 export async function insertProfile(db: Db, overrides: Partial<typeof profile.$inferInsert> = {}) {
   const [row] = await db
     .insert(profile)
     .values({
-      id: "default", baseCountry: "MY", relocation: "stay",
+      id: "default", userId: BOOTSTRAP_ADMIN_ID, baseCountry: "MY", relocation: "stay",
       scheduleFlex: "any-hours", employmentPref: "any",
       ...overrides,
     })
@@ -46,6 +47,7 @@ export async function insertResume(db: Db, overrides: Partial<typeof resumes.$in
   const [row] = await db
     .insert(resumes)
     .values({
+      userId: BOOTSTRAP_ADMIN_ID,
       rawText: "Jane Doe — Software Engineer",
       structured: {
         name: "Jane Doe",
@@ -69,6 +71,7 @@ export async function insertJob(db: Db, sourceId: string, overrides: Partial<typ
   const [row] = await db
     .insert(jobs)
     .values({
+      userId: BOOTSTRAP_ADMIN_ID,
       dedupeKey: key,
       url: `https://example.com/${key}`,
       sourceId,
@@ -95,6 +98,7 @@ export async function insertJobScore(
   const [row] = await db
     .insert(jobScores)
     .values({
+      userId: BOOTSTRAP_ADMIN_ID,
       jobId,
       resumeId,
       score: 4.2,

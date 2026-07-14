@@ -1,9 +1,11 @@
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import { applications } from "../schema";
+import { applications, users } from "../schema";
 import { createTestDb } from "../test-db";
 import { insertJob, insertJobScore, insertResume, insertSource } from "./__fixtures__/helpers";
+import { encodeCursorId } from "./cursor";
 import { ApplicationConflictError, createApplicationsRepo } from "./applications";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 // Explicit, same-millisecond-different-microsecond appliedAt values —
 // deterministic collision regardless of host/loop speed (JS Date can't
@@ -23,6 +25,7 @@ describe("applicationsRepo", () => {
     const job = await insertJob(db, source.id);
 
     const app = await repo.insertUniqueByJob({
+      userId: BOOTSTRAP_ADMIN_ID,
       jobId: job.id,
       resumeId: resume.id,
       stage: 0,
@@ -43,6 +46,7 @@ describe("applicationsRepo", () => {
     const job = await insertJob(db, source.id);
 
     const first = await repo.insertUniqueByJob({
+      userId: BOOTSTRAP_ADMIN_ID,
       jobId: job.id,
       resumeId: resume.id,
       stage: 0,
@@ -53,6 +57,7 @@ describe("applicationsRepo", () => {
 
     await expect(
       repo.insertUniqueByJob({
+        userId: BOOTSTRAP_ADMIN_ID,
         jobId: job.id,
         resumeId: resume.id,
         stage: 0,
@@ -64,6 +69,7 @@ describe("applicationsRepo", () => {
 
     try {
       await repo.insertUniqueByJob({
+        userId: BOOTSTRAP_ADMIN_ID,
         jobId: job.id,
         resumeId: resume.id,
         stage: 0,
@@ -91,6 +97,7 @@ describe("applicationsRepo", () => {
     });
     await insertJobScore(db, job.id, resume.id, { score: 4.7 });
     await repo.insertUniqueByJob({
+      userId: BOOTSTRAP_ADMIN_ID,
       jobId: job.id,
       resumeId: resume.id,
       stage: 0,
@@ -99,12 +106,38 @@ describe("applicationsRepo", () => {
       note: "",
     });
 
-    const { items } = await repo.listJoined({});
+    const { items } = await repo.listJoined({ userId: BOOTSTRAP_ADMIN_ID });
     expect(items).toHaveLength(1);
     expect(items[0].role).toBe("Staff Engineer");
     expect(items[0].company).toBe("Acme Corp");
     expect(items[0].meta).toBe("Kuala Lumpur · RM12k-16k");
     expect(items[0].score).toBe(4.7);
+  });
+
+  it("listJoined is scoped by userId — a second user's applications never leak into another user's list", async () => {
+    const db = await createTestDb();
+    const repo = createApplicationsRepo(db);
+    const source = await insertSource(db);
+    const resume = await insertResume(db);
+    const job = await insertJob(db, source.id);
+    await insertJobScore(db, job.id, resume.id);
+    await repo.insertUniqueByJob({
+      userId: BOOTSTRAP_ADMIN_ID,
+      jobId: job.id,
+      resumeId: resume.id,
+      stage: 0,
+      statusLabel: "Applied",
+      statusTone: "good",
+      note: "",
+    });
+
+    const [userB] = await db
+      .insert(users)
+      .values({ email: "user-b-applications-list@example.com", passwordHash: "h", role: "user" })
+      .returning();
+
+    const { items } = await repo.listJoined({ userId: userB.id });
+    expect(items).toHaveLength(0);
   });
 
   it("listJoined pages through every row with no drops when rows collide within a millisecond (regression)", async () => {
@@ -120,6 +153,7 @@ describe("applicationsRepo", () => {
       const [app] = await db
         .insert(applications)
         .values({
+          userId: BOOTSTRAP_ADMIN_ID,
           jobId: job.id,
           resumeId: resume.id,
           stage: 0,
@@ -135,7 +169,7 @@ describe("applicationsRepo", () => {
     const seen: string[] = [];
     let cursor: string | undefined;
     for (let i = 0; i < insertedIds.length; i += 1) {
-      const page = await repo.listJoined({ limit: 1, cursor });
+      const page = await repo.listJoined({ userId: BOOTSTRAP_ADMIN_ID, limit: 1, cursor });
       expect(page.items).toHaveLength(1);
       seen.push(page.items[0].id);
       if (!page.nextCursor) break;
@@ -159,6 +193,7 @@ describe("applicationsRepo", () => {
     await insertJobScore(db, job.id, resume.id, { policyVersion: "v2", score: 4.5 });
 
     const app = await repo.insertUniqueByJob({
+      userId: BOOTSTRAP_ADMIN_ID,
       jobId: job.id,
       resumeId: resume.id,
       stage: 0,
@@ -167,11 +202,11 @@ describe("applicationsRepo", () => {
       note: "",
     });
 
-    const { items } = await repo.listJoined({});
+    const { items } = await repo.listJoined({ userId: BOOTSTRAP_ADMIN_ID });
     expect(items).toHaveLength(1);
     expect(items[0].score).toBe(4.5);
 
-    const found = await repo.getJoined(app.id);
+    const found = await repo.getJoined(app.id, BOOTSTRAP_ADMIN_ID);
     expect(found?.score).toBe(4.5);
   });
 
@@ -183,6 +218,7 @@ describe("applicationsRepo", () => {
     const job = await insertJob(db, source.id);
     await insertJobScore(db, job.id, resume.id);
     const app = await repo.insertUniqueByJob({
+      userId: BOOTSTRAP_ADMIN_ID,
       jobId: job.id,
       resumeId: resume.id,
       stage: 0,
@@ -191,9 +227,63 @@ describe("applicationsRepo", () => {
       note: "",
     });
 
-    const found = await repo.getJoined(app.id);
+    const found = await repo.getJoined(app.id, BOOTSTRAP_ADMIN_ID);
     expect(found?.id).toBe(app.id);
     expect(found?.role).toBeDefined();
+  });
+
+  it("getJoined is scoped by userId — a foreign-owned application resolves to null (no existence leak)", async () => {
+    const db = await createTestDb();
+    const repo = createApplicationsRepo(db);
+    const source = await insertSource(db);
+    const resume = await insertResume(db);
+    const job = await insertJob(db, source.id);
+    await insertJobScore(db, job.id, resume.id);
+    const app = await repo.insertUniqueByJob({
+      userId: BOOTSTRAP_ADMIN_ID,
+      jobId: job.id,
+      resumeId: resume.id,
+      stage: 0,
+      statusLabel: "Applied",
+      statusTone: "good",
+      note: "",
+    });
+    const [userB] = await db
+      .insert(users)
+      .values({ email: "user-b-applications-getjoined@example.com", passwordHash: "h", role: "user" })
+      .returning();
+
+    expect(await repo.getJoined(app.id, userB.id)).toBeNull();
+  });
+
+  it("the cursor subquery is scoped by userId — a cursor encoding a foreign application id behaves identically to an unknown one (oracle fix)", async () => {
+    const db = await createTestDb();
+    const repo = createApplicationsRepo(db);
+    const source = await insertSource(db);
+    const resume = await insertResume(db);
+    const job = await insertJob(db, source.id);
+    await insertJobScore(db, job.id, resume.id);
+    const app = await repo.insertUniqueByJob({
+      userId: BOOTSTRAP_ADMIN_ID,
+      jobId: job.id,
+      resumeId: resume.id,
+      stage: 0,
+      statusLabel: "Applied",
+      statusTone: "good",
+      note: "",
+    });
+    const [userB] = await db
+      .insert(users)
+      .values({ email: "user-b-applications-cursor@example.com", passwordHash: "h", role: "user" })
+      .returning();
+
+    const foreignCursor = encodeCursorId(app.id);
+    const unknownCursor = encodeCursorId(crypto.randomUUID());
+
+    const withForeignCursor = await repo.listJoined({ userId: userB.id, cursor: foreignCursor });
+    const withUnknownCursor = await repo.listJoined({ userId: userB.id, cursor: unknownCursor });
+    expect(withForeignCursor.items).toEqual(withUnknownCursor.items);
+    expect(withForeignCursor.nextCursor).toEqual(withUnknownCursor.nextCursor);
   });
 
   it("patch updates stage/status/note", async () => {
@@ -204,6 +294,7 @@ describe("applicationsRepo", () => {
     const job = await insertJob(db, source.id);
     await insertJobScore(db, job.id, resume.id);
     const app = await repo.insertUniqueByJob({
+      userId: BOOTSTRAP_ADMIN_ID,
       jobId: job.id,
       resumeId: resume.id,
       stage: 0,
@@ -212,9 +303,39 @@ describe("applicationsRepo", () => {
       note: "",
     });
 
-    const patched = await repo.patch(app.id, { stage: 1, statusLabel: "Screening", note: "recruiter call" });
+    const patched = await repo.patch(app.id, BOOTSTRAP_ADMIN_ID, { stage: 1, statusLabel: "Screening", note: "recruiter call" });
     expect(patched?.stage).toBe(1);
     expect(patched?.statusLabel).toBe("Screening");
     expect(patched?.note).toBe("recruiter call");
+  });
+
+  it("patch is scoped by userId — a foreign-owned application is untouched (by-uuid PATCH leak fix)", async () => {
+    const db = await createTestDb();
+    const repo = createApplicationsRepo(db);
+    const source = await insertSource(db);
+    const resume = await insertResume(db);
+    const job = await insertJob(db, source.id);
+    await insertJobScore(db, job.id, resume.id);
+    const app = await repo.insertUniqueByJob({
+      userId: BOOTSTRAP_ADMIN_ID,
+      jobId: job.id,
+      resumeId: resume.id,
+      stage: 0,
+      statusLabel: "Applied",
+      statusTone: "good",
+      note: "",
+    });
+    const [userB] = await db
+      .insert(users)
+      .values({ email: "user-b-applications-patch@example.com", passwordHash: "h", role: "user" })
+      .returning();
+
+    const result = await repo.patch(app.id, userB.id, { stage: 3, statusLabel: "Offer", note: "hijacked" });
+    expect(result).toBeNull();
+
+    const [stillThere] = await db.select().from(applications).where(eq(applications.id, app.id));
+    expect(stillThere.stage).toBe(0);
+    expect(stillThere.statusLabel).toBe("Applied");
+    expect(stillThere.note).toBe("");
   });
 });

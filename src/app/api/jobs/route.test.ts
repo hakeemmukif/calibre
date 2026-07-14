@@ -1,11 +1,19 @@
 import { NextRequest } from "next/server";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
+import { UnauthorizedError } from "@/server/auth/errors";
 import { insertJob, insertJobScore, insertProfile, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
-import { jobs, jobScores, resumes, searchRuns, sources } from "@/server/persistence/schema";
+import { jobs, jobScores, resumes, searchRuns, sources, users } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
+
+const { requireUser } = vi.hoisted(() => ({ requireUser: vi.fn() }));
+vi.mock("@/server/auth/session", async (orig) => ({
+  ...(await orig<typeof import("@/server/auth/session")>()),
+  requireUser: () => requireUser(),
+}));
 
 const { GET } = await import("./route");
 
@@ -19,12 +27,53 @@ describe("GET /api/jobs", () => {
     await insertProfile(state.testDb); // listJobsFeed derives the eligibility predicate from the profile
   });
 
+  beforeEach(() => {
+    requireUser.mockReset();
+    requireUser.mockResolvedValue({ id: BOOTSTRAP_ADMIN_ID, email: "admin@example.com", role: "admin" });
+  });
+
   afterEach(async () => {
     await state.testDb.delete(jobScores);
     await state.testDb.delete(jobs);
     await state.testDb.delete(searchRuns);
     await state.testDb.delete(sources);
     await state.testDb.delete(resumes);
+  });
+
+  it("401s with UNAUTHORIZED when there is no session", async () => {
+    requireUser.mockRejectedValue(new UnauthorizedError());
+    const res = await GET(req(""));
+    expect(res.status).toBe(401);
+    expect((await res.json()).error.code).toBe("UNAUTHORIZED");
+  });
+
+  it("a second user's jobs are invisible to the first (cross-tenant isolation)", async () => {
+    const [userB] = await state.testDb
+      .insert(users)
+      .values({ email: "user-b-jobs-route@example.com", passwordHash: "h", role: "user" })
+      .returning();
+    const source = await insertSource(state.testDb);
+    const resumeA = await insertResume(state.testDb);
+    const resumeB = await insertResume(state.testDb, { userId: userB.id });
+    await insertProfile(state.testDb, { id: "profile-b", userId: userB.id });
+
+    const jobA = await insertJob(state.testDb, source.id, { dedupeKey: "dk-route-a", url: "https://example.com/route-a" });
+    await insertJobScore(state.testDb, jobA.id, resumeA.id);
+    const jobB = await insertJob(state.testDb, source.id, {
+      dedupeKey: "dk-route-b",
+      url: "https://example.com/route-b",
+      userId: userB.id,
+    });
+    await insertJobScore(state.testDb, jobB.id, resumeB.id, { userId: userB.id });
+
+    const resA = await GET(req(""));
+    const bodyA = await resA.json();
+    expect(bodyA.items.map((i: { id: string }) => i.id)).toEqual([jobA.id]);
+
+    requireUser.mockResolvedValue({ id: userB.id, email: userB.email, role: "user" });
+    const resB = await GET(req(""));
+    const bodyB = await resB.json();
+    expect(bodyB.items.map((i: { id: string }) => i.id)).toEqual([jobB.id]);
   });
 
   it("relocation 'stay' hides abroad jobs and reports them in stats.excluded; 'open' reveals them (spec §8)", async () => {

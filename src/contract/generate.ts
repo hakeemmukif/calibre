@@ -8,7 +8,7 @@ import { OpenApiGeneratorV31 } from "@asteasolutions/zod-to-openapi";
 import type { OpenAPIObject } from "openapi3-ts/oas31";
 import { entityNames, getDefinitions } from "./registry";
 
-const AUTH_NOTE = "Auth: none in v1 (single-operator; network-layer protection only).";
+const AUTH_NOTE = "Auth: email+password sessions (httpOnly cookie). requireUser()/requireAdmin() guard route handlers; no Next middleware.";
 
 const OUTPUT_PATH = resolve(dirname(fileURLToPath(import.meta.url)), "../../contract/openapi.json");
 

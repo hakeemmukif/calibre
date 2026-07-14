@@ -64,13 +64,13 @@ export async function scoreJob(args: {
     location: job.location || undefined,
     jdFacts: jdFactsResult.data,
   });
-  await jobsRepo.updateEligibility(job.id, eligibility.tier, eligibility.evidence);
+  await jobsRepo.updateEligibility(job.id, job.userId, eligibility.tier, eligibility.evidence);
 
   // Authoritative remote-fit write (spec §5): tz_band re-resolved from the
   // JD-stated requirement (else location), hiring_structure from the stated
   // enum — overwrites the ingest-time band-only stamp.
   const tz = resolveTzBand({ statedTz: jdFactsResult.data.tzRequirement, location: job.location || undefined });
-  await jobsRepo.updateRemoteFit(job.id, tz?.band ?? null, jdFactsResult.data.hiringStructure ?? null);
+  await jobsRepo.updateRemoteFit(job.id, job.userId, tz?.band ?? null, jdFactsResult.data.hiringStructure ?? null);
 
   const cheap = await scoreMatch(llm, { jdFacts: jdFactsResult.data, resume: resume.structured });
 
@@ -95,6 +95,10 @@ export async function scoreJob(args: {
   });
 
   const row: NewJobScore = {
+    // Async/worker paths derive userId from the owning row, never a session
+    // or admin fallback (Global Constraints) — the job being scored IS the
+    // scope, so its score is stamped with the SAME owner.
+    userId: job.userId,
     jobId: job.id,
     resumeId: resume.id,
     score: final.data.score,

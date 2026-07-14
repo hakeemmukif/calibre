@@ -13,6 +13,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import type { ResumeStore } from "../resume/resume-store";
@@ -82,30 +83,41 @@ export const sources = pgTable("sources", {
 // Operator profile — singleton row, id is the constant "default". Seeded by
 // seed.ts (the seed is the install step); repos/profile.ts throws
 // ProfileMissingError when absent — no runtime default.
-export const profile = pgTable("profile", {
-  id: text("id").primaryKey(),
-  baseCountry: text("base_country").notNull(),
-  relocation: text("relocation", { enum: ["stay", "open"] }).notNull(),
-  scheduleFlex: text("schedule_flex", { enum: ["base-hours", "flex-evenings", "any-hours"] }).notNull(),
-  employmentPref: text("employment_pref", { enum: ["any", "employee", "local-entity"] }).notNull(),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+export const profile = pgTable(
+  "profile",
+  {
+    id: text("id").primaryKey(),
+    userId: uuid("user_id").notNull().references(() => users.id),
+    baseCountry: text("base_country").notNull(),
+    relocation: text("relocation", { enum: ["stay", "open"] }).notNull(),
+    scheduleFlex: text("schedule_flex", { enum: ["base-hours", "flex-evenings", "any-hours"] }).notNull(),
+    employmentPref: text("employment_pref", { enum: ["any", "employee", "local-entity"] }).notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [unique("profile_user_id_unique").on(table.userId)],
+);
 
-export const resumes = pgTable("resumes", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  rawText: text("raw_text").notNull(),
-  structured: jsonb("structured").$type<ResumeStore>().notNull(),
-  originalPath: text("original_path"),
-  sourceKind: text("source_kind", { enum: ["pdf", "docx", "paste"] }).notNull(),
-  atsScore: numeric("ats_score", { mode: "number" }),
-  isActive: boolean("is_active").notNull(),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+export const resumes = pgTable(
+  "resumes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").notNull().references(() => users.id),
+    rawText: text("raw_text").notNull(),
+    structured: jsonb("structured").$type<ResumeStore>().notNull(),
+    originalPath: text("original_path"),
+    sourceKind: text("source_kind", { enum: ["pdf", "docx", "paste"] }).notNull(),
+    atsScore: numeric("ats_score", { mode: "number" }),
+    isActive: boolean("is_active").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("resumes_user_id_active_unique").on(table.userId).where(sql`${table.isActive}`)],
+);
 
 export const searchRuns = pgTable("search_runs", {
   id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id),
   resumeId: uuid("resume_id").notNull().references(() => resumes.id),
   personas: jsonb("personas").$type<("remote" | "local")[]>().notNull(),
   status: text("status", { enum: ["queued", "running", "completed", "failed"] }).notNull(), // reconciliation 1
@@ -115,40 +127,46 @@ export const searchRuns = pgTable("search_runs", {
   error: text("error"),
 });
 
-export const jobs = pgTable("jobs", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  dedupeKey: text("dedupe_key").notNull().unique(),
-  url: text("url").notNull(),
-  applyUrl: text("apply_url"),
-  sourceId: text("source_id").notNull().references(() => sources.id),
-  externalId: text("external_id"),
-  title: text("title").notNull(),
-  company: text("company").notNull(),
-  location: text("location").notNull(),
-  salaryRaw: text("salary_raw"),
-  description: text("description"),
-  postedAt: timestamp("posted_at"),
-  firstSeenAt: timestamp("first_seen_at").notNull().defaultNow(),
-  lastSeenAt: timestamp("last_seen_at").notNull().defaultNow(),
-  persona: text("persona", { enum: ["remote", "local", "pasted"] }).notNull(),
-  // Spec 2026-07-12 §4: eligibility tier relative to the profile, stamped at
-  // ingest (Layers A+B), refreshed by the scoring path (Layer C). Facts stay
-  // in `raw` + job_scores.jd_facts — the tier is recomputable, pure, no LLM.
-  eligibility: text("eligibility", { enum: ["anywhere", "eligible", "local", "abroad", "unknown"] }).notNull(),
-  eligibilityEvidence: text("eligibility_evidence").notNull(),
-  aliases: jsonb("aliases").$type<JobAlias[]>().notNull(),
-  raw: jsonb("raw").$type<unknown>().notNull(),
-  // Spec 2026-07-14 §6: stated remote-fit facts. NULL = nothing stated (never
-  // hidden by the schedule/structure gate). tz_band is normalized from a
-  // stated TZ requirement (resolveTzBand); hiring_structure is stated-only.
-  tzBand: text("tz_band", { enum: ["apac", "emea", "americas"] }),
-  hiringStructure: text("hiring_structure", { enum: ["local-entity", "eor", "contractor"] }),
-});
+export const jobs = pgTable(
+  "jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").notNull().references(() => users.id),
+    dedupeKey: text("dedupe_key").notNull(),
+    url: text("url").notNull(),
+    applyUrl: text("apply_url"),
+    sourceId: text("source_id").notNull().references(() => sources.id),
+    externalId: text("external_id"),
+    title: text("title").notNull(),
+    company: text("company").notNull(),
+    location: text("location").notNull(),
+    salaryRaw: text("salary_raw"),
+    description: text("description"),
+    postedAt: timestamp("posted_at"),
+    firstSeenAt: timestamp("first_seen_at").notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at").notNull().defaultNow(),
+    persona: text("persona", { enum: ["remote", "local", "pasted"] }).notNull(),
+    // Spec 2026-07-12 §4: eligibility tier relative to the profile, stamped at
+    // ingest (Layers A+B), refreshed by the scoring path (Layer C). Facts stay
+    // in `raw` + job_scores.jd_facts — the tier is recomputable, pure, no LLM.
+    eligibility: text("eligibility", { enum: ["anywhere", "eligible", "local", "abroad", "unknown"] }).notNull(),
+    eligibilityEvidence: text("eligibility_evidence").notNull(),
+    aliases: jsonb("aliases").$type<JobAlias[]>().notNull(),
+    raw: jsonb("raw").$type<unknown>().notNull(),
+    // Spec 2026-07-14 §6: stated remote-fit facts. NULL = nothing stated (never
+    // hidden by the schedule/structure gate). tz_band is normalized from a
+    // stated TZ requirement (resolveTzBand); hiring_structure is stated-only.
+    tzBand: text("tz_band", { enum: ["apac", "emea", "americas"] }),
+    hiringStructure: text("hiring_structure", { enum: ["local-entity", "eor", "contractor"] }),
+  },
+  (table) => [unique("jobs_user_id_dedupe_key_unique").on(table.userId, table.dedupeKey)],
+);
 
 export const jobScores = pgTable(
   "job_scores",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").notNull().references(() => users.id),
     jobId: uuid("job_id").notNull().references(() => jobs.id),
     resumeId: uuid("resume_id").notNull().references(() => resumes.id),
     score: numeric("score", { precision: 3, scale: 1, mode: "number" }).notNull(),
@@ -172,6 +190,7 @@ export const jobScores = pgTable(
 
 export const applicationAnswers = pgTable("application_answers", {
   id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id),
   jobId: uuid("job_id").notNull().references(() => jobs.id),
   resumeId: uuid("resume_id").notNull().references(() => resumes.id), // reconciliation 4
   formSource: text("form_source", { enum: ["ats-api", "fetched", "pasted"] }).notNull(),
@@ -183,6 +202,7 @@ export const applicationAnswers = pgTable("application_answers", {
 
 export const tailoredResumes = pgTable("tailored_resumes", {
   id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id),
   jobId: uuid("job_id").notNull().references(() => jobs.id),
   baseResumeId: uuid("base_resume_id").notNull().references(() => resumes.id),
   structured: jsonb("structured").$type<ResumeStore>(), // null until completed (mirrors src/types TailoredResume.resume)
@@ -222,6 +242,7 @@ export const urlChecks = pgTable(
   "url_checks",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").notNull().references(() => users.id),
     url: text("url").notNull(),
     dedupeKey: text("dedupe_key").notNull(),
     status: text("status", { enum: ["queued", "running", "completed", "failed"] }).notNull(),
@@ -244,6 +265,7 @@ export const urlChecks = pgTable(
 
 export const applications = pgTable("applications", {
   id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id),
   jobId: uuid("job_id").notNull().references(() => jobs.id).unique(),
   resumeId: uuid("resume_id").notNull().references(() => resumes.id),
   tailoredResumeId: uuid("tailored_resume_id").references(() => tailoredResumes.id),
@@ -254,4 +276,23 @@ export const applications = pgTable("applications", {
   note: text("note").notNull(),
   appliedAt: timestamp("applied_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Multi-tenant identity (spec: 2026-07-14 auth core). Passwords argon2id;
+// sessions store only the SHA-256 hash of an opaque token. role gates the
+// admin surface — no separate admins table (additive capability only).
+export const users = pgTable("users", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  email: text("email").notNull().unique(), // normalized lowercase at the repo boundary
+  passwordHash: text("password_hash").notNull(),
+  role: text("role", { enum: ["user", "admin"] }).notNull(), // written explicitly at insert — no column default (no-fallback)
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const sessions = pgTable("sessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull().unique(), // SHA-256 of the opaque cookie token
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  lastUsedAt: timestamp("last_used_at", { withTimezone: true }).notNull().defaultNow(),
 });

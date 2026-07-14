@@ -1,0 +1,58 @@
+# Caliber single-VPS deploy: app + postgres + caddy. system-architecture.md §6.
+# ⚠️ NOT run/validated in the migration environment (no Docker). Operator runs it.
+#
+# Secrets come from an env_file (`.env.production`, NOT committed — see
+# .env.production.example). Never put secrets in `environment:` inline args.
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    # EXACTLY ONE app process — no `deploy.replicas`, no scaling. The in-memory
+    # SSE run-registry + the single url-check worker (src/instrumentation.ts)
+    # only work in one process; a second replica silently breaks SSE + the queue.
+    env_file: [.env.production]
+    environment:
+      # Non-secret runtime config (secrets live in .env.production):
+      DATABASE_URL: postgres://caliber:${POSTGRES_PASSWORD}@postgres:5432/caliber
+      CALIBER_UPLOADS_DIR: /var/lib/caliber/uploads
+      SESSION_COOKIE_SECURE: "true"   # served over HTTPS via caddy
+      NODE_ENV: production
+    volumes:
+      - uploads:/var/lib/caliber/uploads   # persist résumé files across deploys
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # No published ports — only caddy talks to the app.
+    expose: ["3000"]
+
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    # localhost-only: NOT exposed to the host network; only `app` reaches it.
+    environment:
+      POSTGRES_USER: caliber
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: caliber
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U caliber -d caliber"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [app]
+
+volumes:
+  pgdata:
+  uploads:
+  caddy_data:
+  caddy_config:

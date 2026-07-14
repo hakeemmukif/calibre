@@ -12,6 +12,8 @@
 //   second source of truth, so this route just maps that error class.
 import { NextRequest, NextResponse } from "next/server";
 import { ZodError } from "zod";
+import { UnauthorizedError } from "@/server/auth/errors";
+import { requireUser } from "@/server/auth/session";
 import { NoActiveResumeError } from "@/server/search/run";
 import { listActiveChecks, listChecksByIds, PayloadTooLargeError, startUrlCheck } from "@/server/url-check/run";
 import { UrlCheckRequest, type ErrorEnvelope } from "@/types";
@@ -30,10 +32,12 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    const session = await requireUser();
     const body = UrlCheckRequest.parse(json);
-    const { check, started } = await startUrlCheck(body);
+    const { check, started } = await startUrlCheck(body, session.id);
     return NextResponse.json(check, { status: started ? 202 : 200 });
   } catch (err) {
+    if (err instanceof UnauthorizedError) return errorResponse(401, "UNAUTHORIZED", err.message);
     if (err instanceof ZodError) {
       return errorResponse(422, "VALIDATION_ERROR", "Invalid URL-check request.", err.issues);
     }
@@ -49,13 +53,19 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  if (searchParams.get("active") === "1") {
-    return NextResponse.json(await listActiveChecks(), { status: 200 });
+  try {
+    const session = await requireUser();
+    if (searchParams.get("active") === "1") {
+      return NextResponse.json(await listActiveChecks(session.id), { status: 200 });
+    }
+    const idsParam = searchParams.get("ids");
+    if (idsParam !== null) {
+      const ids = idsParam.split(",").map((s) => s.trim()).filter(Boolean);
+      return NextResponse.json(await listChecksByIds(ids, session.id), { status: 200 });
+    }
+    return errorResponse(422, "VALIDATION_ERROR", "Provide ?ids=<csv> or ?active=1.");
+  } catch (err) {
+    if (err instanceof UnauthorizedError) return errorResponse(401, "UNAUTHORIZED", err.message);
+    throw err;
   }
-  const idsParam = searchParams.get("ids");
-  if (idsParam !== null) {
-    const ids = idsParam.split(",").map((s) => s.trim()).filter(Boolean);
-    return NextResponse.json(await listChecksByIds(ids), { status: 200 });
-  }
-  return errorResponse(422, "VALIDATION_ERROR", "Provide ?ids=<csv> or ?active=1.");
 }

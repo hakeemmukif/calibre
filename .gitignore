@@ -9,9 +9,12 @@ out/
 data/uploads/
 .env
 .env.local
+.env.production
+.env.*.local
 coverage/
 test-results/
 playwright-report/
+e2e/.auth/
 
 # SDD subagent-driven-development scratch
 .superpowers/

@@ -10,8 +10,10 @@ import {
   sources,
   tailoredResumes,
   urlChecks,
+  users,
 } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
@@ -36,16 +38,30 @@ describe("deletePastedJob", () => {
   });
 
   it("unknown jobId -> UnknownJobError", async () => {
-    await expect(deletePastedJob(crypto.randomUUID())).rejects.toThrow(UnknownJobError);
+    await expect(deletePastedJob(crypto.randomUUID(), BOOTSTRAP_ADMIN_ID)).rejects.toThrow(UnknownJobError);
+  });
+
+  it("a foreign-owned job -> UnknownJobError (404, never a leak), row untouched (cross-tenant isolation)", async () => {
+    const [userB] = await state.testDb
+      .insert(users)
+      .values({ email: "user-b-delete-job@example.com", passwordHash: "h", role: "user" })
+      .returning();
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id, { persona: "pasted" });
+
+    await expect(deletePastedJob(job.id, userB.id)).rejects.toThrow(UnknownJobError);
+
+    const [stillThere] = await state.testDb.select({ id: jobs.id }).from(jobs).where(eq(jobs.id, job.id));
+    expect(stillThere).toBeTruthy();
   });
 
   it("persona !== 'pasted' -> NotDeletableError, distinct message from ApplicationExistsError", async () => {
     const source = await insertSource(state.testDb);
     const job = await insertJob(state.testDb, source.id, { persona: "remote" });
 
-    await expect(deletePastedJob(job.id)).rejects.toThrow(NotDeletableError);
+    await expect(deletePastedJob(job.id, BOOTSTRAP_ADMIN_ID)).rejects.toThrow(NotDeletableError);
     try {
-      await deletePastedJob(job.id);
+      await deletePastedJob(job.id, BOOTSTRAP_ADMIN_ID);
       throw new Error("expected deletePastedJob to throw");
     } catch (err) {
       expect((err as Error).message).not.toMatch(/tracked application/);
@@ -58,6 +74,7 @@ describe("deletePastedJob", () => {
     const job = await insertJob(state.testDb, source.id, { persona: "pasted" });
     await insertJobScore(state.testDb, job.id, resume.id);
     await state.testDb.insert(applications).values({
+      userId: BOOTSTRAP_ADMIN_ID,
       jobId: job.id,
       resumeId: resume.id,
       stage: 0,
@@ -66,7 +83,7 @@ describe("deletePastedJob", () => {
       note: "",
     });
 
-    await expect(deletePastedJob(job.id)).rejects.toThrow(ApplicationExistsError);
+    await expect(deletePastedJob(job.id, BOOTSTRAP_ADMIN_ID)).rejects.toThrow(ApplicationExistsError);
     const [stillThere] = await state.testDb.select({ id: jobs.id }).from(jobs).where(eq(jobs.id, job.id));
     expect(stillThere).toBeTruthy();
   });
@@ -77,6 +94,7 @@ describe("deletePastedJob", () => {
     const job = await insertJob(state.testDb, source.id, { persona: "pasted" });
     await insertJobScore(state.testDb, job.id, resume.id);
     await state.testDb.insert(tailoredResumes).values({
+      userId: BOOTSTRAP_ADMIN_ID,
       jobId: job.id,
       baseResumeId: resume.id,
       diff: [],
@@ -84,6 +102,7 @@ describe("deletePastedJob", () => {
       model: "test-model",
     });
     await state.testDb.insert(applicationAnswers).values({
+      userId: BOOTSTRAP_ADMIN_ID,
       jobId: job.id,
       resumeId: resume.id,
       formSource: "pasted",
@@ -92,6 +111,7 @@ describe("deletePastedJob", () => {
       costUsd: 0,
     });
     const urlCheck = await createUrlChecksRepo(state.testDb).insert({
+      userId: BOOTSTRAP_ADMIN_ID,
       url: job.url,
       dedupeKey: job.dedupeKey,
       status: "completed",
@@ -104,7 +124,7 @@ describe("deletePastedJob", () => {
       raw: {},
     });
 
-    await deletePastedJob(job.id);
+    await deletePastedJob(job.id, BOOTSTRAP_ADMIN_ID);
 
     const [gone] = await state.testDb.select({ id: jobs.id }).from(jobs).where(eq(jobs.id, job.id));
     expect(gone).toBeUndefined();

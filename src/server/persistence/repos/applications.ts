@@ -29,6 +29,7 @@ export type AppJoinJobScore = AppRow & {
 };
 
 export type AppQuery = {
+  userId: string;
   stage?: 0 | 1 | 2 | 3;
   statusTone?: "good" | "verified" | "neutral";
   cursor?: string;
@@ -69,10 +70,15 @@ export function createApplicationsRepo(db: Db) {
         // unique_violation code is on the original error at `.cause`.
         const code = (err as { code?: string; cause?: { code?: string } })?.cause?.code;
         if (code === "23505") {
+          // Scoped by userId (mechanical audit fix, Step 3 Task 6): jobId is
+          // already unique per owning user (each user's scanned job is its
+          // own row), so this can't currently resolve to a foreign
+          // application — scoping it anyway keeps the guarantee
+          // constraint-independent rather than relying on that invariant.
           const [existing] = await db
             .select()
             .from(applications)
-            .where(eq(applications.jobId, row.jobId))
+            .where(and(eq(applications.jobId, row.jobId), eq(applications.userId, row.userId)))
             .limit(1);
           if (existing) throw new ApplicationConflictError(existing.id);
         }
@@ -82,13 +88,18 @@ export function createApplicationsRepo(db: Db) {
 
     async listJoined(q: AppQuery): Promise<{ items: AppJoinJobScore[]; nextCursor: string | null }> {
       const limit = q.limit ?? DEFAULT_LIMIT;
-      const conditions = [];
+      const conditions = [eq(applications.userId, q.userId)];
       if (q.stage !== undefined) conditions.push(eq(applications.stage, q.stage));
       if (q.statusTone) conditions.push(eq(applications.statusTone, q.statusTone));
       if (q.cursor) {
         const c = decodeCursorId(q.cursor);
+        // Cursor-oracle fix (Fable design review, same class as jobs.ts's
+        // listScored): the subquery must carry the SAME user_id filter as the
+        // outer query, or a cursor encoding another user's application id
+        // resolves to a real row here while the outer WHERE still hides it —
+        // an existence oracle across tenants.
         conditions.push(
-          sql`(${applications.appliedAt}, ${applications.id}) < (SELECT ${applications.appliedAt}, ${applications.id} FROM ${applications} WHERE ${applications.id} = ${c.id})`,
+          sql`(${applications.appliedAt}, ${applications.id}) < (SELECT ${applications.appliedAt}, ${applications.id} FROM ${applications} WHERE ${applications.id} = ${c.id} AND ${applications.userId} = ${q.userId})`,
         );
       }
 
@@ -124,7 +135,7 @@ export function createApplicationsRepo(db: Db) {
       return { items, nextCursor };
     },
 
-    async getJoined(id: string): Promise<AppJoinJobScore | null> {
+    async getJoined(id: string, userId: string): Promise<AppJoinJobScore | null> {
       const latest = latestJobScores(db);
       const [row] = await db
         .select({
@@ -139,7 +150,7 @@ export function createApplicationsRepo(db: Db) {
         .innerJoin(jobs, eq(jobs.id, applications.jobId))
         .innerJoin(jobScores, eq(jobScores.jobId, jobs.id))
         .innerJoin(latest, eq(latest.id, jobScores.id))
-        .where(eq(applications.id, id))
+        .where(and(eq(applications.id, id), eq(applications.userId, userId)))
         .limit(1);
       if (!row) return null;
       return {
@@ -151,11 +162,14 @@ export function createApplicationsRepo(db: Db) {
       };
     },
 
-    async patch(id: string, p: Partial<AppPatch>): Promise<AppRow | null> {
+    // By-uuid PATCH leak fix (Fable design review, CRITICAL): scoped by
+    // userId so a foreign application id no-ops (returns null -> caller
+    // 404s) instead of updating another tenant's row.
+    async patch(id: string, userId: string, p: Partial<AppPatch>): Promise<AppRow | null> {
       const [updated] = await db
         .update(applications)
         .set({ ...p, updatedAt: sql`now()` })
-        .where(eq(applications.id, id))
+        .where(and(eq(applications.id, id), eq(applications.userId, userId)))
         .returning();
       return updated ?? null;
     },
@@ -165,6 +179,6 @@ export function createApplicationsRepo(db: Db) {
 export const applicationsRepo: ReturnType<typeof createApplicationsRepo> = {
   insertUniqueByJob: (row) => createApplicationsRepo(getDb()).insertUniqueByJob(row),
   listJoined: (q) => createApplicationsRepo(getDb()).listJoined(q),
-  getJoined: (id) => createApplicationsRepo(getDb()).getJoined(id),
-  patch: (id, p) => createApplicationsRepo(getDb()).patch(id, p),
+  getJoined: (id, userId) => createApplicationsRepo(getDb()).getJoined(id, userId),
+  patch: (id, userId, p) => createApplicationsRepo(getDb()).patch(id, userId, p),
 };

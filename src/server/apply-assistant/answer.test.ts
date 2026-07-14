@@ -2,8 +2,10 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { LlmClient } from "@/lib/llm/client";
 import { makeMockLlm } from "@/lib/llm/mock";
 import { insertJob, insertJobScore, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
-import { applicationAnswers, jobs, jobScores, resumes, sources } from "@/server/persistence/schema";
+import { applicationAnswers, jobs, jobScores, resumes, sources, users } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
+import { applicationAnswersRepo } from "@/server/persistence/repos/applicationAnswers";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
@@ -28,7 +30,25 @@ describe("draftAnswers", () => {
   it("unknown jobId -> UnknownJobError, not an FK-violation 500 (regression, fix pass finding 3)", async () => {
     await expect(
       draftAnswers(
+        BOOTSTRAP_ADMIN_ID,
         { jobId: crypto.randomUUID(), questions: [{ id: "q1", prompt: "Why us?", kind: "text", required: true }] },
+        { llm: makeMockLlm({}) },
+      ),
+    ).rejects.toBeInstanceOf(UnknownJobError);
+  });
+
+  it("a foreign-owned jobId -> UnknownJobError (no existence leak)", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id);
+    const [userB] = await state.testDb
+      .insert(users)
+      .values({ email: "user-b-draft-answers@example.com", passwordHash: "h", role: "user" })
+      .returning();
+
+    await expect(
+      draftAnswers(
+        userB.id,
+        { jobId: job.id, questions: [{ id: "q1", prompt: "Why us?", kind: "text", required: true }] },
         { llm: makeMockLlm({}) },
       ),
     ).rejects.toBeInstanceOf(UnknownJobError);
@@ -40,6 +60,7 @@ describe("draftAnswers", () => {
 
     await expect(
       draftAnswers(
+        BOOTSTRAP_ADMIN_ID,
         { jobId: job.id, questions: [{ id: "q1", prompt: "Why us?", kind: "text", required: true }] },
         { llm: makeMockLlm({}) },
       ),
@@ -71,7 +92,8 @@ describe("draftAnswers", () => {
     });
 
     const result = await draftAnswers(
-      {
+        BOOTSTRAP_ADMIN_ID,
+        {
         jobId: job.id,
         questions: [
           { id: "q1", prompt: "Why do you want this role?", kind: "textarea", required: true },
@@ -111,7 +133,7 @@ describe("draftAnswers", () => {
       },
     };
 
-    await draftAnswers({ jobId: job.id, questions: [{ id: "q1", prompt: "x", kind: "text", required: true }] }, { llm });
+    await draftAnswers(BOOTSTRAP_ADMIN_ID, { jobId: job.id, questions: [{ id: "q1", prompt: "x", kind: "text", required: true }] }, { llm });
 
     const jdFactsMessage = (capturedMessages as { content: string }[]).find((m) => m.content.includes("Senior Backend Engineer"));
     expect(jdFactsMessage).toBeDefined();
@@ -129,7 +151,7 @@ describe("draftAnswers", () => {
     };
 
     await expect(
-      draftAnswers({ jobId: job.id, questions: [{ id: "q1", prompt: "x", kind: "text", required: true }] }, { llm: failingLlm }),
+      draftAnswers(BOOTSTRAP_ADMIN_ID, { jobId: job.id, questions: [{ id: "q1", prompt: "x", kind: "text", required: true }] }, { llm: failingLlm }),
     ).rejects.toBeInstanceOf(UpstreamLlmError);
   });
 });
@@ -154,9 +176,9 @@ describe("patchAnswers", () => {
     const llm = makeMockLlm({
       "question-answer": { answers: [{ questionId: "q1", prompt: "x", answer: "original", grounding: [] }] },
     });
-    const drafted = await draftAnswers({ jobId: job.id, questions: [{ id: "q1", prompt: "x", kind: "text", required: true }] }, { llm });
+    const drafted = await draftAnswers(BOOTSTRAP_ADMIN_ID, { jobId: job.id, questions: [{ id: "q1", prompt: "x", kind: "text", required: true }] }, { llm });
 
-    const patched = await patchAnswers(drafted.id, [
+    const patched = await patchAnswers(drafted.id, BOOTSTRAP_ADMIN_ID, [
       { questionId: "q1", prompt: "x", answer: "edited by candidate", grounding: [{ source: "skills", quote: "TypeScript" }] },
     ]);
 
@@ -167,7 +189,34 @@ describe("patchAnswers", () => {
 
   it("unknown id -> UnknownAnswersIdError", async () => {
     await expect(
-      patchAnswers(crypto.randomUUID(), [{ questionId: "q1", prompt: "x", answer: "y", grounding: [] }]),
+      patchAnswers(crypto.randomUUID(), BOOTSTRAP_ADMIN_ID, [{ questionId: "q1", prompt: "x", answer: "y", grounding: [] }]),
     ).rejects.toBeInstanceOf(UnknownAnswersIdError);
+  });
+
+  it("is scoped by userId — a foreign-owned answers row throws UnknownAnswersIdError, row unchanged (by-uuid PATCH leak fix)", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id);
+    await insertResume(state.testDb, { isActive: true });
+
+    const llm = makeMockLlm({
+      "question-answer": { answers: [{ questionId: "q1", prompt: "x", answer: "original", grounding: [] }] },
+    });
+    const drafted = await draftAnswers(
+      BOOTSTRAP_ADMIN_ID,
+      { jobId: job.id, questions: [{ id: "q1", prompt: "x", kind: "text", required: true }] },
+      { llm },
+    );
+
+    const [userB] = await state.testDb
+      .insert(users)
+      .values({ email: "user-b-answer-patch@example.com", passwordHash: "h", role: "user" })
+      .returning();
+
+    await expect(
+      patchAnswers(drafted.id, userB.id, [{ questionId: "q1", prompt: "x", answer: "hijacked", grounding: [] }]),
+    ).rejects.toBeInstanceOf(UnknownAnswersIdError);
+
+    const stillOriginal = await applicationAnswersRepo.getById(drafted.id, BOOTSTRAP_ADMIN_ID);
+    expect(stillOriginal?.answers[0].answer).toBe("original");
   });
 });

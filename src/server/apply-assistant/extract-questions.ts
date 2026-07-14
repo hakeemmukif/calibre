@@ -51,11 +51,10 @@ async function tier3Paste(pastedForm: string): Promise<ApplicationQuestion[]> {
   return result.data.questions;
 }
 
-export async function extractQuestions(input: {
-  jobId?: string;
-  url?: string;
-  pastedForm?: string;
-}): Promise<{ questions: ApplicationQuestion[]; sourceUrl: string | null }> {
+export async function extractQuestions(
+  userId: string,
+  input: { jobId?: string; url?: string; pastedForm?: string },
+): Promise<{ questions: ApplicationQuestion[]; sourceUrl: string | null }> {
   if (input.pastedForm !== undefined) {
     const questions = await tier3Paste(input.pastedForm);
     if (questions.length === 0) {
@@ -68,10 +67,10 @@ export async function extractQuestions(input: {
   let tier1Fields: Awaited<ReturnType<NonNullable<ReturnType<typeof connectorForSource>["extractQuestions"]>>> | null = null;
 
   if (input.jobId !== undefined) {
-    const joined = await jobsRepo.getById(input.jobId);
+    const joined = await jobsRepo.getById(input.jobId, userId);
     if (!joined) throw new UnknownJobError(input.jobId);
 
-    const cutoff = await resolveIsNewCutoff(joined.job.persona);
+    const cutoff = await resolveIsNewCutoff(userId, joined.job.persona);
     const job = assembleJob(joined, { isNewCutoff: cutoff });
     sourceUrl = job.applyUrl;
 

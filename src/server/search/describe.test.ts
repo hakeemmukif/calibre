@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
 import { createJobsRepo } from "@/server/persistence/repos/jobs";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
@@ -25,6 +26,7 @@ describe("ensureDescription", () => {
     const repo = createJobsRepo(state.testDb);
     const source = await insertSource(state.testDb, { id: "jobstreet", kind: "board", persona: "local", config: { country: "MY" } });
     const job = await repo.upsertByDedupeKey({
+      userId: BOOTSTRAP_ADMIN_ID,
       dedupeKey: "dk-has-description",
       url: "https://id.jobstreet.com/id/job/1",
       sourceId: source.id,
@@ -53,6 +55,7 @@ describe("ensureDescription", () => {
     const repo = createJobsRepo(state.testDb);
     const source = await insertSource(state.testDb, { id: "greenhouse", kind: "ats", persona: "remote", config: { slug: "acme", geo: { scope: "restricted" } } });
     const job = await repo.upsertByDedupeKey({
+      userId: BOOTSTRAP_ADMIN_ID,
       dedupeKey: "dk-no-fetch-detail",
       url: "https://boards.greenhouse.io/acme/jobs/1",
       sourceId: source.id,
@@ -76,6 +79,7 @@ describe("ensureDescription", () => {
     const repo = createJobsRepo(state.testDb);
     const source = await insertSource(state.testDb, { id: "jobstreet", kind: "board", persona: "local", config: { country: "MY" } });
     const job = await repo.upsertByDedupeKey({
+      userId: BOOTSTRAP_ADMIN_ID,
       dedupeKey: "dk-needs-detail",
       url: "https://id.jobstreet.com/id/job/2",
       sourceId: source.id,
@@ -102,7 +106,7 @@ describe("ensureDescription", () => {
     expect(result.id).toBe(job.id);
     expect(result.description).toBe("Full JD text.");
 
-    const reloaded = await repo.existsById(job.id);
+    const reloaded = await repo.existsById(job.id, BOOTSTRAP_ADMIN_ID);
     expect(reloaded).toBe(true);
   });
 
@@ -111,6 +115,7 @@ describe("ensureDescription", () => {
     const repo = createJobsRepo(state.testDb);
     const source = await insertSource(state.testDb, { id: "jobstreet", kind: "board", persona: "local", config: { country: "MY" } });
     const job = await repo.upsertByDedupeKey({
+      userId: BOOTSTRAP_ADMIN_ID,
       dedupeKey: "dk-needs-cap",
       url: "https://id.jobstreet.com/id/job/3",
       sourceId: source.id,
@@ -144,6 +149,7 @@ describe("ensureDescription", () => {
     const repo = createJobsRepo(state.testDb);
     const source = await insertSource(state.testDb, { id: "jobstreet", kind: "board", persona: "local", config: { country: "MY" } });
     const job = await repo.upsertByDedupeKey({
+      userId: BOOTSTRAP_ADMIN_ID,
       dedupeKey: "dk-fetch-fails",
       url: "https://id.jobstreet.com/id/job/4",
       sourceId: source.id,

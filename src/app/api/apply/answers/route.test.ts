@@ -1,12 +1,20 @@
 import { NextRequest } from "next/server";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeMockLlm } from "@/lib/llm/mock";
 import { insertJob, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
-import { applicationAnswers, jobs, resumes, sources } from "@/server/persistence/schema";
+import { applicationAnswers, jobs, resumes, sources, users } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
+import { UnauthorizedError } from "@/server/auth/errors";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
+
+const { requireUser } = vi.hoisted(() => ({ requireUser: vi.fn() }));
+vi.mock("@/server/auth/session", async (orig) => ({
+  ...(await orig<typeof import("@/server/auth/session")>()),
+  requireUser: () => requireUser(),
+}));
 
 const llm = vi.hoisted(() => ({ scripted: {} as Record<string, unknown> | (() => unknown) }));
 vi.mock("@/lib/llm/client", async (importOriginal) => {
@@ -29,12 +37,42 @@ describe("POST /api/apply/answers", () => {
     state.testDb = await createTestDb();
   });
 
+  beforeEach(() => {
+    requireUser.mockReset();
+    requireUser.mockResolvedValue({ id: BOOTSTRAP_ADMIN_ID, email: "admin@example.com", role: "admin" });
+  });
+
   afterEach(async () => {
     llm.scripted = {};
     await state.testDb.delete(applicationAnswers);
     await state.testDb.delete(jobs);
     await state.testDb.delete(resumes);
     await state.testDb.delete(sources);
+  });
+
+  it("401s with UNAUTHORIZED when there is no session", async () => {
+    requireUser.mockRejectedValue(new UnauthorizedError());
+    const res = await POST(
+      jsonRequest({ jobId: crypto.randomUUID(), questions: [{ id: "q1", prompt: "Why us?", kind: "text", required: true }] }),
+    );
+    expect(res.status).toBe(401);
+    expect((await res.json()).error.code).toBe("UNAUTHORIZED");
+  });
+
+  it("a foreign-owned jobId -> 404 NOT_FOUND (cross-tenant isolation)", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id);
+    const [userB] = await state.testDb
+      .insert(users)
+      .values({ email: "user-b-apply-answers@example.com", passwordHash: "h", role: "user" })
+      .returning();
+    requireUser.mockResolvedValue({ id: userB.id, email: userB.email, role: "user" });
+
+    const res = await POST(
+      jsonRequest({ jobId: job.id, questions: [{ id: "q1", prompt: "Why us?", kind: "text", required: true }] }),
+    );
+    expect(res.status).toBe(404);
+    expect((await res.json()).error.code).toBe("NOT_FOUND");
   });
 
   it("unknown jobId -> 404 NOT_FOUND, not a raw FK-violation 500 (regression, fix pass finding 3)", async () => {

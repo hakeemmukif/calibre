@@ -12,6 +12,7 @@ import { createUrlChecksRepo } from "@/server/persistence/repos/urlChecks";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import { dedupeKeyFor } from "@/server/search/dedupe";
 import { scoreJob } from "@/server/score";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
@@ -41,6 +42,7 @@ const { NoActiveResumeError } = await import("@/server/search/run");
 async function insertRunningCheck(db: TestDb, req: { url: string; text?: string }): Promise<string> {
   const repo = createUrlChecksRepo(db);
   const row = await repo.insert({
+    userId: BOOTSTRAP_ADMIN_ID,
     id: crypto.randomUUID(),
     url: req.url,
     dedupeKey: dedupeKeyFor(req.url),
@@ -63,6 +65,7 @@ describe("assemble", () => {
     state.testDb = db;
     const repo = createUrlChecksRepo(db);
     const row = await repo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
       id: crypto.randomUUID(),
       url: "https://example.com/job",
       dedupeKey: "example.com/job",
@@ -89,7 +92,7 @@ describe("getUrlCheck", () => {
   it("returns null for an unknown id", async () => {
     const db = await createTestDb();
     state.testDb = db;
-    expect(await getUrlCheck(crypto.randomUUID())).toBeNull();
+    expect(await getUrlCheck(crypto.randomUUID(), BOOTSTRAP_ADMIN_ID)).toBeNull();
   });
 });
 
@@ -98,7 +101,7 @@ describe("startUrlCheck admission", () => {
     const db = await createTestDb();
     state.testDb = db;
 
-    await expect(startUrlCheck({ url: "https://example.com/job" })).rejects.toThrow(NoActiveResumeError);
+    await expect(startUrlCheck({ url: "https://example.com/job" }, BOOTSTRAP_ADMIN_ID)).rejects.toThrow(NoActiveResumeError);
   });
 
   it("rejects PayloadTooLargeError for pasted text over the 40k cap", async () => {
@@ -107,7 +110,7 @@ describe("startUrlCheck admission", () => {
     await insertResume(db, { isActive: true });
 
     await expect(
-      startUrlCheck({ url: "https://example.com/job", text: "x".repeat(40_001) }),
+      startUrlCheck({ url: "https://example.com/job", text: "x".repeat(40_001) }, BOOTSTRAP_ADMIN_ID),
     ).rejects.toThrow(PayloadTooLargeError);
   });
 
@@ -125,7 +128,7 @@ describe("startUrlCheck admission", () => {
     // covered separately below.
     await insertJobScore(db, existing.id, resume.id);
 
-    const { check, started } = await startUrlCheck({ url: "https://example.com/already-known" });
+    const { check, started } = await startUrlCheck({ url: "https://example.com/already-known" }, BOOTSTRAP_ADMIN_ID);
 
     expect(started).toBe(false);
     expect(check.status).toBe("completed");
@@ -138,7 +141,7 @@ describe("startUrlCheck admission", () => {
     state.testDb = db;
     await insertResume(db, { isActive: true });
 
-    const { check, started } = await startUrlCheck({ url: "https://example.com/brand-new" });
+    const { check, started } = await startUrlCheck({ url: "https://example.com/brand-new" }, BOOTSTRAP_ADMIN_ID);
 
     expect(started).toBe(true);
     expect(check.status).toBe("queued");
@@ -156,9 +159,9 @@ describe("startUrlCheck admission", () => {
       url: "https://example.com/orphan",
       persona: "pasted",
     });
-    expect(await orphanJobsRepo.hasAnyScore(orphan.id)).toBe(false);
+    expect(await orphanJobsRepo.hasAnyScore(orphan.id, BOOTSTRAP_ADMIN_ID)).toBe(false);
 
-    const { check, started } = await startUrlCheck({ url: "https://example.com/orphan" });
+    const { check, started } = await startUrlCheck({ url: "https://example.com/orphan" }, BOOTSTRAP_ADMIN_ID);
 
     expect(started).toBe(true);
     expect(check.status).toBe("queued");
@@ -203,7 +206,7 @@ describe("runPipeline — needsText truth table", () => {
 
     await runPipeline(checkId, { url: "https://example.com/tier1-ok" }, {
       llm: jdExtractLlm({ title: "Backend Engineer", company: "Acme", isJobPosting: true, mustHaves: [], niceToHaves: [], responsibilities: [], redFlags: [] }),
-      resumeRow, profile, attempt: 1,
+      resumeRow, profile, attempt: 1, userId: BOOTSTRAP_ADMIN_ID,
       deps: {
         fetchPageText: async () => ({ ok: true, text: "Acme is hiring a Backend Engineer.", pageTitle: "Acme Careers" }),
         searchForPosting: searchSpy,
@@ -212,7 +215,7 @@ describe("runPipeline — needsText truth table", () => {
       },
     });
 
-    const finalRow = await createUrlChecksRepo(db).getById(checkId);
+    const finalRow = await createUrlChecksRepo(db).getById(checkId, BOOTSTRAP_ADMIN_ID);
     expect(finalRow?.status).toBe("completed");
     expect(finalRow?.needsText).toBe(false);
     expect(searchSpy).not.toHaveBeenCalled();
@@ -228,7 +231,7 @@ describe("runPipeline — needsText truth table", () => {
       llm: makeMockLlm(() => {
         throw new Error("authwall garbage");
       }),
-      resumeRow, profile, attempt: 1,
+      resumeRow, profile, attempt: 1, userId: BOOTSTRAP_ADMIN_ID,
       deps: {
         fetchPageText: async () => ({ ok: true, text: "log in to continue", pageTitle: undefined }),
         searchForPosting: async () => ({ found: false, content: "", sourceNote: "", costUsd: 0.01 }),
@@ -237,7 +240,7 @@ describe("runPipeline — needsText truth table", () => {
       },
     });
 
-    const finalRow = await createUrlChecksRepo(db).getById(checkId);
+    const finalRow = await createUrlChecksRepo(db).getById(checkId, BOOTSTRAP_ADMIN_ID);
     expect(finalRow?.status).toBe("failed");
     expect(finalRow?.error).toEqual({ code: "FETCH_BLOCKED", message: expect.any(String) });
     expect(finalRow?.needsText).toBe(true);
@@ -251,7 +254,7 @@ describe("runPipeline — needsText truth table", () => {
 
     await runPipeline(checkId, { url: "https://example.com/not-a-posting" }, {
       llm: jdExtractLlm({ title: "n/a", isJobPosting: false, company: null, mustHaves: [], niceToHaves: [], responsibilities: [], redFlags: [] }),
-      resumeRow, profile, attempt: 1,
+      resumeRow, profile, attempt: 1, userId: BOOTSTRAP_ADMIN_ID,
       deps: {
         fetchPageText: async () => ({ ok: false, reason: "blocked" }),
         searchForPosting: async () => ({ found: true, content: "This is a marketing landing page.", sourceNote: "found via search", costUsd: 0.01 }),
@@ -260,7 +263,7 @@ describe("runPipeline — needsText truth table", () => {
       },
     });
 
-    const finalRow = await createUrlChecksRepo(db).getById(checkId);
+    const finalRow = await createUrlChecksRepo(db).getById(checkId, BOOTSTRAP_ADMIN_ID);
     expect(finalRow?.status).toBe("failed");
     expect(finalRow?.error?.code).toBe("NOT_A_JOB_POSTING");
     expect(finalRow?.needsText).toBe(false);
@@ -274,7 +277,7 @@ describe("runPipeline — needsText truth table", () => {
 
     await runPipeline(checkId, { url: "https://example.com/incomplete" }, {
       llm: jdExtractLlm({ title: "Backend Engineer", isJobPosting: true, company: null, mustHaves: [], niceToHaves: [], responsibilities: [], redFlags: [] }), // no company
-      resumeRow, profile, attempt: 1,
+      resumeRow, profile, attempt: 1, userId: BOOTSTRAP_ADMIN_ID,
       deps: {
         fetchPageText: async () => ({ ok: false, reason: "empty" }),
         searchForPosting: async () => ({ found: true, content: "Some thin posting text.", sourceNote: "found via search", costUsd: 0.01 }),
@@ -283,7 +286,7 @@ describe("runPipeline — needsText truth table", () => {
       },
     });
 
-    const finalRow = await createUrlChecksRepo(db).getById(checkId);
+    const finalRow = await createUrlChecksRepo(db).getById(checkId, BOOTSTRAP_ADMIN_ID);
     expect(finalRow?.status).toBe("failed");
     expect(finalRow?.error?.code).toBe("EXTRACTION_FAILED");
     expect(finalRow?.needsText).toBe(true);
@@ -300,11 +303,11 @@ describe("runPipeline — needsText truth table", () => {
 
     await runPipeline(checkId, { url: "https://example.com/pasted-not-a-posting", text: "Just some random article text." }, {
       llm: jdExtractLlm({ title: "n/a", isJobPosting: false, company: null, mustHaves: [], niceToHaves: [], responsibilities: [], redFlags: [] }),
-      resumeRow, profile, attempt: 1,
+      resumeRow, profile, attempt: 1, userId: BOOTSTRAP_ADMIN_ID,
       deps: { fetchPageText: vi.fn(), searchForPosting: vi.fn(), fetchGhostWebEvidence: vi.fn(), scoreJob: vi.fn() },
     });
 
-    const finalRow = await createUrlChecksRepo(db).getById(checkId);
+    const finalRow = await createUrlChecksRepo(db).getById(checkId, BOOTSTRAP_ADMIN_ID);
     expect(finalRow?.error?.code).toBe("NOT_A_JOB_POSTING");
     expect(finalRow?.needsText).toBe(false);
   });
@@ -325,11 +328,11 @@ describe("runPipeline — needsText truth table", () => {
       // throws, which runGate's paste-mode caller maps to
       // ExtractionIncompleteError just like a real upstream failure.
       llm: jdExtractLlm({ title: "Senior Engineer", company: "Front", mustHaves: [], niceToHaves: [], responsibilities: [], redFlags: [] }),
-      resumeRow, profile, attempt: 1,
+      resumeRow, profile, attempt: 1, userId: BOOTSTRAP_ADMIN_ID,
       deps: { fetchPageText: vi.fn(), searchForPosting: vi.fn(), fetchGhostWebEvidence: vi.fn(), scoreJob: vi.fn() },
     });
 
-    const finalRow = await createUrlChecksRepo(db).getById(checkId);
+    const finalRow = await createUrlChecksRepo(db).getById(checkId, BOOTSTRAP_ADMIN_ID);
     expect(finalRow?.error?.code).toBe("EXTRACTION_FAILED");
     expect(finalRow?.needsText).toBe(true);
   });
@@ -344,11 +347,11 @@ describe("runPipeline — needsText truth table", () => {
       llm: makeMockLlm(() => {
         throw new Error("model didn't answer");
       }),
-      resumeRow, profile, attempt: 1,
+      resumeRow, profile, attempt: 1, userId: BOOTSTRAP_ADMIN_ID,
       deps: { fetchPageText: vi.fn(), searchForPosting: vi.fn(), fetchGhostWebEvidence: vi.fn(), scoreJob: vi.fn() },
     });
 
-    const finalRow = await createUrlChecksRepo(db).getById(checkId);
+    const finalRow = await createUrlChecksRepo(db).getById(checkId, BOOTSTRAP_ADMIN_ID);
     expect(finalRow?.error?.code).toBe("EXTRACTION_FAILED");
     expect(finalRow?.needsText).toBe(true);
   });
@@ -364,6 +367,7 @@ describe("runPipeline — persisting edge cases", () => {
     // Simulate the race directly: pre-seed the SAME dedupe key under the
     // scanned source before the pipeline's own upsert runs.
     const raced = await jobsRepo.upsertByDedupeKey({
+      userId: BOOTSTRAP_ADMIN_ID,
       dedupeKey: "example.com/race",
       url: "https://example.com/race",
       sourceId: scanSource.id,
@@ -382,7 +386,7 @@ describe("runPipeline — persisting edge cases", () => {
 
     await runPipeline(checkId, { url: "https://example.com/race" }, {
       llm: jdExtractLlm({ title: "Backend Engineer", company: "Acme", isJobPosting: true, mustHaves: [], niceToHaves: [], responsibilities: [], redFlags: [] }),
-      resumeRow, profile, attempt: 1,
+      resumeRow, profile, attempt: 1, userId: BOOTSTRAP_ADMIN_ID,
       deps: {
         fetchPageText: async () => ({ ok: true, text: "Acme hiring.", pageTitle: undefined }),
         searchForPosting: vi.fn(),
@@ -397,7 +401,7 @@ describe("runPipeline — persisting edge cases", () => {
     // job.sourceId !== "manual" race branch (Step 7), closing the
     // "accepted gap" this test used to note (it previously only hit the
     // admission shortcut by accident, never the real race branch).
-    const finalRow = await createUrlChecksRepo(db).getById(checkId);
+    const finalRow = await createUrlChecksRepo(db).getById(checkId, BOOTSTRAP_ADMIN_ID);
     expect(finalRow?.status).toBe("completed");
     expect(finalRow?.alreadyKnown).toBe(true);
     expect(finalRow?.jobId).toBe(raced.id);
@@ -414,7 +418,7 @@ describe("runPipeline — persisting edge cases", () => {
 
     await runPipeline(checkId, { url: "https://example.com/ghost-fails" }, {
       llm: jdExtractLlm({ title: "Backend Engineer", company: "Acme", isJobPosting: true, mustHaves: [], niceToHaves: [], responsibilities: [], redFlags: [] }),
-      resumeRow, profile, attempt: 1,
+      resumeRow, profile, attempt: 1, userId: BOOTSTRAP_ADMIN_ID,
       deps: {
         fetchPageText: async () => ({ ok: true, text: "Acme hiring.", pageTitle: undefined }),
         searchForPosting: vi.fn(),
@@ -426,7 +430,7 @@ describe("runPipeline — persisting edge cases", () => {
       },
     });
 
-    const finalRow = await createUrlChecksRepo(db).getById(checkId);
+    const finalRow = await createUrlChecksRepo(db).getById(checkId, BOOTSTRAP_ADMIN_ID);
     expect(finalRow?.status).toBe("completed");
     expect(receivedWebEvidence).toEqual({ status: "failed", reason: "sonar timed out" });
   });
@@ -441,7 +445,7 @@ describe("runPipeline — persisting edge cases", () => {
 
     await runPipeline(checkId, { url: "https://example.com/no-manual-source" }, {
       llm: jdExtractLlm({ title: "Backend Engineer", company: "Acme", isJobPosting: true, mustHaves: [], niceToHaves: [], responsibilities: [], redFlags: [] }),
-      resumeRow, profile, attempt: 1,
+      resumeRow, profile, attempt: 1, userId: BOOTSTRAP_ADMIN_ID,
       deps: {
         fetchPageText: async () => ({ ok: true, text: "Acme hiring.", pageTitle: undefined }),
         searchForPosting: vi.fn(),
@@ -450,7 +454,7 @@ describe("runPipeline — persisting edge cases", () => {
       },
     });
 
-    const finalRow = await createUrlChecksRepo(db).getById(checkId);
+    const finalRow = await createUrlChecksRepo(db).getById(checkId, BOOTSTRAP_ADMIN_ID);
     expect(finalRow?.status).toBe("failed");
     expect(finalRow?.error?.code).toBe("INTERNAL");
     expect(finalRow?.error?.message).toContain("npm run db:seed");
@@ -465,7 +469,7 @@ describe("runPipeline — persisting edge cases", () => {
 
     await runPipeline(checkId, { url: "https://example.com/score-throws" }, {
       llm: jdExtractLlm({ title: "Backend Engineer", company: "Acme", isJobPosting: true, mustHaves: [], niceToHaves: [], responsibilities: [], redFlags: [] }),
-      resumeRow, profile, attempt: 1,
+      resumeRow, profile, attempt: 1, userId: BOOTSTRAP_ADMIN_ID,
       deps: {
         fetchPageText: async () => ({ ok: true, text: "Acme hiring.", pageTitle: undefined }),
         searchForPosting: vi.fn(),
@@ -476,7 +480,7 @@ describe("runPipeline — persisting edge cases", () => {
       },
     });
 
-    const finalRow = await createUrlChecksRepo(db).getById(checkId);
+    const finalRow = await createUrlChecksRepo(db).getById(checkId, BOOTSTRAP_ADMIN_ID);
     expect(finalRow?.status).toBe("failed");
     expect(finalRow?.error?.code).toBe("UPSTREAM_LLM_ERROR");
     expect(finalRow?.needsText).toBe(false);
@@ -492,12 +496,12 @@ describe("runPipeline — persisting edge cases", () => {
       url: "https://example.com/orphan",
       persona: "pasted",
     });
-    expect(await orphanJobsRepo.hasAnyScore(orphan.id)).toBe(false);
+    expect(await orphanJobsRepo.hasAnyScore(orphan.id, BOOTSTRAP_ADMIN_ID)).toBe(false);
     const checkId = await insertRunningCheck(db, { url: "https://example.com/orphan" });
 
     await runPipeline(checkId, { url: "https://example.com/orphan" }, {
       llm: jdExtractLlm({ title: "Backend Engineer", company: "Acme", isJobPosting: true, mustHaves: [], niceToHaves: [], responsibilities: [], redFlags: [] }),
-      resumeRow, profile, attempt: 1,
+      resumeRow, profile, attempt: 1, userId: BOOTSTRAP_ADMIN_ID,
       deps: {
         fetchPageText: async () => ({ ok: true, text: "Acme hiring.", pageTitle: undefined }),
         searchForPosting: vi.fn(),
@@ -506,7 +510,7 @@ describe("runPipeline — persisting edge cases", () => {
       },
     });
 
-    const finalRow = await createUrlChecksRepo(db).getById(checkId);
+    const finalRow = await createUrlChecksRepo(db).getById(checkId, BOOTSTRAP_ADMIN_ID);
     expect(finalRow?.status).toBe("completed");
     expect(finalRow?.jobId).toBe(orphan.id);
     expect(finalRow?.alreadyKnown).toBe(false);
@@ -523,7 +527,7 @@ describe("run.ts is agnostic to the tier-1 LinkedIn guest-endpoint rewrite", () 
 
     await runPipeline(checkId, { url: reqUrl }, {
       llm: jdExtractLlm({ title: "Software Engineer", company: "DHL", isJobPosting: true, mustHaves: [], niceToHaves: [], responsibilities: [], redFlags: [] }),
-      resumeRow, profile, attempt: 1,
+      resumeRow, profile, attempt: 1, userId: BOOTSTRAP_ADMIN_ID,
       deps: {
         fetchPageText: async () => ({ ok: true, text: "DHL is hiring a Software Engineer.", pageTitle: "Software Engineer (Fullstack Developer)" }),
         searchForPosting: vi.fn(),
@@ -532,10 +536,10 @@ describe("run.ts is agnostic to the tier-1 LinkedIn guest-endpoint rewrite", () 
       },
     });
 
-    const finalRow = await createUrlChecksRepo(db).getById(checkId);
+    const finalRow = await createUrlChecksRepo(db).getById(checkId, BOOTSTRAP_ADMIN_ID);
     expect(finalRow?.status).toBe("completed");
 
-    const persisted = await createJobsRepo(db).getByDedupeKey(dedupeKeyFor(reqUrl));
+    const persisted = await createJobsRepo(db).getByDedupeKey(dedupeKeyFor(reqUrl), BOOTSTRAP_ADMIN_ID);
     expect(persisted).not.toBeNull();
     expect(persisted!.url).toBe(reqUrl);
     expect(persisted!.applyUrl).toBe(reqUrl);

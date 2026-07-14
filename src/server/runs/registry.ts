@@ -80,14 +80,20 @@ g.__caliberRunRegistry ??= {
   activeRunByPersona: new Map<string, string>(),
 };
 const runs = g.__caliberRunRegistry.runs;
-// One active run id per persona — the 409-CONFLICT guard for
-// `POST /api/search` (task-B5-brief.md route contract).
+// One active run id per (userId, persona) — the 409-CONFLICT guard for
+// `POST /api/search` (task-B5-brief.md route contract). Keyed
+// `${userId}:${persona}` (Step 3 task 4, per-user mutex — Fable design
+// review: A's active run must never block B from starting one).
 const activeRunByPersona = g.__caliberRunRegistry.activeRunByPersona;
 
-export function create(kind: RunKind, id: string, persona?: string): RunHandle {
+function personaSlotKey(userId: string, persona: string): string {
+  return `${userId}:${persona}`;
+}
+
+export function create(kind: RunKind, id: string, userId?: string, persona?: string): RunHandle {
   const handle = createRunHandle(kind, id);
   runs.set(id, handle);
-  if (kind === "search" && persona) activeRunByPersona.set(persona, id);
+  if (kind === "search" && userId && persona) activeRunByPersona.set(personaSlotKey(userId, persona), id);
   return handle;
 }
 
@@ -95,13 +101,15 @@ export function get(id: string): RunHandle | undefined {
   return runs.get(id);
 }
 
-export function getActiveRunForPersona(persona: string): string | undefined {
-  return activeRunByPersona.get(persona);
+export function getActiveRunForPersona(userId: string, persona: string): string | undefined {
+  return activeRunByPersona.get(personaSlotKey(userId, persona));
 }
 
 /** Called once a run reaches a terminal state — frees the per-persona slot. */
-export function release(id: string, persona?: string): void {
-  if (persona && activeRunByPersona.get(persona) === id) activeRunByPersona.delete(persona);
+export function release(id: string, userId?: string, persona?: string): void {
+  if (!userId || !persona) return;
+  const key = personaSlotKey(userId, persona);
+  if (activeRunByPersona.get(key) === id) activeRunByPersona.delete(key);
 }
 
 /** Test-only: clears all in-memory state between test cases. */

@@ -3,6 +3,8 @@
 // server/search/jobsFeed.ts (api-contract.md §3 "GET /api/jobs").
 import { NextRequest, NextResponse } from "next/server";
 import { z, ZodError } from "zod";
+import { UnauthorizedError } from "@/server/auth/errors";
+import { requireUser } from "@/server/auth/session";
 import { InvalidCursorError } from "@/server/persistence/repos/cursor";
 import { listJobsFeed } from "@/server/search/jobsFeed";
 import { LegitimacyTier, Persona, type ErrorEnvelope } from "@/types";
@@ -35,12 +37,14 @@ function errorResponse(status: number, code: ErrorEnvelope["error"]["code"], mes
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
 
-  const unknown = [...new Set(searchParams.keys())].filter((key) => !ALLOWED_PARAMS.has(key));
-  if (unknown.length > 0) {
-    return errorResponse(422, "VALIDATION_ERROR", `Unknown query parameter(s): ${unknown.join(", ")}`);
-  }
-
   try {
+    const session = await requireUser();
+
+    const unknown = [...new Set(searchParams.keys())].filter((key) => !ALLOWED_PARAMS.has(key));
+    if (unknown.length > 0) {
+      return errorResponse(422, "VALIDATION_ERROR", `Unknown query parameter(s): ${unknown.join(", ")}`);
+    }
+
     const tier = searchParams.getAll("tier");
     const query = QuerySchema.parse({
       persona: searchParams.get("persona") ?? undefined,
@@ -52,9 +56,10 @@ export async function GET(request: NextRequest) {
       limit: searchParams.get("limit") ?? undefined,
     });
 
-    const result = await listJobsFeed(query);
+    const result = await listJobsFeed(query, session.id);
     return NextResponse.json(result, { status: 200 });
   } catch (err) {
+    if (err instanceof UnauthorizedError) return errorResponse(401, "UNAUTHORIZED", err.message);
     if (err instanceof ZodError) {
       return errorResponse(422, "VALIDATION_ERROR", "Invalid jobs query.", err.issues);
     }

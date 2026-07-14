@@ -1,8 +1,9 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { makeMockLlm } from "@/lib/llm/mock";
 import { insertJob, insertJobScore, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
-import { jobs, jobScores, resumes, sources } from "@/server/persistence/schema";
+import { jobs, jobScores, resumes, sources, users } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
@@ -40,7 +41,7 @@ describe("extractQuestions", () => {
       },
     };
 
-    const result = await extractQuestions({ pastedForm: "Why do you want to work here? ____" });
+    const result = await extractQuestions(BOOTSTRAP_ADMIN_ID, { pastedForm: "Why do you want to work here? ____" });
 
     expect(result.sourceUrl).toBeNull();
     expect(result.questions).toEqual([{ id: "q1", prompt: "Why do you want to work here?", kind: "textarea", required: true }]);
@@ -48,11 +49,22 @@ describe("extractQuestions", () => {
 
   it("tier 3 (paste): no questions found -> ExtractionFailedError, never []", async () => {
     llm.scripted = { "question-extract": { questions: [] } };
-    await expect(extractQuestions({ pastedForm: "blank form" })).rejects.toBeInstanceOf(ExtractionFailedError);
+    await expect(extractQuestions(BOOTSTRAP_ADMIN_ID, { pastedForm: "blank form" })).rejects.toBeInstanceOf(ExtractionFailedError);
   });
 
   it("unknown jobId -> UnknownJobError", async () => {
-    await expect(extractQuestions({ jobId: crypto.randomUUID() })).rejects.toBeInstanceOf(UnknownJobError);
+    await expect(extractQuestions(BOOTSTRAP_ADMIN_ID, { jobId: crypto.randomUUID() })).rejects.toBeInstanceOf(UnknownJobError);
+  });
+
+  it("a foreign-owned jobId -> UnknownJobError (no existence leak)", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id);
+    const [userB] = await state.testDb
+      .insert(users)
+      .values({ email: "user-b-extract-questions@example.com", passwordHash: "h", role: "user" })
+      .returning();
+
+    await expect(extractQuestions(userB.id, { jobId: job.id })).rejects.toBeInstanceOf(UnknownJobError);
   });
 
   it("tier 1 (Greenhouse): maps a stubbed API fixture and never calls tier 2", async () => {
@@ -78,7 +90,7 @@ describe("extractQuestions", () => {
     };
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(fixture), { status: 200 })));
 
-    const result = await extractQuestions({ jobId: job.id });
+    const result = await extractQuestions(BOOTSTRAP_ADMIN_ID, { jobId: job.id });
 
     expect(result.sourceUrl).toBe("https://boards.greenhouse.io/acme/jobs/123456");
     expect(result.questions.map((q) => q.kind)).toEqual(["textarea", "select"]);
@@ -99,7 +111,7 @@ describe("extractQuestions", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ questions: [] }), { status: 200 })));
     domParse.fn.mockResolvedValue(null);
 
-    await expect(extractQuestions({ jobId: job.id })).rejects.toBeInstanceOf(ExtractionFailedError);
+    await expect(extractQuestions(BOOTSTRAP_ADMIN_ID, { jobId: job.id })).rejects.toBeInstanceOf(ExtractionFailedError);
   });
 
   it("falls through to tier 2 for a non-Greenhouse source, using the raw url path when domParse succeeds", async () => {
@@ -114,7 +126,7 @@ describe("extractQuestions", () => {
 
     domParse.fn.mockResolvedValue([{ label: "Cover letter", field_type: "textarea", required: false }]);
 
-    const result = await extractQuestions({ jobId: job.id });
+    const result = await extractQuestions(BOOTSTRAP_ADMIN_ID, { jobId: job.id });
 
     expect(result.sourceUrl).toBe("https://jobs.lever.co/acme/xyz");
     expect(result.questions).toEqual([{ id: "q-0-cover-letter", prompt: "Cover letter", kind: "textarea", required: false }]);
@@ -123,7 +135,7 @@ describe("extractQuestions", () => {
   it("url-only input skips tier 1 entirely and goes straight to tier 2", async () => {
     domParse.fn.mockResolvedValue([{ label: "Name", field_type: "text", required: true }]);
 
-    const result = await extractQuestions({ url: "https://example.com/careers/apply" });
+    const result = await extractQuestions(BOOTSTRAP_ADMIN_ID, { url: "https://example.com/careers/apply" });
 
     expect(result.sourceUrl).toBe("https://example.com/careers/apply");
     expect(domParse.fn).toHaveBeenCalledWith("https://example.com/careers/apply");
@@ -132,7 +144,7 @@ describe("extractQuestions", () => {
 
   it("tier 3 (paste): schema-invalid LLM reply -> ExtractionFailedError, not a bare ZodError (regression, fix pass finding 1)", async () => {
     llm.scripted = { "question-extract": { kind: "long" } };
-    await expect(extractQuestions({ pastedForm: "Why do you want to work here? ____" })).rejects.toBeInstanceOf(
+    await expect(extractQuestions(BOOTSTRAP_ADMIN_ID, { pastedForm: "Why do you want to work here? ____" })).rejects.toBeInstanceOf(
       ExtractionFailedError,
     );
   });
@@ -154,7 +166,7 @@ describe("extractQuestions", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(fixture), { status: 200 })));
     domParse.fn.mockResolvedValue(null);
 
-    await expect(extractQuestions({ jobId: job.id })).rejects.toBeInstanceOf(ExtractionFailedError);
+    await expect(extractQuestions(BOOTSTRAP_ADMIN_ID, { jobId: job.id })).rejects.toBeInstanceOf(ExtractionFailedError);
     expect(domParse.fn).toHaveBeenCalled();
   });
 });

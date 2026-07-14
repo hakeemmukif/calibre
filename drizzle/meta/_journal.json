@@ -64,6 +64,13 @@
       "when": 1783966308288,
       "tag": "0008_jittery_star_brand",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784021711573,
+      "tag": "0009_thick_frank_castle",
+      "breakpoints": true
     }
   ]
 }

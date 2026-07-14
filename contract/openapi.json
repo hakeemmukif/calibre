@@ -2,6 +2,61 @@
   "components": {
     "parameters": {},
     "schemas": {
+      "AdminUser": {
+        "properties": {
+          "applicationCount": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "email": {
+            "format": "email",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "jobCount": {
+            "type": "integer"
+          },
+          "resumeCount": {
+            "type": "integer"
+          },
+          "role": {
+            "enum": [
+              "user",
+              "admin"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "role",
+          "createdAt",
+          "resumeCount",
+          "jobCount",
+          "applicationCount"
+        ],
+        "type": "object"
+      },
+      "AdminUsersResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminUser"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
       "Application": {
         "properties": {
           "answersId": {
@@ -223,6 +278,30 @@
         ],
         "type": "object"
       },
+      "AuthUser": {
+        "properties": {
+          "email": {
+            "format": "email",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "user",
+              "admin"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "role"
+        ],
+        "type": "object"
+      },
       "Eligibility": {
         "properties": {
           "summary": {
@@ -268,7 +347,9 @@
                   "PAYLOAD_TOO_LARGE",
                   "FETCH_BLOCKED",
                   "NOT_A_JOB_POSTING",
-                  "INTERNAL"
+                  "INTERNAL",
+                  "UNAUTHORIZED",
+                  "FORBIDDEN"
                 ],
                 "type": "string"
               },
@@ -562,6 +643,24 @@
         ],
         "type": "string"
       },
+      "LoginRequest": {
+        "properties": {
+          "email": {
+            "format": "email",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "type": "object"
+      },
       "Persona": {
         "enum": [
           "remote",
@@ -630,6 +729,24 @@
           "current",
           "total",
           "label"
+        ],
+        "type": "object"
+      },
+      "RegisterRequest": {
+        "properties": {
+          "email": {
+            "format": "email",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 200,
+            "minLength": 8,
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
         ],
         "type": "object"
       },
@@ -801,6 +918,17 @@
           "startedAt",
           "finishedAt",
           "error"
+        ],
+        "type": "object"
+      },
+      "SessionResponse": {
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/AuthUser"
+          }
+        },
+        "required": [
+          "user"
         ],
         "type": "object"
       },
@@ -1178,7 +1306,9 @@
                   "PAYLOAD_TOO_LARGE",
                   "FETCH_BLOCKED",
                   "NOT_A_JOB_POSTING",
-                  "INTERNAL"
+                  "INTERNAL",
+                  "UNAUTHORIZED",
+                  "FORBIDDEN"
                 ],
                 "type": "string"
               },
@@ -1281,12 +1411,391 @@
     }
   },
   "info": {
-    "description": "Auth: none in v1 (single-operator; network-layer protection only).",
+    "description": "Auth: email+password sessions (httpOnly cookie). requireUser()/requireAdmin() guard route handlers; no Next middleware.",
     "title": "Caliber API",
     "version": "1.0.0"
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/admin/users": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUsersResponse"
+                }
+              }
+            },
+            "description": "All users with counts"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Caller is not an admin"
+          }
+        },
+        "summary": "Admin: every account with per-user résumé/job/application counts"
+      }
+    },
+    "/api/admin/users/{id}/applications": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "stage",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    0
+                  ],
+                  "type": "number"
+                },
+                {
+                  "enum": [
+                    1
+                  ],
+                  "type": "number"
+                },
+                {
+                  "enum": [
+                    2
+                  ],
+                  "type": "number"
+                },
+                {
+                  "enum": [
+                    3
+                  ],
+                  "type": "number"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "statusTone",
+            "required": false,
+            "schema": {
+              "enum": [
+                "good",
+                "verified",
+                "neutral"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "items": {
+                      "items": {
+                        "$ref": "#/components/schemas/Application"
+                      },
+                      "type": "array"
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "nextCursor"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Page of the target user's tracker rows"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Caller is not an admin"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Non-uuid user id"
+          }
+        },
+        "summary": "Admin: the target user's tracker rows (decision #7 full content access)"
+      }
+    },
+    "/api/admin/users/{id}/jobs": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "persona",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/Persona"
+            }
+          },
+          {
+            "description": "repeatable",
+            "in": "query",
+            "name": "tier",
+            "required": false,
+            "schema": {
+              "description": "repeatable",
+              "items": {
+                "$ref": "#/components/schemas/LegitimacyTier"
+              },
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "minScore",
+            "required": false,
+            "schema": {
+              "maximum": 5,
+              "minimum": 0,
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "isNew",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "default 25",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "description": "default 25",
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "items": {
+                      "items": {
+                        "$ref": "#/components/schemas/Job"
+                      },
+                      "type": "array"
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "stats": {
+                      "$ref": "#/components/schemas/SummaryStripStats"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "nextCursor",
+                    "stats"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Page of the target user's scored jobs + hero stats; an empty feed (not an error) when the target has no profile yet"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Caller is not an admin"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Non-uuid user id"
+          }
+        },
+        "summary": "Admin: the target user's scored feed (decision #7 full content access)"
+      }
+    },
+    "/api/admin/users/{id}/resume": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Resume"
+                }
+              }
+            },
+            "description": "Target user's current résumé"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Caller is not an admin"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unknown/non-uuid user id, or the target has no résumé"
+          }
+        },
+        "summary": "Admin: fetch the target user's résumé (decision #7 full content access)"
+      }
+    },
     "/api/applications": {
       "get": {
         "parameters": [
@@ -1384,6 +1893,16 @@
             },
             "description": "Page of tracker rows"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -1435,6 +1954,16 @@
             },
             "description": "Server sets appliedAt, stage:0, statusLabel/statusTone via features/applied/status-map.ts"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -1443,7 +1972,7 @@
                 }
               }
             },
-            "description": "Unknown job id"
+            "description": "Unknown job id (incl. a foreign-owned one — no existence leak)"
           },
           "409": {
             "content": {
@@ -1560,6 +2089,16 @@
             },
             "description": "The updated Application"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -1568,7 +2107,7 @@
                 }
               }
             },
-            "description": "Unknown application id"
+            "description": "Unknown application id (incl. a foreign-owned one — no existence leak)"
           },
           "422": {
             "content": {
@@ -1621,6 +2160,26 @@
               }
             },
             "description": "Persisted, résumé-grounded answer set"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unknown job id (incl. a foreign-owned one — no existence leak)"
           },
           "409": {
             "content": {
@@ -1700,6 +2259,16 @@
             },
             "description": "The replaced answer set"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -1708,7 +2277,7 @@
                 }
               }
             },
-            "description": "Unknown answers id"
+            "description": "Unknown answers id (incl. a foreign-owned one — no existence leak)"
           },
           "422": {
             "content": {
@@ -1776,6 +2345,16 @@
             },
             "description": "Extracted questions + the posting URL they came from (null for the paste tier)"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -1808,6 +2387,135 @@
           }
         },
         "summary": "Extract application questions from a posting — F4 tier 1/2/3 (B7)"
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            },
+            "description": "Session cookie set"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Invalid credentials"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          }
+        },
+        "summary": "Log in with email + password"
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "responses": {
+          "204": {
+            "description": "Logged out; session cookie cleared"
+          }
+        },
+        "summary": "Log out"
+      }
+    },
+    "/api/auth/register": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            },
+            "description": "Created + session cookie set"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Email already registered"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          }
+        },
+        "summary": "Register an account (auto-login)"
+      }
+    },
+    "/api/auth/session": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            },
+            "description": "Active session"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No active session"
+          }
+        },
+        "summary": "Current session"
       }
     },
     "/api/health": {
@@ -1947,6 +2655,16 @@
             },
             "description": "Page of scored jobs + hero stats computed server-side over the full scoped set"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -1999,6 +2717,16 @@
             },
             "description": "The requested url_checks, plus worker pause state"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -2042,6 +2770,16 @@
               }
             },
             "description": "Pipeline queued"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
           },
           "409": {
             "content": {
@@ -2090,6 +2828,16 @@
             },
             "description": "The UrlCheck row"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -2098,7 +2846,7 @@
                 }
               }
             },
-            "description": "Unknown check id"
+            "description": "Unknown or foreign-owned check id"
           }
         },
         "summary": "URL-check status — poll — F7"
@@ -2119,6 +2867,16 @@
         "responses": {
           "204": {
             "description": "Deleted"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
           },
           "404": {
             "content": {
@@ -2165,6 +2923,16 @@
             },
             "description": "The frozen Job (no separate detail entity)"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -2201,6 +2969,16 @@
               }
             },
             "description": "The freshly re-scored, frozen Job"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
           },
           "404": {
             "content": {
@@ -2257,7 +3035,17 @@
                 }
               }
             },
-            "description": "The singleton profile"
+            "description": "The caller's profile"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
           },
           "404": {
             "content": {
@@ -2267,10 +3055,10 @@
                 }
               }
             },
-            "description": "Profile row missing (unseeded install)"
+            "description": "The caller has no profile row yet (PUT to onboard)"
           }
         },
-        "summary": "Operator profile — base country + relocation preference"
+        "summary": "The caller's profile — base country + relocation preference"
       },
       "put": {
         "requestBody": {
@@ -2323,9 +3111,9 @@
                 }
               }
             },
-            "description": "The updated profile"
+            "description": "The created/updated profile"
           },
-          "404": {
+          "401": {
             "content": {
               "application/json": {
                 "schema": {
@@ -2333,7 +3121,7 @@
                 }
               }
             },
-            "description": "Profile row missing"
+            "description": "No session"
           },
           "422": {
             "content": {
@@ -2346,7 +3134,7 @@
             "description": "Invalid body"
           }
         },
-        "summary": "Full-replace the operator profile"
+        "summary": "Create-or-replace the caller's profile (onboarding path)"
       }
     },
     "/api/resume": {
@@ -2361,6 +3149,16 @@
               }
             },
             "description": "Current résumé"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
           },
           "404": {
             "content": {
@@ -2418,6 +3216,16 @@
               }
             },
             "description": "Parsed résumé"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
           },
           "413": {
             "content": {
@@ -2491,6 +3299,16 @@
             },
             "description": "Run queued"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
           "409": {
             "content": {
               "application/json": {
@@ -2543,6 +3361,16 @@
             },
             "description": "JSON snapshot, or an SSE stream of progress/job/done/error (search scores top-N candidates and streams each as a `job` event — B6)"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -2551,7 +3379,7 @@
                 }
               }
             },
-            "description": "Unknown run id"
+            "description": "Unknown run id (incl. a foreign-owned one — no existence leak)"
           }
         },
         "summary": "Run status — JSON snapshot by default; SSE via Accept: text/event-stream"
@@ -2580,6 +3408,16 @@
               }
             },
             "description": "All source rows"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
           }
         },
         "summary": "Sources management: every row, both personas, disabled included, ordered by name"
@@ -2624,6 +3462,26 @@
               }
             },
             "description": "The updated Source"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Caller is not an admin"
           },
           "404": {
             "content": {
@@ -2679,6 +3537,16 @@
             },
             "description": "Tailor run queued"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -2731,6 +3599,16 @@
             },
             "description": "JSON snapshot, or an SSE stream of progress/done/error (stages analyze -> rewrite -> render -> done)"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -2739,7 +3617,7 @@
                 }
               }
             },
-            "description": "Unknown tailor run id"
+            "description": "Unknown tailor run id (incl. a foreign-owned one — no existence leak)"
           }
         },
         "summary": "Tailor status + result — JSON snapshot by default; SSE via Accept: text/event-stream — F6 (B8)"
@@ -2788,6 +3666,16 @@
             },
             "description": "TailoredResume server-rendered with only the accepted diff entries applied"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -2796,7 +3684,7 @@
                 }
               }
             },
-            "description": "Unknown tailor run id"
+            "description": "Unknown tailor run id (incl. a foreign-owned one — no existence leak)"
           },
           "409": {
             "content": {
@@ -2836,6 +3724,16 @@
             },
             "description": "Binary PDF bytes"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -2844,7 +3742,7 @@
                 }
               }
             },
-            "description": "Unknown tailor run id"
+            "description": "Unknown tailor run id (incl. a foreign-owned one — no existence leak)"
           },
           "409": {
             "content": {

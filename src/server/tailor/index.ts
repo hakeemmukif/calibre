@@ -93,13 +93,18 @@ export interface StartTailorDeps {
   llm?: LlmClient;
 }
 
-export async function startTailor(input: StartTailorInput, deps: StartTailorDeps = {}): Promise<TailoredResume> {
-  if (!(await jobsRepo.existsById(input.jobId))) throw new UnknownJobError(input.jobId);
+export async function startTailor(
+  userId: string,
+  input: StartTailorInput,
+  deps: StartTailorDeps = {},
+): Promise<TailoredResume> {
+  if (!(await jobsRepo.existsById(input.jobId, userId))) throw new UnknownJobError(input.jobId);
 
-  const resumeRow = await resumesRepo.getActive();
+  const resumeRow = await resumesRepo.getActive(userId);
   if (!resumeRow) throw new NoActiveResumeError();
 
   const inserted = await tailoredResumesRepo.insert({
+    userId,
     jobId: input.jobId,
     baseResumeId: resumeRow.id,
     diff: [],
@@ -190,14 +195,16 @@ async function runTailorJob(
 // (assemble.ts's toTailoredResume, renderTailorPdf below) — so re-finalize
 // with a different accepted set is always correct (api-contract.md §3
 // "GET .../pdf renders whatever this route LAST finalized").
-export async function finalizeTailor(id: string, acceptedIndices: number[]): Promise<TailoredResume> {
-  const row = await tailoredResumesRepo.getById(id);
+export async function finalizeTailor(id: string, userId: string, acceptedIndices: number[]): Promise<TailoredResume> {
+  const row = await tailoredResumesRepo.getById(id, userId);
   if (!row) throw new UnknownTailorIdError(id);
   if (row.status !== "completed" || !row.structured) {
     throw new RunNotReadyError(`Tailor run ${id} is not ready to finalize (status: ${row.status}).`);
   }
 
-  const baseResumeRow = await resumesRepo.getById(row.baseResumeId);
+  // row.userId is the tailored_resumes row's real owner (a DB fact, not a
+  // scaffold) — the base résumé it points to was inserted for that same user.
+  const baseResumeRow = await resumesRepo.getById(row.baseResumeId, row.userId);
   if (!baseResumeRow) {
     throw new Error(`tailored_resumes ${id}: base résumé ${row.baseResumeId} no longer exists`);
   }
@@ -209,8 +216,8 @@ export async function finalizeTailor(id: string, acceptedIndices: number[]): Pro
   return toTailoredResume(updated);
 }
 
-export async function renderTailorPdf(id: string): Promise<Buffer> {
-  const row = await tailoredResumesRepo.getById(id);
+export async function renderTailorPdf(id: string, userId: string): Promise<Buffer> {
+  const row = await tailoredResumesRepo.getById(id, userId);
   if (!row) throw new UnknownTailorIdError(id);
   if (!row.finalizedAt || row.status !== "completed" || !row.structured) {
     throw new RunNotReadyError(`Tailor run ${id} has not been finalized yet.`);
@@ -219,7 +226,7 @@ export async function renderTailorPdf(id: string): Promise<Buffer> {
     throw new Error(`tailored_resumes ${id}: finalizedAt is set but acceptedIndices is null`);
   }
 
-  const baseResumeRow = await resumesRepo.getById(row.baseResumeId);
+  const baseResumeRow = await resumesRepo.getById(row.baseResumeId, row.userId);
   if (!baseResumeRow) {
     throw new Error(`tailored_resumes ${id}: base résumé ${row.baseResumeId} no longer exists`);
   }

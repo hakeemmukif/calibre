@@ -3,6 +3,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { insertJob, insertProfile, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
 import { jobs, jobScores, profile, resumes, searchRuns, sources } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
@@ -23,6 +24,7 @@ describe("resolveIsNewCutoff", () => {
   it("returns null for persona 'pasted' without touching search_runs (spec §11.4)", async () => {
     const resume = await insertResume(state.testDb);
     await state.testDb.insert(searchRuns).values({
+      userId: BOOTSTRAP_ADMIN_ID,
       resumeId: resume.id,
       personas: ["remote"],
       status: "completed",
@@ -30,9 +32,9 @@ describe("resolveIsNewCutoff", () => {
       finishedAt: new Date(),
     });
 
-    expect(await resolveIsNewCutoff("pasted")).toBeNull();
+    expect(await resolveIsNewCutoff(BOOTSTRAP_ADMIN_ID, "pasted")).toBeNull();
     // Existing scan personas are untouched by the pasted short-circuit.
-    expect(await resolveIsNewCutoff("remote")).not.toBeNull();
+    expect(await resolveIsNewCutoff(BOOTSTRAP_ADMIN_ID, "remote")).not.toBeNull();
   });
 });
 
@@ -71,11 +73,11 @@ describe("listJobsFeed — Pasted scope eligibility predicate skip (spec §2.12)
     });
     await insertJobScore(state.testDb, abroadPasted.id, resume.id);
 
-    const remoteScope = await listJobsFeed({ persona: "remote" });
+    const remoteScope = await listJobsFeed({ persona: "remote" }, BOOTSTRAP_ADMIN_ID);
     expect(remoteScope.items).toHaveLength(0);
     expect(remoteScope.stats.excluded).toBe(1);
 
-    const pastedScope = await listJobsFeed({ persona: "pasted" });
+    const pastedScope = await listJobsFeed({ persona: "pasted" }, BOOTSTRAP_ADMIN_ID);
     expect(pastedScope.items).toHaveLength(1);
     expect(pastedScope.items[0].id).toBe(abroadPasted.id);
     expect(pastedScope.stats.excluded).toBe(0);

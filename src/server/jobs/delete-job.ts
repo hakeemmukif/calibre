@@ -33,8 +33,8 @@ export class ApplicationExistsError extends Error {
   }
 }
 
-export async function deletePastedJob(jobId: string): Promise<void> {
-  const row = await jobsRepo.getRowWithSourceById(jobId);
+export async function deletePastedJob(jobId: string, userId: string): Promise<void> {
+  const row = await jobsRepo.getRowWithSourceById(jobId, userId);
   if (!row) throw new UnknownJobError(jobId);
   if (row.job.persona !== "pasted") throw new NotDeletableError(jobId);
 

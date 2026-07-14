@@ -4,6 +4,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z, ZodError } from "zod";
 import { isUuid } from "@/server/http/params";
+import { UnauthorizedError } from "@/server/auth/errors";
+import { requireUser } from "@/server/auth/session";
 import {
   InvalidDiffIndexError,
   RunNotReadyError,
@@ -34,10 +36,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   }
 
   try {
+    const session = await requireUser();
     const body = RequestBody.parse(json);
-    const result = await finalizeTailor(id, body.acceptedIndices);
+    const result = await finalizeTailor(id, session.id, body.acceptedIndices);
     return NextResponse.json(result, { status: 200 });
   } catch (err) {
+    if (err instanceof UnauthorizedError) return errorResponse(401, "UNAUTHORIZED", err.message);
     if (err instanceof ZodError) {
       return errorResponse(422, "VALIDATION_ERROR", "Invalid finalize request.", err.issues);
     }
