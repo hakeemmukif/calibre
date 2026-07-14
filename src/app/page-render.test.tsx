@@ -22,42 +22,42 @@ async function renders(importPage: () => Promise<{ default: React.ComponentType 
 
 describe("app page render smoke", () => {
   it("/resume renders its initial (loading) state without throwing", async () => {
-    const html = await renders(() => import("./resume/page"));
+    const html = await renders(() => import("./(app)/resume/page"));
     expect(typeof html).toBe("string");
   });
 
   it("/feed renders its initial (loading) state without throwing", async () => {
-    const html = await renders(() => import("./feed/page"));
+    const html = await renders(() => import("./(app)/feed/page"));
     expect(html).toContain("Remote · global");
   });
 
   it("/jobs/[id] renders its initial (loading) state without throwing", async () => {
-    const html = await renders(() => import("./jobs/[id]/page"));
+    const html = await renders(() => import("./(app)/jobs/[id]/page"));
     expect(typeof html).toBe("string");
   });
 
   it("/jobs/[id]/questions renders its initial (loading) state without throwing", async () => {
-    const html = await renders(() => import("./jobs/[id]/questions/page"));
+    const html = await renders(() => import("./(app)/jobs/[id]/questions/page"));
     expect(typeof html).toBe("string");
   });
 
   it("/jobs/[id]/tailor renders its initial (loading) state without throwing", async () => {
-    const html = await renders(() => import("./jobs/[id]/tailor/page"));
+    const html = await renders(() => import("./(app)/jobs/[id]/tailor/page"));
     expect(typeof html).toBe("string");
   });
 
   it("/tracker renders its initial (loading) state without throwing", async () => {
-    const html = await renders(() => import("./tracker/page"));
+    const html = await renders(() => import("./(app)/tracker/page"));
     expect(html).toContain("Application tracker");
   });
 
   it("/sources renders its initial (loading) state without throwing", async () => {
-    const html = await renders(() => import("./sources/page"));
+    const html = await renders(() => import("./(app)/sources/page"));
     expect(html).toContain("Sources");
   });
 
   it("/profile renders its initial (loading) state without throwing", async () => {
-    const html = await renders(() => import("./profile/page"));
+    const html = await renders(() => import("./(app)/profile/page"));
     expect(html).toContain("Profile &amp; targets"); // renderToStaticMarkup escapes the ampersand
   });
 });

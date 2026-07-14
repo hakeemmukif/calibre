@@ -3,6 +3,7 @@ import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { SidebarNav, Avatar, type NavItem } from "@/caliber-ui/components";
 import { CheckDock } from "@/caliber-ui/compositions/Shell/CheckDock";
+import type { AuthUser } from "@/types";
 
 // Full design-canonical sidebar — prototype parity (labels + icons + grouping).
 // Only the ids in ENABLED navigate; the rest stay here on purpose so the design
@@ -87,7 +88,9 @@ function ProfileChip() {
 
 // AppShell — mounts the design-system SidebarNav around every routed page and
 // drives it from the router (active tab from pathname, navigation via push).
-export function AppShell({ children }: { children: React.ReactNode }) {
+// `user` is unused for now (ProfileChip/logout wiring lands in Step 4 Task 4);
+// accepting it here lets the (app) layout pass the session without a rewrite later.
+export function AppShell({ children, user: _user }: { children: React.ReactNode; user?: AuthUser }) {
   const pathname = usePathname();
   const router = useRouter();
   return (

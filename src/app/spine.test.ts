@@ -54,7 +54,7 @@ const pdf = vi.hoisted(() => ({ htmlToPdf: vi.fn(async (_html: string) => Buffer
 vi.mock("@/lib/pdf", () => ({ htmlToPdf: pdf.htmlToPdf }));
 
 // One posting per persona so the dual-persona upload-triggered search
-// (features/resume + features/search wiring, src/app/resume/page.tsx) is
+// (features/resume + features/search wiring, src/app/(app)/resume/page.tsx) is
 // exercised for both — same title so roleFuzzyMatch's ≥2-shared/Jaccard≥0.6
 // rule passes against the résumé's "Senior Backend Engineer" + "Payments"
 // skill for both listings.
