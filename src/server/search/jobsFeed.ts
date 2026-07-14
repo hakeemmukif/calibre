@@ -3,6 +3,7 @@
 // the `{items, nextCursor, stats}` response shape. Lives in server/search
 // (not features/feed, which must stay pure/no-db) because it touches the DB.
 import { assembleJob } from "@/features/feed/assemble";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 import type { JobsQuery } from "@/server/persistence/repos/jobs";
 import { jobsRepo } from "@/server/persistence/repos/jobs";
 import { profileRepo } from "@/server/persistence/repos/profile";
@@ -39,7 +40,9 @@ const HIDDEN_TIERS: EligibilityTier[] = EligibilityTier.options.filter((t) => !S
 export async function listJobsFeed(
   query: FeedQuery,
 ): Promise<{ items: Job[]; nextCursor: string | null; stats: SummaryStripStats }> {
-  const profile = await profileRepo.get(); // the predicate needs it — fail loud when unseeded
+  // TEMP read-scaffold (Task 3 threads the caller's session.userId here):
+  // this route doesn't call requireUser() yet.
+  const profile = await profileRepo.get(BOOTSTRAP_ADMIN_ID); // the predicate needs it — fail loud when unseeded
   const cutoff = await resolveIsNewCutoff(query.persona);
   // The operator pasted these deliberately — hiding a pasted `abroad` job
   // from its own scope would be absurd (spec §2.12). The tag still warns.

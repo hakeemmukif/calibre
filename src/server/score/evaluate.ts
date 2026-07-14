@@ -3,6 +3,7 @@
 // runs during a search, just for a single already-persisted job outside a run.
 import { getLlm, type LlmClient } from "@/lib/llm/client";
 import { assembleJob } from "@/features/feed/assemble";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 import { jobsRepo } from "@/server/persistence/repos/jobs";
 import { profileRepo } from "@/server/persistence/repos/profile";
 import { resumesRepo } from "@/server/persistence/repos/resumes";
@@ -24,7 +25,9 @@ export async function evaluateJob(jobId: string, deps: { llm?: LlmClient } = {})
   if (!found) throw new UnknownJobError(jobId);
   const resume = await resumesRepo.getActive();
   if (!resume) throw new NoActiveResumeError();
-  const profile = await profileRepo.get();
+  // TEMP read-scaffold (a later task threads the caller's session.userId
+  // here): POST /api/jobs/:id/evaluate doesn't call requireUser() yet.
+  const profile = await profileRepo.get(BOOTSTRAP_ADMIN_ID);
   const job = await ensureDescription(found.job, found.source).catch((err) => {
     console.error(`evaluateJob ${jobId}: detail fetch failed:`, err);
     return found.job;

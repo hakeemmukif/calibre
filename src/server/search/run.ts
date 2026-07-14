@@ -101,7 +101,9 @@ export async function startSearch(input: StartSearchInput, deps: StartSearchDeps
 
     // Eligibility needs the operator profile (spec §5) — a missing row aborts
     // the run before any fetch (ProfileMissingError, fail loud).
-    const profile = await profileRepo.get();
+    // TEMP read-scaffold (Task 4 threads the caller's session.userId here):
+    // this route doesn't call requireUser() yet.
+    const profile = await profileRepo.get(BOOTSTRAP_ADMIN_ID);
 
     const enabledSources = await sourcesRepo.listEnabledByPersona(input.persona);
     let scopedSources = enabledSources;

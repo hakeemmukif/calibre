@@ -92,7 +92,7 @@ export function createUrlCheckWorker(overrides: UrlCheckWorkerDeps = {}) {
         await urlChecksRepo.fail(row.id, { code: "INTERNAL", message: "no active résumé at claim time", needsText: false }, attempt);
         return;
       }
-      const profile = await profileRepo.get();
+      const profile = await profileRepo.get(row.userId);
       const deps = overrides.pipelineDeps ?? { fetchPageText, searchForPosting, fetchGhostWebEvidence, scoreJob };
       const llm = overrides.llm ?? getLlm();
       // Resolved at call time, not construction time: worker.ts <-> run.ts is a

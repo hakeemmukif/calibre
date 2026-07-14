@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { desc, eq } from "drizzle-orm";
 import { getDb } from "../persistence/db";
 import { jobs, jobScores, sources } from "../persistence/schema";
+import { BOOTSTRAP_ADMIN_ID } from "../auth/ids";
 import { profileRepo } from "../persistence/repos/profile";
 import { parseSourceGeo } from "../search/geo";
 import { resolveEligibility } from "./eligibility";
@@ -14,7 +15,10 @@ import type { JdFacts } from "./jdFacts";
 
 export async function recomputeEligibility() {
   const db = getDb();
-  const prof = await profileRepo.get();
+  // TEMP read-scaffold: this CLI script (`npm run eligibility:recompute`)
+  // has no session and recomputes across ALL jobs regardless of owner —
+  // scoped per-user profile lookup lands with the jobs read-scoping task.
+  const prof = await profileRepo.get(BOOTSTRAP_ADMIN_ID);
   const rows = await db
     .select({ job: jobs, source: sources })
     .from(jobs)
