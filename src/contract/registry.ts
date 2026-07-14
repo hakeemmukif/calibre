@@ -649,6 +649,79 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "get",
+  path: "/api/admin/users/{id}/resume",
+  summary: "Admin: fetch the target user's résumé (decision #7 full content access)",
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: { description: "Target user's current résumé", content: { "application/json": { schema: Resume } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    403: { description: "Caller is not an admin", content: { "application/json": { schema: ErrorEnvelope } } },
+    404: { description: "Unknown/non-uuid user id, or the target has no résumé", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/admin/users/{id}/jobs",
+  summary: "Admin: the target user's scored feed (decision #7 full content access)",
+  request: {
+    params: z.object({ id: z.string() }),
+    query: z.object({
+      persona: Persona.optional(),
+      tier: z.array(LegitimacyTier).optional().describe("repeatable"),
+      minScore: z.number().min(0).max(5).optional(),
+      isNew: z.boolean().optional(),
+      q: z.string().optional(),
+      cursor: z.string().optional(),
+      limit: z.number().int().min(1).max(100).optional().describe("default 25"),
+    }),
+  },
+  responses: {
+    200: {
+      description:
+        "Page of the target user's scored jobs + hero stats; an empty feed (not an error) when the target has no profile yet",
+      content: {
+        "application/json": {
+          schema: z.object({ items: z.array(Job), nextCursor: z.string().nullable(), stats: SummaryStripStats }),
+        },
+      },
+    },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    403: { description: "Caller is not an admin", content: { "application/json": { schema: ErrorEnvelope } } },
+    404: { description: "Non-uuid user id", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/admin/users/{id}/applications",
+  summary: "Admin: the target user's tracker rows (decision #7 full content access)",
+  request: {
+    params: z.object({ id: z.string() }),
+    query: z.object({
+      stage: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]).optional(),
+      statusTone: z.enum(["good", "verified", "neutral"]).optional(),
+      cursor: z.string().optional(),
+      limit: z.number().int().min(1).max(100).optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Page of the target user's tracker rows",
+      content: {
+        "application/json": {
+          schema: z.object({ items: z.array(Application), nextCursor: z.string().nullable() }),
+        },
+      },
+    },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    403: { description: "Caller is not an admin", content: { "application/json": { schema: ErrorEnvelope } } },
+    404: { description: "Non-uuid user id", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
   method: "post",
   path: "/api/auth/register",
   summary: "Register an account (auto-login)",
