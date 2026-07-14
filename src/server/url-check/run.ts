@@ -5,7 +5,6 @@
 // fire-and-forget split, but there's no fan-out and no in-memory registry:
 // one job, one `url_checks` row, polled via getUrlCheck instead of SSE.
 import type { LlmClient } from "@/lib/llm/client";
-import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 import { jobsRepo } from "@/server/persistence/repos/jobs";
 import type { ProfileRow } from "@/server/persistence/repos/profile";
 import { resumesRepo, type ResumeRow } from "@/server/persistence/repos/resumes";
@@ -93,18 +92,18 @@ export function assemble(row: UrlCheckRow): UrlCheck {
   });
 }
 
-export async function getUrlCheck(id: string): Promise<UrlCheck | null> {
-  const row = await urlChecksRepo.getById(id);
+export async function getUrlCheck(id: string, userId: string): Promise<UrlCheck | null> {
+  const row = await urlChecksRepo.getById(id, userId);
   return row ? assemble(row) : null;
 }
 
-export async function listActiveChecks(): Promise<UrlChecksSnapshot> {
-  const rows = await urlChecksRepo.listActive();
+export async function listActiveChecks(userId: string): Promise<UrlChecksSnapshot> {
+  const rows = await urlChecksRepo.listActive(userId);
   return { checks: rows.map(assemble), paused: urlCheckWorker.isPaused() };
 }
 
-export async function listChecksByIds(ids: string[]): Promise<UrlChecksSnapshot> {
-  const rows = await urlChecksRepo.listByIds(ids);
+export async function listChecksByIds(ids: string[], userId: string): Promise<UrlChecksSnapshot> {
+  const rows = await urlChecksRepo.listByIds(ids, userId);
   return { checks: rows.map(assemble), paused: urlCheckWorker.isPaused() };
 }
 
@@ -148,9 +147,15 @@ export async function runPipeline(
     profile: ProfileRow;
     deps: Required<Omit<UrlCheckDeps, "llm">>;
     attempt: number;
+    // The url_checks row's own userId (the owning row) — never a session,
+    // never BOOTSTRAP_ADMIN_ID: this async pipeline has no session, and the
+    // job it persists below must be attributed to whoever actually queued
+    // this check, not to admin (else that user's own future dedupe lookups,
+    // now scoped by userId, can never find the job they just created).
+    userId: string;
   },
 ): Promise<void> {
-  const { llm, resumeRow, profile, deps, attempt } = ctx;
+  const { llm, resumeRow, profile, deps, attempt, userId } = ctx;
   try {
     const pasteMode = req.text !== undefined;
     let jdText: string;
@@ -237,7 +242,7 @@ export async function runPipeline(
     });
 
     const job = await jobsRepo.upsertByDedupeKey({
-      userId: BOOTSTRAP_ADMIN_ID,
+      userId,
       dedupeKey: dedupeKeyFor(req.url),
       url: req.url,
       applyUrl: req.url,
@@ -300,13 +305,14 @@ export async function runPipeline(
   }
 }
 
-export async function startUrlCheck(req: UrlCheckRequest): Promise<{ check: UrlCheck; started: boolean }> {
+export async function startUrlCheck(
+  req: UrlCheckRequest,
+  userId: string,
+): Promise<{ check: UrlCheck; started: boolean }> {
   // Admission order is load-bearing (spec §6): résumé check runs before any
   // URL/text work, so a no-résumé request never reaches an LLM call or a
   // url_checks write — see run.test.ts's zero-LLM-call assertion.
-  // TEMP read-scaffold (Task 5 threads the caller's session.userId here):
-  // POST /api/jobs/check doesn't call requireUser() yet.
-  const resumeRow = await resumesRepo.getActive(BOOTSTRAP_ADMIN_ID);
+  const resumeRow = await resumesRepo.getActive(userId);
   if (!resumeRow) throw new NoActiveResumeError();
 
   if (req.text !== undefined && req.text.length > MAX_TEXT_CHARS) {
@@ -314,9 +320,7 @@ export async function startUrlCheck(req: UrlCheckRequest): Promise<{ check: UrlC
   }
 
   const dedupeKey = dedupeKeyFor(req.url);
-  // TEMP read-scaffold (Task 5 threads the caller's session.userId here):
-  // POST /api/jobs/check doesn't call requireUser() yet.
-  const existingJob = await jobsRepo.getByDedupeKey(dedupeKey, BOOTSTRAP_ADMIN_ID);
+  const existingJob = await jobsRepo.getByDedupeKey(dedupeKey, userId);
 
   // A dedupe hit only short-circuits to alreadyKnown when it's actually
   // scored (final review fix wave FIX 1a). An unscored hit is a
@@ -324,9 +328,9 @@ export async function startUrlCheck(req: UrlCheckRequest): Promise<{ check: UrlC
   // succeeded but scoreJob then threw) — falling through to the normal
   // pipeline below self-heals it: the persist stage's upsert hits the same
   // dedupe key and updates the row, then scoring completes it.
-  if (existingJob && (await jobsRepo.hasAnyScore(existingJob.id, BOOTSTRAP_ADMIN_ID))) {
+  if (existingJob && (await jobsRepo.hasAnyScore(existingJob.id, userId))) {
     const row = await urlChecksRepo.insert({
-      userId: BOOTSTRAP_ADMIN_ID,
+      userId,
       id: crypto.randomUUID(),
       url: req.url,
       dedupeKey,
@@ -344,7 +348,7 @@ export async function startUrlCheck(req: UrlCheckRequest): Promise<{ check: UrlC
   }
 
   const row = await urlChecksRepo.insert({
-    userId: BOOTSTRAP_ADMIN_ID,
+    userId,
     id: crypto.randomUUID(),
     url: req.url,
     dedupeKey,
