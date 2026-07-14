@@ -3,6 +3,8 @@
 // access lives in server/score/evaluate.ts; mirrors src/app/api/jobs/[id]/route.ts's
 // UuidParam guard (malformed id -> 404, never a bare 500 from a bad `uuid` cast).
 import { NextRequest, NextResponse } from "next/server";
+import { UnauthorizedError } from "@/server/auth/errors";
+import { requireUser } from "@/server/auth/session";
 import { isUuid } from "@/server/http/params";
 import { EmptyJobDescriptionError } from "@/server/score";
 import { evaluateJob, UnknownJobError } from "@/server/score/evaluate";
@@ -21,9 +23,11 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
   }
 
   try {
-    const job = await evaluateJob(id);
+    const session = await requireUser();
+    const job = await evaluateJob(id, session.id);
     return NextResponse.json(job, { status: 200 });
   } catch (err) {
+    if (err instanceof UnauthorizedError) return errorResponse(401, "UNAUTHORIZED", err.message);
     if (err instanceof UnknownJobError) {
       return errorResponse(404, "NOT_FOUND", err.message);
     }
