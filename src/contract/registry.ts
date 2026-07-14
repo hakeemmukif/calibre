@@ -606,6 +606,7 @@ registry.registerPath({
       description: "All source rows",
       content: { "application/json": { schema: z.object({ items: z.array(Source) }) } },
     },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
 
@@ -625,6 +626,7 @@ registry.registerPath({
   },
   responses: {
     200: { description: "The updated Source", content: { "application/json": { schema: Source } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
     404: { description: "Unknown source id", content: { "application/json": { schema: ErrorEnvelope } } },
     422: { description: "Invalid body (enabled must be a boolean)", content: { "application/json": { schema: ErrorEnvelope } } },
   },

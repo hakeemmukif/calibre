@@ -2934,6 +2934,16 @@
               }
             },
             "description": "All source rows"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
           }
         },
         "summary": "Sources management: every row, both personas, disabled included, ordered by name"
@@ -2978,6 +2988,16 @@
               }
             },
             "description": "The updated Source"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
           },
           "404": {
             "content": {
