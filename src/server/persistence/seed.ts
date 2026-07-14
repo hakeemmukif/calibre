@@ -58,6 +58,7 @@ export async function seedSources(db: Db) {
 // 2026-07-12-remote-local-eligibility-design.md §4); runtime never defaults.
 export const profileSeed: typeof profile.$inferInsert = {
   id: "default",
+  userId: BOOTSTRAP_ADMIN_ID,
   baseCountry: "MY",
   relocation: "stay",
 };
@@ -89,8 +90,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   }
   seedSources(db)
     .then(async (rows) => {
-      const prof = await seedProfile(db);
       const admin = await seedAdmin(db, { email, password });
+      const prof = await seedProfile(db);
       console.log(`Seeded ${rows.length} source(s), ${prof.length} profile row(s), ${admin.length} admin row(s)`);
       // The postgres-js pool otherwise keeps the tsx process alive forever.
       process.exit(0);
