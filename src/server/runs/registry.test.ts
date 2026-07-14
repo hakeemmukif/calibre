@@ -27,18 +27,28 @@ describe("run registry", () => {
   });
 
   it("tracks one active run id per persona and releases it on completion", () => {
-    create("search", "run-1", "remote");
-    expect(getActiveRunForPersona("remote")).toBe("run-1");
+    create("search", "run-1", "user-a", "remote");
+    expect(getActiveRunForPersona("user-a", "remote")).toBe("run-1");
 
-    release("run-1", "remote");
-    expect(getActiveRunForPersona("remote")).toBeUndefined();
+    release("run-1", "user-a", "remote");
+    expect(getActiveRunForPersona("user-a", "remote")).toBeUndefined();
   });
 
   it("release is a no-op when the given id no longer owns the persona slot (superseded)", () => {
-    create("search", "run-1", "remote");
-    create("search", "run-2", "remote"); // run-2 supersedes run-1's slot
-    release("run-1", "remote");
-    expect(getActiveRunForPersona("remote")).toBe("run-2");
+    create("search", "run-1", "user-a", "remote");
+    create("search", "run-2", "user-a", "remote"); // run-2 supersedes run-1's slot
+    release("run-1", "user-a", "remote");
+    expect(getActiveRunForPersona("user-a", "remote")).toBe("run-2");
+  });
+
+  it("the per-persona mutex is per-user — user A's active run never blocks user B (Fable design review)", () => {
+    create("search", "run-1", "user-a", "remote");
+    expect(getActiveRunForPersona("user-a", "remote")).toBe("run-1");
+    expect(getActiveRunForPersona("user-b", "remote")).toBeUndefined();
+
+    create("search", "run-2", "user-b", "remote");
+    expect(getActiveRunForPersona("user-a", "remote")).toBe("run-1");
+    expect(getActiveRunForPersona("user-b", "remote")).toBe("run-2");
   });
 
   it("emit() delivers events in order with monotonically increasing ids, and marks terminal state", () => {
@@ -83,8 +93,8 @@ describe("run registry", () => {
 
     await markStaleRunningOnBoot();
 
-    expect((await repo.getById(running.id))?.status).toBe("failed");
-    expect((await repo.getById(running.id))?.error).toMatch(/stale/i);
-    expect((await repo.getById(completed.id))?.status).toBe("completed");
+    expect((await repo.getById(running.id, BOOTSTRAP_ADMIN_ID))?.status).toBe("failed");
+    expect((await repo.getById(running.id, BOOTSTRAP_ADMIN_ID))?.error).toMatch(/stale/i);
+    expect((await repo.getById(completed.id, BOOTSTRAP_ADMIN_ID))?.status).toBe("completed");
   });
 });
