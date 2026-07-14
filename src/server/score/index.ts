@@ -18,6 +18,7 @@ import { scoreMatch } from "./evalScores";
 import { extractJdFacts, type JdFacts } from "./jdFacts";
 import { legitimacyTone, resolveLegitimacyTier } from "./legitimacy";
 import { probeLivenessDeep, type LivenessResult } from "./liveness";
+import { resolveTzBand } from "./tzBand";
 
 // Thrown when a job has no description to extract facts from — the caller
 // (server/search/run.ts) is expected to SKIP scoring and record the job as
@@ -63,7 +64,13 @@ export async function scoreJob(args: {
     location: job.location || undefined,
     jdFacts: jdFactsResult.data,
   });
-  await jobsRepo.updateEligibility(job.id, eligibility.tier, eligibility.evidence);
+  const tz = resolveTzBand({ tzRequirement: jdFactsResult.data.tzRequirement, location: job.location || undefined });
+  await jobsRepo.updateResolvedGeo(job.id, {
+    eligibility: eligibility.tier,
+    eligibilityEvidence: eligibility.evidence,
+    tzBand: tz?.band ?? null,
+    hiringStructure: jdFactsResult.data.hiringStructure ?? null,
+  });
 
   const cheap = await scoreMatch(llm, { jdFacts: jdFactsResult.data, resume: resume.structured });
 

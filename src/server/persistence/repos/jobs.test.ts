@@ -500,15 +500,15 @@ describe("jobsRepo", () => {
     expect(await repo.getRowWithSourceById(crypto.randomUUID())).toBeUndefined();
   });
 
-  it("updateEligibility overwrites tier + evidence and throws on unknown id", async () => {
+  it("upsertByDedupeKey leaves tzBand/hiringStructure NULL when the row omits them (no facts stated)", async () => {
     const db = await createTestDb();
     const repo = createJobsRepo(db);
     const source = await insertSource(db);
     const job = await repo.upsertByDedupeKey({
-      dedupeKey: "dk-eligibility",
-      url: "https://example.com/eligibility",
+      dedupeKey: "dk-geo-null",
+      url: "https://example.com/geo-null",
       sourceId: source.id,
-      title: "Eligibility Job",
+      title: "No Facts Job",
       company: "Acme",
       location: "Remote",
       persona: "remote",
@@ -518,12 +518,43 @@ describe("jobsRepo", () => {
       raw: {},
     });
 
-    await repo.updateEligibility(job.id, "eligible", "JD: hires in APAC");
+    expect(job.tzBand).toBeNull();
+    expect(job.hiringStructure).toBeNull();
+  });
+
+  it("updateResolvedGeo overwrites eligibility/evidence/tzBand/hiringStructure and throws on unknown id", async () => {
+    const db = await createTestDb();
+    const repo = createJobsRepo(db);
+    const source = await insertSource(db);
+    const job = await repo.upsertByDedupeKey({
+      dedupeKey: "dk-resolved-geo",
+      url: "https://example.com/resolved-geo",
+      sourceId: source.id,
+      title: "Resolved Geo Job",
+      company: "Acme",
+      location: "Remote",
+      persona: "remote",
+      eligibility: "unknown",
+      eligibilityEvidence: "test fixture",
+      aliases: [],
+      raw: {},
+    });
+
+    await repo.updateResolvedGeo(job.id, {
+      eligibility: "eligible",
+      eligibilityEvidence: "JD: hires in APAC",
+      tzBand: "apac",
+      hiringStructure: "eor",
+    });
     const after = await repo.getRowWithSourceById(job.id);
     expect(after?.job.eligibility).toBe("eligible");
     expect(after?.job.eligibilityEvidence).toBe("JD: hires in APAC");
+    expect(after?.job.tzBand).toBe("apac");
+    expect(after?.job.hiringStructure).toBe("eor");
 
-    await expect(repo.updateEligibility(crypto.randomUUID(), "unknown", "x")).rejects.toThrow(/no job with id/);
+    await expect(
+      repo.updateResolvedGeo(crypto.randomUUID(), { eligibility: "unknown", eligibilityEvidence: "x", tzBand: null, hiringStructure: null }),
+    ).rejects.toThrow(/no job with id/);
   });
 
   it("filters by eligibility[]", async () => {

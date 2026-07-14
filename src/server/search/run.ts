@@ -24,6 +24,7 @@ import { connectorForSource } from "./connectors";
 import { companySlugFor, dedupeKeyFor, resolveCanonicalCollision, roleTokensHash, secondaryKey } from "./dedupe";
 import { parseSourceGeo } from "./geo";
 import { resolveEligibility } from "@/server/score/eligibility";
+import { hiddenBandsFor, resolveTzBand } from "@/server/score/tzBand";
 import { ensureDescription } from "./describe";
 import { resolveIsNewCutoff } from "./jobsFeed";
 import { deriveRoleTargets, roleFuzzyMatch } from "./roleMatch";
@@ -354,6 +355,10 @@ async function upsertMatchedPostings(
       persona,
       eligibility: tier,
       eligibilityEvidence: evidence,
+      // Scan has no JD text — no stated structure yet (the Layer-C refresh
+      // fills it once the job is scored); tzBand is location-derived only.
+      tzBand: resolveTzBand({ location: canonical.location })?.band ?? null,
+      hiringStructure: null,
       aliases: aliasUrls,
       raw: canonical,
     });
@@ -383,8 +388,17 @@ async function scoreTopCandidates(
   deps: StartSearchDeps,
 ): Promise<{ scored: number; worth: number; ghosts: number; unscored: number; capStopped: boolean }> {
   // relocation "stay": provably-abroad postings don't consume scoring slots
-  // (spec §5 scan hardening — persisted, just not scored).
-  const pool = profile.relocation === "stay" ? candidates.filter((c) => c.job.eligibility !== "abroad") : candidates;
+  // (spec §5 scan hardening — persisted, just not scored). Symmetric with
+  // spec 2026-07-14 §6: a posting whose location-derived tzBand falls
+  // outside the schedule-flex dial is hidden the same way — persisted,
+  // unscored. tzBand is null unless the location string matched a token
+  // (never gated — resolveTzBand's null propagates through here).
+  const hiddenBands = hiddenBandsFor(profile.scheduleFlex);
+  const pool = candidates.filter((c) => {
+    if (profile.relocation === "stay" && c.job.eligibility === "abroad") return false;
+    if (c.job.tzBand && hiddenBands.includes(c.job.tzBand)) return false;
+    return true;
+  });
   const topCandidates = pool.slice(0, TOP_N_CANDIDATES);
   let scored = 0;
   let worth = 0;

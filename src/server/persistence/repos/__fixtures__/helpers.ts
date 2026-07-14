@@ -74,6 +74,8 @@ export async function insertJob(db: Db, sourceId: string, overrides: Partial<typ
       persona: "remote",
       eligibility: "unknown",
       eligibilityEvidence: "test fixture",
+      tzBand: null,
+      hiringStructure: null,
       aliases: [],
       raw: {},
       ...overrides,

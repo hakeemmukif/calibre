@@ -17,6 +17,7 @@ import { fetchGhostWebEvidence } from "@/server/score/ghost-web";
 import { extractJdFactsForGate, type JdFacts } from "@/server/score/jdFacts";
 import type { LivenessResult } from "@/server/score/liveness";
 import { scoreJob } from "@/server/score";
+import { resolveTzBand } from "@/server/score/tzBand";
 import { UrlCheck, type ErrorCode, type UrlCheckRequest, type UrlChecksSnapshot } from "@/types";
 import { fetchPageText, MAX_TEXT_CHARS } from "./fetch-page";
 import { searchForPosting } from "./search-tier";
@@ -250,6 +251,8 @@ export async function runPipeline(
       persona: "pasted",
       eligibility: eligibility.tier,
       eligibilityEvidence: eligibility.evidence,
+      tzBand: resolveTzBand({ tzRequirement: facts.tzRequirement, location: facts.location })?.band ?? null,
+      hiringStructure: facts.hiringStructure ?? null,
       aliases: [],
       raw: { jdFacts: facts, acquisition: tier1Live ? "fetch" : pasteMode ? "paste" : "search" },
     });

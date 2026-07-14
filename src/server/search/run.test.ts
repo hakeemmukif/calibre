@@ -4,7 +4,7 @@ import type { LlmClient } from "@/lib/llm/client";
 import { makeMockLlm } from "@/lib/llm/mock";
 import { insertProfile, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
 import { createSearchRunsRepo, type SearchRunRow } from "@/server/persistence/repos/searchRuns";
-import { jobs, jobScores, resumes, searchRuns, sources } from "@/server/persistence/schema";
+import { jobs, jobScores, profile, resumes, searchRuns, sources } from "@/server/persistence/schema";
 import type { SourceRow } from "@/server/persistence/repos/sources";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import type { RawPosting, SourceConnector } from "./connector";
@@ -554,5 +554,45 @@ describe("startSearch", () => {
     expect(finalRow.stats.ghosts).toBe(0);
     expect(finalRow.stats.unscored).toBe(1);
     expect(finalRow.stats.capStopped).toBe(false);
+  });
+
+  it("scan-slot gate (spec 2026-07-14 §6): an americas-band posting under a base-hours dial is persisted but not handed to scoreJob", async () => {
+    const runsRepo = createSearchRunsRepo(state.testDb);
+    await insertResume(state.testDb, { ...resumeFixture, isActive: true });
+    const good = await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
+
+    // relocation "open" isolates this test from the pre-existing abroad-under-
+    // stay gate — the only exclusion mechanism in play here is the new
+    // tzBand/scheduleFlex gate.
+    await state.testDb.update(profile).set({ relocation: "open", scheduleFlex: "base-hours" }).where(eq(profile.id, "default"));
+
+    try {
+      const posting: RawPosting = {
+        sourceId: good.id,
+        url: "https://example.com/jobs/tz-gate",
+        title: "Data Engineer",
+        company: "Acme",
+        location: "Remote (PST hours)",
+        description: "Build data pipelines with SQL.",
+      };
+
+      const run = await startSearch(
+        { persona: "remote" },
+        { llm: testLlm, connectorForSource: (source) => stubConnector(source, [posting]) },
+      );
+      const finalRow = await waitForTerminal(runsRepo, run.id);
+
+      expect(finalRow.status).toBe("completed");
+      expect(finalRow.stats.matched).toBe(1);
+      expect(finalRow.stats.scored).toBe(0);
+
+      const persisted = await findJobByDedupeKey(state.testDb, "example.com/jobs/tz-gate");
+      expect(persisted?.tzBand).toBe("americas");
+
+      const scores = await state.testDb.select().from(jobScores).where(eq(jobScores.jobId, persisted!.id));
+      expect(scores).toHaveLength(0);
+    } finally {
+      await state.testDb.update(profile).set({ relocation: "stay", scheduleFlex: "any-hours" }).where(eq(profile.id, "default"));
+    }
   });
 });

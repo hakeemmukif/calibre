@@ -203,16 +203,30 @@ export function createJobsRepo(db: Db) {
       return rows.length;
     },
 
-    // Layer-C refresh (spec §5 write points): the scoring path re-resolves
-    // with JD facts and overwrites the ingest-time stamp. Unknown id throws —
-    // a refresh for a vanished row is a bug, not a no-op.
-    async updateEligibility(id: string, tier: JobRow["eligibility"], evidence: string): Promise<void> {
+    // Layer-C refresh (spec §5 write points, spec 2026-07-14 §6): the scoring
+    // path re-resolves with JD facts and overwrites the ingest-time stamp —
+    // eligibility plus the tz_band/hiring_structure stated-fact columns.
+    // Unknown id throws — a refresh for a vanished row is a bug, not a no-op.
+    async updateResolvedGeo(
+      id: string,
+      facts: {
+        eligibility: JobRow["eligibility"];
+        eligibilityEvidence: string;
+        tzBand: JobRow["tzBand"];
+        hiringStructure: JobRow["hiringStructure"];
+      },
+    ): Promise<void> {
       const [row] = await db
         .update(jobs)
-        .set({ eligibility: tier, eligibilityEvidence: evidence })
+        .set({
+          eligibility: facts.eligibility,
+          eligibilityEvidence: facts.eligibilityEvidence,
+          tzBand: facts.tzBand,
+          hiringStructure: facts.hiringStructure,
+        })
         .where(eq(jobs.id, id))
         .returning({ id: jobs.id });
-      if (!row) throw new Error(`jobsRepo.updateEligibility: no job with id "${id}"`);
+      if (!row) throw new Error(`jobsRepo.updateResolvedGeo: no job with id "${id}"`);
     },
 
     // Job+source only (no job_scores join) — Task 6's per-job evaluate
@@ -283,7 +297,7 @@ export const jobsRepo: ReturnType<typeof createJobsRepo> = {
   getById: (id) => createJobsRepo(getDb()).getById(id),
   getRowWithSourceById: (id) => createJobsRepo(getDb()).getRowWithSourceById(id),
   updateDescription: (id, description) => createJobsRepo(getDb()).updateDescription(id, description),
-  updateEligibility: (id, tier, evidence) => createJobsRepo(getDb()).updateEligibility(id, tier, evidence),
+  updateResolvedGeo: (id, facts) => createJobsRepo(getDb()).updateResolvedGeo(id, facts),
   countHiddenByEligibility: (q) => createJobsRepo(getDb()).countHiddenByEligibility(q),
   existsById: (id) => createJobsRepo(getDb()).existsById(id),
   statsForQuery: (q, sinceLastCutoff) => createJobsRepo(getDb()).statsForQuery(q, sinceLastCutoff),

@@ -21,6 +21,8 @@ function baseJoined(overrides: Partial<JobJoinScore["job"]> = {}): JobJoinScore 
     persona: "remote",
     eligibility: "unknown",
     eligibilityEvidence: "test fixture",
+    tzBand: null,
+    hiringStructure: null,
     aliases: [],
     raw: {},
     ...overrides,

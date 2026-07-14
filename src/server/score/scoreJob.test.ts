@@ -174,6 +174,33 @@ describe("scoreJob", () => {
     expect(after.eligibilityEvidence).toBe("JD: hires only in United States");
   });
 
+  it("resolves and stamps tzBand + hiringStructure from JD-stated facts alongside the eligibility refresh (Layer C, spec 2026-07-14 §6)", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id, { description: "Backend role.", location: "Remote" });
+    const resume = await insertResume(state.testDb);
+    const stated: JdFactsEmission = { ...jdFactsEmission, tzRequirement: "PST overlap", hiringStructure: "eor" };
+    const llm = makeMockLlm({ "jd-extract": stated, "match-score": cheapEval });
+
+    await scoreJob({ job, source, profile, resume, llm });
+
+    const [after] = await state.testDb.select().from(jobs).where(eq(jobs.id, job.id));
+    expect(after.tzBand).toBe("americas");
+    expect(after.hiringStructure).toBe("eor");
+  });
+
+  it("leaves tzBand/hiringStructure NULL when the JD states neither (never gated)", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id, { description: "Backend role.", location: "Remote" });
+    const resume = await insertResume(state.testDb);
+    const llm = makeMockLlm({ "jd-extract": jdFactsEmission, "match-score": cheapEval });
+
+    await scoreJob({ job, source, profile, resume, llm });
+
+    const [after] = await state.testDb.select().from(jobs).where(eq(jobs.id, job.id));
+    expect(after.tzBand).toBeNull();
+    expect(after.hiringStructure).toBeNull();
+  });
+
   it.each([null, ""])(
     "a job with description %j is skipped: no LLM call, no job_scores row, throws EmptyJobDescriptionError",
     async (description) => {

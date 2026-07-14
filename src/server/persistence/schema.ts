@@ -136,6 +136,9 @@ export const jobs = pgTable("jobs", {
   // in `raw` + job_scores.jd_facts — the tier is recomputable, pure, no LLM.
   eligibility: text("eligibility", { enum: ["anywhere", "eligible", "local", "abroad", "unknown"] }).notNull(),
   eligibilityEvidence: text("eligibility_evidence").notNull(),
+  // Spec 2026-07-14 §6: stated schedule/structure facts. NULL = nothing stated (never gated).
+  tzBand: text("tz_band", { enum: ["apac", "emea", "americas"] }),
+  hiringStructure: text("hiring_structure", { enum: ["local-entity", "eor", "contractor"] }),
   aliases: jsonb("aliases").$type<JobAlias[]>().notNull(),
   raw: jsonb("raw").$type<unknown>().notNull(),
 });
