@@ -9,6 +9,8 @@ out/
 data/uploads/
 .env
 .env.local
+.env.production
+.env.*.local
 coverage/
 test-results/
 playwright-report/

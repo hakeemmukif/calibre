@@ -1,0 +1,28 @@
+# Caddy reverse proxy for Caliber. Auto-TLS (replace the domain below).
+# ⚠️ NOT validated in the migration environment. Operator sets the real domain.
+#
+# CRITICAL: SSE-clean. GET /api/search/:id and /api/tailor/:id stream Server-Sent
+# Events; a single scoreMatch call can leave the stream silent ~30-36s. The proxy
+# must NOT buffer the response and must NOT time out below the SSE idle gap.
+
+caliber.example.com {
+	encode gzip
+
+	reverse_proxy app:3000 {
+		# Do NOT buffer — stream SSE straight through (flush each chunk).
+		flush_interval -1
+
+		# Read/write timeouts well above the SSE idle gap (~36s scoreMatch) and
+		# any keep-alive comment cadence (15s). Caddy defaults are effectively no
+		# timeout, but set explicitly so a future edit can't silently break SSE.
+		transport http {
+			read_timeout 300s
+			write_timeout 300s
+		}
+	}
+
+	# Résumé upload is multipart PDF/DOCX — allow a comfortable body size.
+	request_body {
+		max_size 15MB
+	}
+}
