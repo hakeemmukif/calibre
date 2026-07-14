@@ -5,6 +5,9 @@ import { NextRequest } from "next/server";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LlmClient } from "@/lib/llm/client";
 import { makeMockLlm } from "@/lib/llm/mock";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
+import { UnauthorizedError } from "@/server/auth/errors";
+import { users } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import type { ResumeStore } from "@/server/resume/resume-store";
 
@@ -29,6 +32,12 @@ vi.mock("@/lib/llm/client", async (importOriginal) => {
     },
   };
 });
+
+const { requireUser } = vi.hoisted(() => ({ requireUser: vi.fn() }));
+vi.mock("@/server/auth/session", async (orig) => ({
+  ...(await orig<typeof import("@/server/auth/session")>()),
+  requireUser: () => requireUser(),
+}));
 
 const { GET, POST } = await import("./route");
 
@@ -77,6 +86,8 @@ describe("/api/resume", () => {
   beforeEach(() => {
     state.llm = makeMockLlm({ "resume-extract": structuredFixture() });
     state.llmError = undefined;
+    requireUser.mockReset();
+    requireUser.mockResolvedValue({ id: BOOTSTRAP_ADMIN_ID, email: "admin@example.com", role: "admin" });
   });
 
   afterEach(async () => {
@@ -89,6 +100,51 @@ describe("/api/resume", () => {
     const res = await GET();
     expect(res.status).toBe(404);
     expect((await res.json()).error.code).toBe("NOT_FOUND");
+  });
+
+  it("GET 401s with UNAUTHORIZED when there is no session", async () => {
+    requireUser.mockRejectedValue(new UnauthorizedError());
+    const res = await GET();
+    expect(res.status).toBe(401);
+    expect((await res.json()).error.code).toBe("UNAUTHORIZED");
+  });
+
+  it("POST 401s with UNAUTHORIZED when there is no session", async () => {
+    requireUser.mockRejectedValue(new UnauthorizedError());
+    const res = await POST(jsonRequest({ text: "a".repeat(120) }));
+    expect(res.status).toBe(401);
+    expect((await res.json()).error.code).toBe("UNAUTHORIZED");
+  });
+
+  it("a second user's active résumé is invisible to the first (cross-tenant isolation)", async () => {
+    const [userB] = await state.testDb
+      .insert(users)
+      .values({ email: "user-b-resume-route@example.com", passwordHash: "h", role: "user" })
+      .returning();
+
+    const uploaded = await POST(jsonRequest({ text: "a".repeat(120) }));
+    const resumeA = await uploaded.json();
+
+    requireUser.mockResolvedValue({ id: userB.id, email: userB.email, role: "user" });
+    const res = await GET();
+    expect(res.status).toBe(404);
+    expect((await res.json()).error.code).toBe("NOT_FOUND");
+
+    state.llm = makeMockLlm({
+      "resume-extract": structuredFixture({ summary: "User B's own résumé summary, distinct from A's." }),
+    });
+    const uploadedB = await POST(jsonRequest({ text: "b".repeat(120) }));
+    const resumeB = await uploadedB.json();
+    expect(resumeB.id).not.toBe(resumeA.id);
+
+    const getResB = await GET();
+    expect(getResB.status).toBe(200);
+    expect((await getResB.json()).id).toBe(resumeB.id);
+
+    requireUser.mockResolvedValue({ id: BOOTSTRAP_ADMIN_ID, email: "admin@example.com", role: "admin" });
+    const getResA = await GET();
+    expect(getResA.status).toBe(200);
+    expect((await getResA.json()).id).toBe(resumeA.id); // unaffected by userB's upload
   });
 
   it("maps an LLM-client construction failure (e.g. missing OPENROUTER_API_KEY) to a 502 PARSE_FAILED envelope, not a bare 500", async () => {
@@ -164,7 +220,7 @@ describe("/api/resume", () => {
     expect(resume.rawText).toContain("Hello resume world");
 
     const { resumesRepo } = await import("@/server/persistence/repos/resumes");
-    const row = await resumesRepo.getActive();
+    const row = await resumesRepo.getActive(BOOTSTRAP_ADMIN_ID);
     expect(row?.sourceKind).toBe("pdf");
     expect(row?.originalPath).toBeTruthy();
     expect(readFileSync(row!.originalPath!)).toEqual(Buffer.from(bytes));
@@ -181,7 +237,7 @@ describe("/api/resume", () => {
     expect(resume.rawText).toContain("Jane Doe resume docx fixture");
 
     const { resumesRepo } = await import("@/server/persistence/repos/resumes");
-    const row = await resumesRepo.getActive();
+    const row = await resumesRepo.getActive(BOOTSTRAP_ADMIN_ID);
     expect(row?.sourceKind).toBe("docx");
     expect(row?.originalPath).toBeTruthy();
     expect(readFileSync(row!.originalPath!)).toEqual(Buffer.from(bytes));

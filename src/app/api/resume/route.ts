@@ -5,6 +5,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z, ZodError } from "zod";
 import type { ErrorEnvelope } from "@/types";
 import { PdfParseError } from "@/lib/pdf-text";
+import { requireUser } from "@/server/auth/session";
+import { UnauthorizedError } from "@/server/auth/errors";
 import { ParseFailedError } from "@/server/resume/derive-view";
 import { UnsupportedMimeError } from "@/server/resume/extract-text";
 import { getActiveResume, ingestResume } from "@/server/resume/ingest";
@@ -21,6 +23,8 @@ export async function POST(request: NextRequest) {
   const contentType = request.headers.get("content-type") ?? "";
 
   try {
+    const session = await requireUser();
+
     if (contentType.includes("multipart/form-data")) {
       const formData = await request.formData();
       const file = formData.get("file");
@@ -31,7 +35,7 @@ export async function POST(request: NextRequest) {
         return errorResponse(413, "PAYLOAD_TOO_LARGE", `File exceeds the 10MB limit (${file.size} bytes).`);
       }
       const bytes = Buffer.from(await file.arrayBuffer());
-      const resume = await ingestResume({ file: { bytes, mime: file.type, filename: file.name } });
+      const resume = await ingestResume(session.id, { file: { bytes, mime: file.type, filename: file.name } });
       return NextResponse.json(resume, { status: 200 });
     }
 
@@ -42,9 +46,10 @@ export async function POST(request: NextRequest) {
       return errorResponse(422, "VALIDATION_ERROR", "Invalid JSON body.");
     }
     const { text } = PasteBody.parse(json);
-    const resume = await ingestResume({ text });
+    const resume = await ingestResume(session.id, { text });
     return NextResponse.json(resume, { status: 200 });
   } catch (err) {
+    if (err instanceof UnauthorizedError) return errorResponse(401, "UNAUTHORIZED", err.message);
     if (err instanceof ZodError) {
       return errorResponse(422, "VALIDATION_ERROR", "Invalid résumé payload.", err.issues);
     }
@@ -59,9 +64,15 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET() {
-  const resume = await getActiveResume();
-  if (!resume) {
-    return errorResponse(404, "NOT_FOUND", "No résumé has been uploaded yet.");
+  try {
+    const session = await requireUser();
+    const resume = await getActiveResume(session.id);
+    if (!resume) {
+      return errorResponse(404, "NOT_FOUND", "No résumé has been uploaded yet.");
+    }
+    return NextResponse.json(resume, { status: 200 });
+  } catch (err) {
+    if (err instanceof UnauthorizedError) return errorResponse(401, "UNAUTHORIZED", err.message);
+    throw err;
   }
-  return NextResponse.json(resume, { status: 200 });
 }

@@ -7,7 +7,6 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { getLlm, type LlmClient } from "@/lib/llm/client";
 import { renderTemplate } from "@/lib/llm/templates";
-import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 import { resumesRepo, type ResumeRow } from "@/server/persistence/repos/resumes";
 import type { Resume } from "@/types";
 import { assertResumeViewDerivable, ParseFailedError, toResumeView } from "./derive-view";
@@ -40,7 +39,11 @@ function rowToResumeView(row: ResumeRow): Resume {
   });
 }
 
-export async function ingestResume(input: IngestResumeInput, deps: IngestResumeDeps = {}): Promise<Resume> {
+export async function ingestResume(
+  userId: string,
+  input: IngestResumeInput,
+  deps: IngestResumeDeps = {},
+): Promise<Resume> {
   const rawText = await extractText(input);
 
   // getLlm() is inside the try so a client-construction failure (e.g. a
@@ -77,7 +80,7 @@ export async function ingestResume(input: IngestResumeInput, deps: IngestResumeD
   }
 
   const inserted = await resumesRepo.insertReplacingActive({
-    userId: BOOTSTRAP_ADMIN_ID,
+    userId,
     rawText,
     structured,
     originalPath,
@@ -89,8 +92,8 @@ export async function ingestResume(input: IngestResumeInput, deps: IngestResumeD
   return rowToResumeView(inserted);
 }
 
-export async function getActiveResume(): Promise<Resume | null> {
-  const row = await resumesRepo.getActive();
+export async function getActiveResume(userId: string): Promise<Resume | null> {
+  const row = await resumesRepo.getActive(userId);
   if (!row) return null;
   return rowToResumeView(row);
 }
