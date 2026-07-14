@@ -244,6 +244,7 @@ registry.registerPath({
         },
       },
     },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
     422: { description: "Unknown query parameter or invalid value", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
@@ -255,6 +256,7 @@ registry.registerPath({
   request: { params: z.object({ id: z.string() }) },
   responses: {
     200: { description: "The frozen Job (no separate detail entity)", content: { "application/json": { schema: Job } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
     404: { description: "Unknown job id", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
@@ -266,6 +268,7 @@ registry.registerPath({
   request: { params: z.object({ id: z.string() }) },
   responses: {
     204: { description: "Deleted" },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
     404: { description: "Unknown job id", content: { "application/json": { schema: ErrorEnvelope } } },
     409: {
       description: "Job is not persona 'pasted', or a tracked application exists",
@@ -281,6 +284,7 @@ registry.registerPath({
   request: { params: z.object({ id: z.string() }) },
   responses: {
     200: { description: "The freshly re-scored, frozen Job", content: { "application/json": { schema: Job } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
     404: { description: "Malformed or unknown job id", content: { "application/json": { schema: ErrorEnvelope } } },
     409: { description: "No active résumé to score against", content: { "application/json": { schema: ErrorEnvelope } } },
     422: { description: "No job description obtainable — nothing to extract facts from", content: { "application/json": { schema: ErrorEnvelope } } },

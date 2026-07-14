@@ -2129,6 +2129,16 @@
             },
             "description": "Page of scored jobs + hero stats computed server-side over the full scoped set"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -2302,6 +2312,16 @@
           "204": {
             "description": "Deleted"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -2347,6 +2367,16 @@
             },
             "description": "The frozen Job (no separate detail entity)"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -2383,6 +2413,16 @@
               }
             },
             "description": "The freshly re-scored, frozen Job"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
           },
           "404": {
             "content": {
