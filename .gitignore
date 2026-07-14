@@ -12,6 +12,7 @@ data/uploads/
 coverage/
 test-results/
 playwright-report/
+e2e/.auth/
 
 # SDD subagent-driven-development scratch
 .superpowers/
