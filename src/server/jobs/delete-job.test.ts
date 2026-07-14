@@ -12,6 +12,7 @@ import {
   urlChecks,
 } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
@@ -58,6 +59,7 @@ describe("deletePastedJob", () => {
     const job = await insertJob(state.testDb, source.id, { persona: "pasted" });
     await insertJobScore(state.testDb, job.id, resume.id);
     await state.testDb.insert(applications).values({
+      userId: BOOTSTRAP_ADMIN_ID,
       jobId: job.id,
       resumeId: resume.id,
       stage: 0,
@@ -77,6 +79,7 @@ describe("deletePastedJob", () => {
     const job = await insertJob(state.testDb, source.id, { persona: "pasted" });
     await insertJobScore(state.testDb, job.id, resume.id);
     await state.testDb.insert(tailoredResumes).values({
+      userId: BOOTSTRAP_ADMIN_ID,
       jobId: job.id,
       baseResumeId: resume.id,
       diff: [],
@@ -84,6 +87,7 @@ describe("deletePastedJob", () => {
       model: "test-model",
     });
     await state.testDb.insert(applicationAnswers).values({
+      userId: BOOTSTRAP_ADMIN_ID,
       jobId: job.id,
       resumeId: resume.id,
       formSource: "pasted",
@@ -92,6 +96,7 @@ describe("deletePastedJob", () => {
       costUsd: 0,
     });
     const urlCheck = await createUrlChecksRepo(state.testDb).insert({
+      userId: BOOTSTRAP_ADMIN_ID,
       url: job.url,
       dedupeKey: job.dedupeKey,
       status: "completed",

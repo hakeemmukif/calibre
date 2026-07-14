@@ -9,6 +9,7 @@ import { renderCvHtml } from "@/lib/resume-render";
 import { insertJob, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
 import { jobs, resumes, sources, tailoredResumes } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
@@ -77,6 +78,7 @@ describe("GET /api/tailor/:id/pdf", () => {
     const job = await insertJob(state.testDb, source.id);
     const resume = await insertResume(state.testDb, { isActive: true, structured: BASE_STORE });
     const draft = await tailoredResumesRepo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
       jobId: job.id,
       baseResumeId: resume.id,
       diff: DIFF,
@@ -103,6 +105,7 @@ describe("GET /api/tailor/:id/pdf", () => {
     const job = await insertJob(state.testDb, source.id);
     const resume = await insertResume(state.testDb, { isActive: true, structured: BASE_STORE });
     const draft = await tailoredResumesRepo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
       jobId: job.id,
       baseResumeId: resume.id,
       diff: DIFF,
@@ -148,6 +151,7 @@ describe("GET /api/tailor/:id/pdf", () => {
     const job = await insertJob(state.testDb, source.id);
     const resume = await insertResume(state.testDb, { isActive: true, structured: BASE_STORE });
     const draft = await tailoredResumesRepo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
       jobId: job.id,
       baseResumeId: resume.id,
       diff: DIFF,

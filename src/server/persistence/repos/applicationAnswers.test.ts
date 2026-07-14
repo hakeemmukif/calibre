@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createTestDb } from "../test-db";
 import { insertJob, insertResume, insertSource } from "./__fixtures__/helpers";
 import { createApplicationAnswersRepo } from "./applicationAnswers";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 describe("applicationAnswersRepo", () => {
   it("round-trips insert/getById", async () => {
@@ -12,6 +13,7 @@ describe("applicationAnswersRepo", () => {
     const job = await insertJob(db, source.id);
 
     const inserted = await repo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
       jobId: job.id,
       resumeId: resume.id,
       formSource: "pasted",
@@ -41,6 +43,7 @@ describe("applicationAnswersRepo", () => {
     const job = await insertJob(db, source.id);
 
     const inserted = await repo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
       jobId: job.id,
       resumeId: resume.id,
       formSource: "pasted",

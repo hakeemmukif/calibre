@@ -9,6 +9,7 @@
 import { z } from "zod";
 import { getLlm, type LlmClient } from "@/lib/llm/client";
 import { renderTemplate } from "@/lib/llm/templates";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 import { applicationAnswersRepo, type ApplicationAnswersRow } from "@/server/persistence/repos/applicationAnswers";
 import { jobsRepo } from "@/server/persistence/repos/jobs";
 import { jobScoresRepo } from "@/server/persistence/repos/jobScores";
@@ -87,6 +88,7 @@ export async function draftAnswers(
   }
 
   const inserted = await applicationAnswersRepo.insert({
+    userId: BOOTSTRAP_ADMIN_ID,
     jobId: input.jobId,
     resumeId: resumeRow.id,
     // KNOWN GAP: neither draftAnswers' locked input ({jobId, questions}) nor

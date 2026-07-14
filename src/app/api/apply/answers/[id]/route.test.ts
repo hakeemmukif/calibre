@@ -4,6 +4,7 @@ import { insertJob, insertResume, insertSource } from "@/server/persistence/repo
 import { applicationAnswersRepo } from "@/server/persistence/repos/applicationAnswers";
 import { applicationAnswers, jobs, resumes, sources } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
@@ -63,6 +64,7 @@ describe("PATCH /api/apply/answers/:id", () => {
     const job = await insertJob(state.testDb, source.id);
     const resume = await insertResume(state.testDb, { isActive: true });
     const inserted = await applicationAnswersRepo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
       jobId: job.id,
       resumeId: resume.id,
       formSource: "pasted",

@@ -10,6 +10,7 @@ import { modelFor } from "@/lib/llm/models";
 import { renderTemplate } from "@/lib/llm/templates";
 import { htmlToPdf } from "@/lib/pdf";
 import { renderCvHtml } from "@/lib/resume-render";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 import { jobScoresRepo } from "@/server/persistence/repos/jobScores";
 import { jobsRepo } from "@/server/persistence/repos/jobs";
 import { resumesRepo, type ResumeRow } from "@/server/persistence/repos/resumes";
@@ -100,6 +101,7 @@ export async function startTailor(input: StartTailorInput, deps: StartTailorDeps
   if (!resumeRow) throw new NoActiveResumeError();
 
   const inserted = await tailoredResumesRepo.insert({
+    userId: BOOTSTRAP_ADMIN_ID,
     jobId: input.jobId,
     baseResumeId: resumeRow.id,
     diff: [],

@@ -4,6 +4,7 @@ import { applications } from "../schema";
 import { createTestDb } from "../test-db";
 import { insertJob, insertJobScore, insertResume, insertSource } from "./__fixtures__/helpers";
 import { ApplicationConflictError, createApplicationsRepo } from "./applications";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 // Explicit, same-millisecond-different-microsecond appliedAt values —
 // deterministic collision regardless of host/loop speed (JS Date can't
@@ -23,6 +24,7 @@ describe("applicationsRepo", () => {
     const job = await insertJob(db, source.id);
 
     const app = await repo.insertUniqueByJob({
+      userId: BOOTSTRAP_ADMIN_ID,
       jobId: job.id,
       resumeId: resume.id,
       stage: 0,
@@ -43,6 +45,7 @@ describe("applicationsRepo", () => {
     const job = await insertJob(db, source.id);
 
     const first = await repo.insertUniqueByJob({
+      userId: BOOTSTRAP_ADMIN_ID,
       jobId: job.id,
       resumeId: resume.id,
       stage: 0,
@@ -53,6 +56,7 @@ describe("applicationsRepo", () => {
 
     await expect(
       repo.insertUniqueByJob({
+        userId: BOOTSTRAP_ADMIN_ID,
         jobId: job.id,
         resumeId: resume.id,
         stage: 0,
@@ -64,6 +68,7 @@ describe("applicationsRepo", () => {
 
     try {
       await repo.insertUniqueByJob({
+        userId: BOOTSTRAP_ADMIN_ID,
         jobId: job.id,
         resumeId: resume.id,
         stage: 0,
@@ -91,6 +96,7 @@ describe("applicationsRepo", () => {
     });
     await insertJobScore(db, job.id, resume.id, { score: 4.7 });
     await repo.insertUniqueByJob({
+      userId: BOOTSTRAP_ADMIN_ID,
       jobId: job.id,
       resumeId: resume.id,
       stage: 0,
@@ -120,6 +126,7 @@ describe("applicationsRepo", () => {
       const [app] = await db
         .insert(applications)
         .values({
+          userId: BOOTSTRAP_ADMIN_ID,
           jobId: job.id,
           resumeId: resume.id,
           stage: 0,
@@ -159,6 +166,7 @@ describe("applicationsRepo", () => {
     await insertJobScore(db, job.id, resume.id, { policyVersion: "v2", score: 4.5 });
 
     const app = await repo.insertUniqueByJob({
+      userId: BOOTSTRAP_ADMIN_ID,
       jobId: job.id,
       resumeId: resume.id,
       stage: 0,
@@ -183,6 +191,7 @@ describe("applicationsRepo", () => {
     const job = await insertJob(db, source.id);
     await insertJobScore(db, job.id, resume.id);
     const app = await repo.insertUniqueByJob({
+      userId: BOOTSTRAP_ADMIN_ID,
       jobId: job.id,
       resumeId: resume.id,
       stage: 0,
@@ -204,6 +213,7 @@ describe("applicationsRepo", () => {
     const job = await insertJob(db, source.id);
     await insertJobScore(db, job.id, resume.id);
     const app = await repo.insertUniqueByJob({
+      userId: BOOTSTRAP_ADMIN_ID,
       jobId: job.id,
       resumeId: resume.id,
       stage: 0,

@@ -2,6 +2,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { insertJob, insertJobScore, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
 import { applications, jobs, jobScores, resumes, sources, tailoredResumes } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
@@ -13,7 +14,27 @@ const { createTailoredResumesRepo } = await import("@/server/persistence/repos/t
 
 async function setupScoredJob(overrides: Parameters<typeof insertJob>[2] = {}) {
   const source = await insertSource(state.testDb);
-  const resume = await insertResume(state.testDb, { isActive: true });
+  // insertReplacingActive (not the raw insertResume fixture) — setupScoredJob
+  // is called more than once per test in some cases, and the migration's
+  // resumes_user_id_active_unique partial index now rejects a second
+  // isActive:true row for the same user; insertReplacingActive clamps to one
+  // active résumé the same way the real write path does.
+  const { createResumesRepo } = await import("@/server/persistence/repos/resumes");
+  const resume = await createResumesRepo(state.testDb).insertReplacingActive({
+    userId: BOOTSTRAP_ADMIN_ID,
+    rawText: "Jane Doe — Software Engineer",
+    structured: {
+      name: "Jane Doe",
+      contact: [{ label: "email", value: "jane@example.com" }],
+      summary: "Backend engineer.",
+      experience: [],
+      education: [],
+      skills: [],
+      extras: [],
+    },
+    sourceKind: "paste",
+    isActive: true,
+  });
   const job = await insertJob(state.testDb, source.id, overrides);
   await insertJobScore(state.testDb, job.id, resume.id, { score: 4.2 });
   return { job, resume };
@@ -67,6 +88,7 @@ describe("server/tracker", () => {
     it("sets tailored:true when a tailoredResumeId is provided", async () => {
       const { job, resume } = await setupScoredJob();
       const tailoredResume = await createTailoredResumesRepo(state.testDb).insert({
+        userId: BOOTSTRAP_ADMIN_ID,
         jobId: job.id,
         baseResumeId: resume.id,
         diff: [],

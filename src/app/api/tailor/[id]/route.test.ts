@@ -6,6 +6,7 @@ import { insertJob, insertResume, insertSource } from "@/server/persistence/repo
 import { jobs, resumes, sources, tailoredResumes } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import { ErrorEnvelope } from "@/types";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
@@ -170,6 +171,7 @@ describe("GET /api/tailor/:id", () => {
     const { createTailoredResumesRepo } = await import("@/server/persistence/repos/tailoredResumes");
     const repo = createTailoredResumesRepo(state.testDb);
     const runningRun = await repo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
       jobId: job.id,
       baseResumeId: resume.id,
       diff: [],
@@ -192,6 +194,7 @@ describe("GET /api/tailor/:id", () => {
     const { createTailoredResumesRepo } = await import("@/server/persistence/repos/tailoredResumes");
     const repo = createTailoredResumesRepo(state.testDb);
     const failedRun = await repo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
       jobId: job.id,
       baseResumeId: resume.id,
       diff: [],

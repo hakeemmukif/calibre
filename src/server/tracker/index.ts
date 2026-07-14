@@ -2,6 +2,7 @@
 // §4 "F5 Mark applied"). No LLM. `features/applied/status-map.ts` owns all
 // status folding; this module only calls it — never re-derives labels/tones
 // itself (task-B9-brief.md "status folding ONLY in status-map").
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 import { applicationsRepo, ApplicationConflictError, type AppJoinJobScore } from "@/server/persistence/repos/applications";
 import { jobsRepo } from "@/server/persistence/repos/jobs";
 import { resumesRepo } from "@/server/persistence/repos/resumes";
@@ -83,6 +84,7 @@ export async function markApplied(input: MarkAppliedInput): Promise<Application>
   const folded = foldStatus(0, "open");
 
   const inserted = await applicationsRepo.insertUniqueByJob({
+    userId: BOOTSTRAP_ADMIN_ID,
     jobId: input.jobId,
     resumeId: resumeRow.id,
     tailoredResumeId: input.tailoredResumeId ?? null,

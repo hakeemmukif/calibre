@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createTestDb } from "../test-db";
 import { insertJob, insertResume, insertSource } from "./__fixtures__/helpers";
 import { createTailoredResumesRepo } from "./tailoredResumes";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 describe("tailoredResumesRepo", () => {
   it("round-trips insert/getById", async () => {
@@ -12,6 +13,7 @@ describe("tailoredResumesRepo", () => {
     const job = await insertJob(db, source.id);
 
     const inserted = await repo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
       jobId: job.id,
       baseResumeId: resume.id,
       diff: [{ section: "summary", op: "modify", before: "old", after: "new", reason: "tighter framing" }],
@@ -36,6 +38,7 @@ describe("tailoredResumesRepo", () => {
     const job = await insertJob(db, source.id);
 
     const inserted = await repo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
       jobId: job.id,
       baseResumeId: resume.id,
       diff: [],
@@ -68,7 +71,7 @@ describe("tailoredResumesRepo", () => {
     // different accepted set can still recompute from it.
     expect(finalized?.structured).toEqual(resume.structured);
 
-    const other = await repo.insert({ jobId: job.id, baseResumeId: resume.id, diff: [], status: "running", model: "openai/gpt-4.1" });
+    const other = await repo.insert({ userId: BOOTSTRAP_ADMIN_ID, jobId: job.id, baseResumeId: resume.id, diff: [], status: "running", model: "openai/gpt-4.1" });
     const failed = await repo.markFailed(other.id);
     expect(failed?.status).toBe("failed");
   });
