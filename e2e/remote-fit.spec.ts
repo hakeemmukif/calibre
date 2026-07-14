@@ -83,13 +83,11 @@ test("remote-fit: schedule dial re-scopes the feed, hiding a US-hours job with z
 
   try {
     // Default seeded dials (seed-test.ts: scheduleFlex "any-hours") admit
-    // every band — the US-hours job is visible. (The "US hours" schedule
-    // pill itself — assembleJob's `job.tags` extraTags, spec §7 — only
-    // renders on the job-detail page today: JobDetail.tsx:70 maps
-    // `job.tags`, but JobRow.tsx renders just LegitimacyTag/EligibilityTag
-    // and never `job.tags` at all, so it never reaches the feed row. Out of
-    // this task's scope to fix — asserting on it here would test a pill
-    // that doesn't exist on this page.)
+    // every band — the US-hours job is visible. The "US hours" schedule pill
+    // (assembleJob's `job.tags` extraTags, spec §7) renders on both the
+    // job-detail page (JobDetail.tsx maps `job.tags`) and the feed row
+    // (JobRow.tsx renders `job.tags.slice(1)` beside the Legitimacy/Eligibility
+    // tags — index 0 is the legitimacy tag, already shown separately).
     await page.goto("/feed");
     await expect(page.getByText(COMPANY, { exact: false }).first()).toBeVisible();
 
