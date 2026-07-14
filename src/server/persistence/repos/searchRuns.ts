@@ -35,6 +35,10 @@ export function createSearchRunsRepo(db: Db) {
       const match = persona ? rows.find((r) => r.personas.includes(persona)) : rows[0];
       return match ?? null;
     },
+    // GLOBAL-BY-DECISION: async run-engine completion write (server/search/
+    // run.ts) — `id` is the runId this same process created/claimed via
+    // `insert`/`getById`, never an attacker-supplied route param, so there is
+    // no separate tenant to scope against here.
     async updateStatus(
       id: string,
       status: SearchRunRow["status"],
@@ -47,17 +51,20 @@ export function createSearchRunsRepo(db: Db) {
         .returning();
       return updated ?? null;
     },
+    // GLOBAL-BY-DECISION: same as updateStatus above — internal run-engine
+    // write keyed on a runId this process already owns.
     async updateStats(id: string, stats: SearchRunRow["stats"]): Promise<SearchRunRow | null> {
       const [updated] = await db.update(searchRuns).set({ stats }).where(eq(searchRuns.id, id)).returning();
       return updated ?? null;
     },
-    // system-architecture.md §6 decision 2: "A restart kills a run (status
-    // running → mark stale on boot)" — there is no distinct 'stale' wire/DB
-    // status, so staleness is represented as `failed` with an explanatory
-    // `error`. Both 'queued' and 'running' rows are orphaned by a restart:
-    // a 'queued' row was inserted pre-fan-out, so no in-memory handle can
-    // exist for it either once the process (and its registry) is gone.
-    // Called once by server/runs/registry.ts on process start.
+    // GLOBAL-BY-DECISION: system-architecture.md §6 decision 2: "A restart
+    // kills a run (status running → mark stale on boot)" — there is no
+    // distinct 'stale' wire/DB status, so staleness is represented as
+    // `failed` with an explanatory `error`. Both 'queued' and 'running' rows
+    // are orphaned by a restart: a 'queued' row was inserted pre-fan-out, so
+    // no in-memory handle can exist for it either once the process (and its
+    // registry) is gone. Called once by server/runs/registry.ts on process
+    // start, across every tenant's rows — infra, not request-scoped.
     async markAllUnfinishedAsFailed(errorMessage: string): Promise<SearchRunRow[]> {
       return db
         .update(searchRuns)

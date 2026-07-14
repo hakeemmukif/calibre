@@ -70,10 +70,15 @@ export function createApplicationsRepo(db: Db) {
         // unique_violation code is on the original error at `.cause`.
         const code = (err as { code?: string; cause?: { code?: string } })?.cause?.code;
         if (code === "23505") {
+          // Scoped by userId (mechanical audit fix, Step 3 Task 6): jobId is
+          // already unique per owning user (each user's scanned job is its
+          // own row), so this can't currently resolve to a foreign
+          // application — scoping it anyway keeps the guarantee
+          // constraint-independent rather than relying on that invariant.
           const [existing] = await db
             .select()
             .from(applications)
-            .where(eq(applications.jobId, row.jobId))
+            .where(and(eq(applications.jobId, row.jobId), eq(applications.userId, row.userId)))
             .limit(1);
           if (existing) throw new ApplicationConflictError(existing.id);
         }

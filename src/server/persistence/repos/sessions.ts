@@ -9,6 +9,10 @@ export function createSessionRepo(db: Db) {
     async create(input: { userId: string; tokenHash: string }): Promise<void> {
       await db.insert(sessions).values({ userId: input.userId, tokenHash: input.tokenHash });
     },
+    // GLOBAL-BY-DECISION: auth session resolution — this is how the caller's
+    // userId gets determined from an opaque session token; scoping it by
+    // userId would be circular. Possession of the raw cookie (whose hash
+    // must match) is the authorization boundary.
     async findUserByTokenHash(tokenHash: string): Promise<UserRow | null> {
       const [row] = await db
         .select({ user: users })
@@ -20,6 +24,9 @@ export function createSessionRepo(db: Db) {
       await db.update(sessions).set({ lastUsedAt: sql`now()` }).where(eq(sessions.tokenHash, tokenHash));
       return row.user;
     },
+    // GLOBAL-BY-DECISION: logout — the token hash itself is the caller's
+    // proof of ownership (only the browser holding the raw cookie can
+    // present the matching hash); no separate userId scoping applies.
     async deleteByTokenHash(tokenHash: string): Promise<void> {
       await db.delete(sessions).where(eq(sessions.tokenHash, tokenHash));
     },

@@ -12,6 +12,9 @@ function normalizeEmail(email: string): string {
 
 export function createUserRepo(db: Db) {
   return {
+    // GLOBAL-BY-DECISION: `users` is the auth identity table itself, not a
+    // user-owned resource — email-uniqueness must be checked globally,
+    // before the new row (and its userId) exists.
     async create(input: { email: string; passwordHash: string; role: "user" | "admin" }): Promise<UserRow> {
       const email = normalizeEmail(input.email);
       const existing = await db.select().from(users).where(eq(users.email, email)).limit(1);
@@ -34,10 +37,15 @@ export function createUserRepo(db: Db) {
         throw err;
       }
     },
+    // GLOBAL-BY-DECISION: auth identity lookup by email — this IS how login
+    // resolves a userId in the first place, so there is no userId to scope by.
     async findByEmail(email: string): Promise<UserRow | null> {
       const [row] = await db.select().from(users).where(eq(users.email, normalizeEmail(email))).limit(1);
       return row ?? null;
     },
+    // GLOBAL-BY-DECISION: `id` here IS the users.id primary key — the row
+    // this looks up is the user, not a resource a user owns, so there is no
+    // separate ownership dimension to filter by.
     async findById(id: string): Promise<UserRow | null> {
       const [row] = await db.select().from(users).where(eq(users.id, id)).limit(1);
       return row ?? null;

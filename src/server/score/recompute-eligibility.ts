@@ -15,9 +15,9 @@ import type { JdFacts } from "./jdFacts";
 
 export async function recomputeEligibility() {
   const db = getDb();
-  // TEMP read-scaffold: this CLI script (`npm run eligibility:recompute`)
-  // has no session and recomputes across ALL jobs regardless of owner —
-  // scoped per-user profile lookup lands with the jobs read-scoping task.
+  // KNOWN-FOLLOWUP(multitenant): this CLI recomputes against ONE profile;
+  // multi-tenant needs per-job-owner profile resolution — tracked, not a
+  // request-path leak (this is an ops script, not a route handler).
   const prof = await profileRepo.get(BOOTSTRAP_ADMIN_ID);
   const rows = await db
     .select({ job: jobs, source: sources })
