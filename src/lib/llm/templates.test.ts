@@ -61,6 +61,28 @@ describe("renderTemplate", () => {
   it("throws when a required var is missing", () => {
     expect(() => renderTemplate("jd-extract", {})).toThrow(/missing template variable/i);
   });
+
+  // v2 upgrade (ResumeStoreEmitSchema now has 12 concepts, not 5): the
+  // rendered prompt must actually instruct the model to look for all of
+  // them and handle the failure modes live extraction surfaced — headline
+  // swallowing the summary, credentials leaking into name, and 2-column PDF
+  // text arriving with sidebar fragments interleaved mid-sentence.
+  it("resume-extract.md instructs map-by-meaning, de-scrambling, and all 12 v2 concepts", () => {
+    const messages = renderTemplate("resume-extract", { rawText: "raw" });
+    const joined = messages.map((m) => m.content).join("\n");
+    expect(joined).toMatch(/headline/i);
+    expect(joined).toMatch(/YYYY-MM/);
+    expect(joined).toMatch(/certification/i);
+    expect(joined).toMatch(/language/i);
+    expect(joined).toMatch(/project/i);
+    expect(joined).toMatch(/sections/i);
+    // de-scramble guidance for 2-column PDFs
+    expect(joined).toMatch(/two-column|2-column|column/i);
+    // name must strip trailing credentials (e.g. ", PMP") out to certifications
+    expect(joined).toMatch(/PMP/);
+    // headline must never be the summary paragraph
+    expect(joined).toMatch(/never.*summary|summary.*never/i);
+  });
 });
 
 // Seam test (task-1.9, generalizing the B6 evalScores.test.ts pattern to all
