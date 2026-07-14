@@ -2536,6 +2536,16 @@
             },
             "description": "Current résumé"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -2592,6 +2602,16 @@
               }
             },
             "description": "Parsed résumé"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
           },
           "413": {
             "content": {

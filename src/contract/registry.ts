@@ -152,6 +152,7 @@ registry.registerPath({
   },
   responses: {
     200: { description: "Parsed résumé", content: { "application/json": { schema: Resume } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
     413: { description: "File exceeds the 10MB limit", content: { "application/json": { schema: ErrorEnvelope } } },
     422: {
       description: "Bad mime type or too-short/missing text",
@@ -170,6 +171,7 @@ registry.registerPath({
   summary: "Fetch the current résumé",
   responses: {
     200: { description: "Current résumé", content: { "application/json": { schema: Resume } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
     404: { description: "No résumé uploaded yet", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
