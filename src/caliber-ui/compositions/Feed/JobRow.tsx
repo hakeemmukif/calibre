@@ -3,6 +3,7 @@ import * as React from "react";
 import { Card } from "../../components/Card";
 import { ScoreBadge } from "../../components/ScoreBadge";
 import { IconButton } from "../../components/IconButton";
+import { Tag } from "../../components/Tag";
 import { NewBadge } from "./NewBadge";
 import { EligibilityTag } from "../../lib/eligibility";
 import { LegitimacyTag } from "../../lib/legitimacy";
@@ -70,6 +71,12 @@ export function JobRow({ job, onOpen, onSave, onDismiss }: JobRowProps) {
           </span>
           <LegitimacyTag legitimacy={job.legitimacy} />
           <EligibilityTag eligibility={job.eligibility} />
+          {/* tags[0] is the legitimacy tag (rendered above via LegitimacyTag); [1:] are the schedule/structure pills (spec §7). */}
+          {job.tags.slice(1).map((t) => (
+            <Tag key={t.label} tone={t.tone}>
+              {t.label}
+            </Tag>
+          ))}
           {job.isNew && <NewBadge />}
         </div>
         <div style={{ font: "var(--type-caption)", color: "var(--text-muted)", marginTop: 3 }}>

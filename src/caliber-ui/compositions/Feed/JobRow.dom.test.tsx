@@ -33,3 +33,30 @@ describe("JobRow eligibility pill (spec §8)", () => {
     expect(screen.queryByText("Malaysia")).not.toBeInTheDocument();
   });
 });
+
+describe("JobRow schedule/structure pills (spec §7)", () => {
+  // job.tags[0] is always the legitimacy tag (already shown via LegitimacyTag);
+  // [1:] are the schedule/structure pills assembleJob appends for
+  // tzBand:"americas" + hiringStructure:"contractor".
+  const withSchedulePills = {
+    ...anywhereJob,
+    tags: [
+      { tone: "good" as const, label: "Looks legit" },
+      { tone: "warn" as const, label: "US hours" },
+      { tone: "warn" as const, label: "Contractor" },
+    ],
+  };
+  const legitimacyOnly = { ...anywhereJob, tags: [{ tone: "good" as const, label: "Looks legit" }] };
+
+  it("renders the schedule/structure pills on the row", () => {
+    render(<JobRow job={withSchedulePills} onOpen={noop} onSave={noop} onDismiss={noop} />);
+    expect(screen.getByText("US hours")).toBeInTheDocument();
+    expect(screen.getByText("Contractor")).toBeInTheDocument();
+  });
+
+  it("renders no extra pill when tags has only the legitimacy entry", () => {
+    render(<JobRow job={legitimacyOnly} onOpen={noop} onSave={noop} onDismiss={noop} />);
+    expect(screen.queryByText("US hours")).not.toBeInTheDocument();
+    expect(screen.queryByText("Contractor")).not.toBeInTheDocument();
+  });
+});
