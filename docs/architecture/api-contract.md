@@ -78,6 +78,15 @@ export const SourceRef = z.object({                  // Source entity, reference
 
 export const RelocationPref = z.enum(['stay', 'open']);
 
+// Remote-fit dials + stated-fact enums (2026-07-14-remote-fit-criteria-design.md §3).
+// ScheduleFlex is ORDERED (base-hours < flex-evenings < any-hours); higher includes lower.
+export const ScheduleFlex = z.enum(['base-hours', 'flex-evenings', 'any-hours']);
+// employee = local entity OR EOR; local-entity = local entity only.
+export const EmploymentPref = z.enum(['any', 'employee', 'local-entity']);
+// Job-side stated facts (jobs.tz_band, jobs.hiring_structure). NULL in the DB = nothing stated.
+export const TzBand = z.enum(['apac', 'emea', 'americas']);
+export const HiringStructure = z.enum(['local-entity', 'eor', 'contractor']);
+
 // Operator profile — singleton (single-operator MVP). baseCountry is
 // ISO-3166-1 alpha-2 ('MY' at launch). The seed row IS the install step
 // (seed.ts precedent); a missing row is a 404, never a runtime default.
@@ -85,6 +94,8 @@ export const RelocationPref = z.enum(['stay', 'open']);
 export const Profile = z.object({
   baseCountry: z.string().length(2),
   relocation: RelocationPref,
+  scheduleFlex: ScheduleFlex,     // NEW (spec 2026-07-14 §3)
+  employmentPref: EmploymentPref, // NEW (spec 2026-07-14 §3)
   updatedAt: z.string().datetime(),
 });
 
@@ -224,9 +235,9 @@ Boundary rule everywhere: `Schema.parse(body)` at the route handler; `ZodError` 
 
 **GET /api/search/:id** — → `200 SearchRun` | `404`. With `Accept: text/event-stream` → SSE (§4).
 
-**GET /api/jobs** — query (all validated, unknown params rejected): `persona?`, `tier?` (repeatable), `minScore?` (0–5), `isNew?`, `q?`, `cursor?`, `limit?` (1–100, default 25). → `200 { items: Job[], nextCursor: string | null, stats: SummaryStripStats }`. `stats` is the Feed hero row's numbers (scanned/worth/ghosts/flagged/sinceLast/excluded) computed server-side over the full scoped result set, not derived client-side from the (paginated) `items` page. The eligibility predicate is **server-derived from the profile, not a wire param** (2026-07-12 spec §8): relocation `stay` admits `anywhere|eligible|local|unknown` and reports the hidden `abroad` count as `stats.excluded`; `open` applies no eligibility condition (`excluded: 0`). The former `remote?` boolean (persona-based) was removed with the "Work anywhere" chip swap (spec §2.7). `stats.excluded` deviates from the "full scoped result set" framing above in two ways: it counts every job the geo predicate hid, whether or not it has been scored yet (no `job_scores` join — a hidden-and-unscored row still counts), and it is scoped only by `persona`/`q`/`isNew`, deliberately ignoring `tier`/`minScore` (those are `job_scores` columns; this number answers "what did the geo predicate hide," not "what would also have passed your score filters").
+**GET /api/jobs** — query (all validated, unknown params rejected): `persona?`, `tier?` (repeatable), `minScore?` (0–5), `isNew?`, `q?`, `cursor?`, `limit?` (1–100, default 25). → `200 { items: Job[], nextCursor: string | null, stats: SummaryStripStats }`. `stats` is the Feed hero row's numbers (scanned/worth/ghosts/flagged/sinceLast/excluded) computed server-side over the full scoped result set, not derived client-side from the (paginated) `items` page. The eligibility predicate is **server-derived from the profile, not a wire param** (2026-07-12 spec §8): relocation `stay` admits `anywhere|eligible|local|unknown` and contributes the hidden `abroad` count to `stats.excluded` (alongside rows the schedule/structure gates hide); `open` drops only the geography condition — schedule/structure still gate, so `excluded` is not categorically 0. `stats.excluded` counts jobs hidden by the geography, schedule, OR structure gate (2026-07-14 remote-fit-criteria spec §3). The former `remote?` boolean (persona-based) was removed with the "Work anywhere" chip swap (spec §2.7). `stats.excluded` deviates from the "full scoped result set" framing above in two ways: it counts every job the preference gates hid, whether or not it has been scored yet (no `job_scores` join — a hidden-and-unscored row still counts), and it is scoped only by `persona`/`q`/`isNew`, deliberately ignoring `tier`/`minScore` (those are `job_scores` columns; this number answers "what the preference gates hid," not "what would also have passed your score filters").
 
-**Three axes — never conflate** (2026-07-12 eligibility spec §3, amended by the 2026-07-12 pasted-job-ingestion spec §2.5): `Source.persona` = scan routing (which source-set a run fans out to); `Job.persona` = run provenance ∈ {remote-run, local-run, **pasted**} (stamped at upsert, immutable on re-sight — pasting IS the provenance; this amendment locally supersedes the eligibility spec's "Persona untouched" lock on this one point, recorded in `docs/architecture/README.md`); `Job.eligibility` = posting geography relative to the operator profile (`anywhere | eligible | local | abroad | unknown`), resolved deterministically (board country stamp → JD-stated facts → connector geo → source prior → unknown) and refreshed by the scoring path. The eligibility visibility predicate does not apply in the Pasted scope (§2.12 of the pasted-job-ingestion spec) — the operator pasted the job deliberately.
+**Four axes — never conflate** (2026-07-12 eligibility spec §3, amended by the 2026-07-12 pasted-job-ingestion spec §2.5, amended by the 2026-07-14 remote-fit-criteria spec §3): `Source.persona` = scan routing (which source-set a run fans out to); `Job.persona` = run provenance ∈ {remote-run, local-run, **pasted**} (stamped at upsert, immutable on re-sight — pasting IS the provenance; this amendment locally supersedes the eligibility spec's "Persona untouched" lock on this one point, recorded in `docs/architecture/README.md`); `Job.eligibility` = posting geography relative to the operator profile (`anywhere | eligible | local | abroad | unknown`), resolved deterministically (board country stamp → JD-stated facts → connector geo → source prior → unknown) and refreshed by the scoring path. The eligibility visibility predicate does not apply in the Pasted scope (§2.12 of the pasted-job-ingestion spec) — the operator pasted the job deliberately. schedule/structure facts = stated constraints (jobs.tz_band via resolveTzBand, jobs.hiring_structure stated-only) matched against the profile's scheduleFlex/employmentPref dials at feed-read (spec 2026-07-14 §3). NULL facts never gate; unstated structure shows no pill.
 
 **GET /api/jobs/:id** — → `200 Job` | `404`.
 

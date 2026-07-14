@@ -11,6 +11,11 @@ import {
   Legitimacy,
   UrlCheckRequest,
   UrlCheck,
+  EmploymentPref,
+  HiringStructure,
+  Profile,
+  ScheduleFlex,
+  TzBand,
 } from "./index";
 
 describe("Persona / ScanPersona", () => {
@@ -205,5 +210,25 @@ describe("UrlCheck", () => {
 
   it("rejects a non-uuid id", () => {
     expect(() => UrlCheck.parse({ ...base, id: "not-a-uuid" })).toThrow();
+  });
+});
+
+describe("remote-fit contract types", () => {
+  it("ScheduleFlex is the ordered 3-level scale", () => {
+    expect(ScheduleFlex.options).toEqual(["base-hours", "flex-evenings", "any-hours"]);
+  });
+  it("EmploymentPref admits any | employee | local-entity", () => {
+    expect(EmploymentPref.options).toEqual(["any", "employee", "local-entity"]);
+  });
+  it("TzBand and HiringStructure enumerate the stated facts", () => {
+    expect(TzBand.options).toEqual(["apac", "emea", "americas"]);
+    expect(HiringStructure.options).toEqual(["local-entity", "eor", "contractor"]);
+  });
+  it("Profile requires both new dials", () => {
+    const base = { baseCountry: "MY", relocation: "stay", updatedAt: "2026-07-14T00:00:00.000Z" };
+    expect(() => Profile.parse(base)).toThrow(); // scheduleFlex/employmentPref missing
+    expect(() =>
+      Profile.parse({ ...base, scheduleFlex: "any-hours", employmentPref: "any" }),
+    ).not.toThrow();
   });
 });

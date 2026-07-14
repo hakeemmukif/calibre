@@ -252,6 +252,14 @@
         ],
         "type": "string"
       },
+      "EmploymentPref": {
+        "enum": [
+          "any",
+          "employee",
+          "local-entity"
+        ],
+        "type": "string"
+      },
       "ErrorEnvelope": {
         "properties": {
           "error": {
@@ -574,8 +582,14 @@
             "minLength": 2,
             "type": "string"
           },
+          "employmentPref": {
+            "$ref": "#/components/schemas/EmploymentPref"
+          },
           "relocation": {
             "$ref": "#/components/schemas/RelocationPref"
+          },
+          "scheduleFlex": {
+            "$ref": "#/components/schemas/ScheduleFlex"
           },
           "updatedAt": {
             "format": "date-time",
@@ -585,6 +599,8 @@
         "required": [
           "baseCountry",
           "relocation",
+          "scheduleFlex",
+          "employmentPref",
           "updatedAt"
         ],
         "type": "object"
@@ -700,6 +716,14 @@
           "running",
           "completed",
           "failed"
+        ],
+        "type": "string"
+      },
+      "ScheduleFlex": {
+        "enum": [
+          "base-hours",
+          "flex-evenings",
+          "any-hours"
         ],
         "type": "string"
       },
@@ -2261,13 +2285,21 @@
                     "minLength": 2,
                     "type": "string"
                   },
+                  "employmentPref": {
+                    "$ref": "#/components/schemas/EmploymentPref"
+                  },
                   "relocation": {
                     "$ref": "#/components/schemas/RelocationPref"
+                  },
+                  "scheduleFlex": {
+                    "$ref": "#/components/schemas/ScheduleFlex"
                   }
                 },
                 "required": [
                   "baseCountry",
-                  "relocation"
+                  "relocation",
+                  "scheduleFlex",
+                  "employmentPref"
                 ],
                 "type": "object"
               }

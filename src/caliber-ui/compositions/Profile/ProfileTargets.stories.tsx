@@ -11,7 +11,13 @@ const meta: Meta<typeof ProfileTargets> = {
 export default meta;
 type Story = StoryObj<typeof ProfileTargets>;
 
-const baseProfile: Profile = { baseCountry: "MY", relocation: "stay", updatedAt: "2026-07-12T00:00:00.000Z" };
+const baseProfile: Profile = {
+  baseCountry: "MY",
+  relocation: "stay",
+  scheduleFlex: "any-hours",
+  employmentPref: "any",
+  updatedAt: "2026-07-12T00:00:00.000Z",
+};
 
 // Controlled wrapper so the relocation pill is clickable in Canvas.
 function PopulatedDemo() {

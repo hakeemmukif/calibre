@@ -80,12 +80,27 @@ export type Source = z.infer<typeof Source>;
 export const RelocationPref = z.enum(["stay", "open"]);
 export type RelocationPref = z.infer<typeof RelocationPref>;
 
+// Remote-fit dials + stated-fact enums (spec 2026-07-14-remote-fit-criteria-design.md §3).
+// ScheduleFlex is ORDERED (base-hours < flex-evenings < any-hours); higher includes lower.
+export const ScheduleFlex = z.enum(["base-hours", "flex-evenings", "any-hours"]);
+export type ScheduleFlex = z.infer<typeof ScheduleFlex>;
+// employee = local entity OR EOR; local-entity = local entity only.
+export const EmploymentPref = z.enum(["any", "employee", "local-entity"]);
+export type EmploymentPref = z.infer<typeof EmploymentPref>;
+// Job-side stated facts (jobs.tz_band, jobs.hiring_structure). NULL in the DB = nothing stated.
+export const TzBand = z.enum(["apac", "emea", "americas"]);
+export type TzBand = z.infer<typeof TzBand>;
+export const HiringStructure = z.enum(["local-entity", "eor", "contractor"]);
+export type HiringStructure = z.infer<typeof HiringStructure>;
+
 // Operator profile — singleton (single-operator MVP). `baseCountry` is
 // ISO-3166-1 alpha-2 ("MY" at launch). The seed row IS the install step
 // (seed.ts precedent); a missing row is an error, never defaulted.
 export const Profile = z.object({
   baseCountry: z.string().length(2),
   relocation: RelocationPref,
+  scheduleFlex: ScheduleFlex, // NEW (spec 2026-07-14 §3)
+  employmentPref: EmploymentPref, // NEW (spec 2026-07-14 §3)
   updatedAt: z.string().datetime(),
 });
 export type Profile = z.infer<typeof Profile>;
