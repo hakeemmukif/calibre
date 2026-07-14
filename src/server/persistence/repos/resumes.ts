@@ -25,12 +25,23 @@ export function createResumesRepo(db: Db) {
         return inserted;
       });
     },
-    async getActive(): Promise<ResumeRow | null> {
-      const [row] = await db.select().from(resumes).where(eq(resumes.isActive, true)).limit(1);
+    // Every read is scoped by userId (Step 3 task 2): a foreign id/owner
+    // combination returns null, never a row, so callers 404 instead of
+    // leaking existence across tenants.
+    async getActive(userId: string): Promise<ResumeRow | null> {
+      const [row] = await db
+        .select()
+        .from(resumes)
+        .where(and(eq(resumes.isActive, true), eq(resumes.userId, userId)))
+        .limit(1);
       return row ?? null;
     },
-    async getById(id: string): Promise<ResumeRow | null> {
-      const [row] = await db.select().from(resumes).where(eq(resumes.id, id)).limit(1);
+    async getById(id: string, userId: string): Promise<ResumeRow | null> {
+      const [row] = await db
+        .select()
+        .from(resumes)
+        .where(and(eq(resumes.id, id), eq(resumes.userId, userId)))
+        .limit(1);
       return row ?? null;
     },
   };
@@ -41,6 +52,6 @@ export function createResumesRepo(db: Db) {
 // (tests use `createResumesRepo(testDb)` directly and never touch this).
 export const resumesRepo: ReturnType<typeof createResumesRepo> = {
   insertReplacingActive: (row) => createResumesRepo(getDb()).insertReplacingActive(row),
-  getActive: () => createResumesRepo(getDb()).getActive(),
-  getById: (id) => createResumesRepo(getDb()).getById(id),
+  getActive: (userId) => createResumesRepo(getDb()).getActive(userId),
+  getById: (id, userId) => createResumesRepo(getDb()).getById(id, userId),
 };

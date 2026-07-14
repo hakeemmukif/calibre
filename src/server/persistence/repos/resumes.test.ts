@@ -26,7 +26,7 @@ describe("resumesRepo", () => {
     });
 
     expect(inserted.isActive).toBe(true);
-    const active = await repo.getActive();
+    const active = await repo.getActive(BOOTSTRAP_ADMIN_ID);
     expect(active?.id).toBe(inserted.id);
     expect(active?.rawText).toBe("raw text");
   });
@@ -53,7 +53,7 @@ describe("resumesRepo", () => {
     const a = await repo.insertReplacingActive({ ...base, rawText: "resume A" });
     const b = await repo.insertReplacingActive({ ...base, rawText: "resume B" });
 
-    const active = await repo.getActive();
+    const active = await repo.getActive(BOOTSTRAP_ADMIN_ID);
     expect(active?.id).toBe(b.id);
     expect(active?.rawText).toBe("resume B");
 
@@ -120,10 +120,50 @@ describe("resumesRepo", () => {
       isActive: true,
     });
 
-    const found = await repo.getById(a.id);
+    const found = await repo.getById(a.id, BOOTSTRAP_ADMIN_ID);
     expect(found?.rawText).toBe("resume A");
     expect(found?.isActive).toBe(false);
 
-    expect(await repo.getById("00000000-0000-0000-0000-000000000000")).toBeNull();
+    expect(await repo.getById("00000000-0000-0000-0000-000000000000", BOOTSTRAP_ADMIN_ID)).toBeNull();
+  });
+
+  it("getActive(userId) is invisible to a different user (cross-tenant isolation)", async () => {
+    const db = await createTestDb();
+    const repo = createResumesRepo(db);
+
+    const [userB] = await db
+      .insert(users)
+      .values({ email: "user-b-resumes-getactive@example.com", passwordHash: "h", role: "user" })
+      .returning();
+
+    await repo.insertReplacingActive({
+      userId: BOOTSTRAP_ADMIN_ID,
+      rawText: "resume A",
+      structured: { name: "A", contact: [], summary: "s", experience: [], education: [], skills: [], extras: [] },
+      sourceKind: "paste",
+      isActive: true,
+    });
+
+    expect(await repo.getActive(userB.id)).toBeNull();
+  });
+
+  it("getById(id, userId) returns null for a foreign-owned résumé (no existence leak)", async () => {
+    const db = await createTestDb();
+    const repo = createResumesRepo(db);
+
+    const [userB] = await db
+      .insert(users)
+      .values({ email: "user-b-resumes-getbyid@example.com", passwordHash: "h", role: "user" })
+      .returning();
+
+    const resumeA = await repo.insertReplacingActive({
+      userId: BOOTSTRAP_ADMIN_ID,
+      rawText: "resume A",
+      structured: { name: "A", contact: [], summary: "s", experience: [], education: [], skills: [], extras: [] },
+      sourceKind: "paste",
+      isActive: true,
+    });
+
+    expect(await repo.getById(resumeA.id, userB.id)).toBeNull();
   });
 });
