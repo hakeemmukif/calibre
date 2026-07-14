@@ -32,6 +32,19 @@ export interface LlmClient {
   }): Promise<{ data: T; model: string; costUsd: number }>;
 }
 
+// OpenAI strict mode requires additionalProperties:false on every object node.
+function harden(node: unknown): void {
+  if (Array.isArray(node)) {
+    for (const n of node) harden(n);
+    return;
+  }
+  if (node && typeof node === "object") {
+    const obj = node as Record<string, unknown>;
+    if (obj.type === "object") obj.additionalProperties = false;
+    for (const v of Object.values(obj)) harden(v);
+  }
+}
+
 function buildClient(transport: OpenAI): LlmClient {
   return {
     async complete(args) {
@@ -45,12 +58,14 @@ function buildClient(transport: OpenAI): LlmClient {
       // hence the cast.
       const jsonSchema = z.toJSONSchema(responseSchema) as Record<string, unknown>;
 
-      // NOTE: `strict: false`, not true. OpenAI's structured-output strict
-      // mode requires every property to appear in `required` (no optional
-      // fields) — but our response schemas use `.optional()` throughout, so
-      // strict mode 400s ("'required' ... Missing '<field>'"). The schema
-      // still guides generation; `responseSchema.parse(parsed)` below is the
-      // real enforcement, so any deviation fails loud there.
+      // strict:true (opt-in per task in config/models.yml) enables OpenAI's
+      // structured-output constrained decoding, which requires
+      // additionalProperties:false on every object node — hence the harden()
+      // pass. Tasks that don't opt in keep today's behavior: strict:false,
+      // no hardening; `responseSchema.parse(parsed)` below is the real
+      // enforcement either way, so any deviation fails loud there.
+      const strict = config.strict === true;
+      if (strict) harden(jsonSchema);
       const completion = await transport.chat.completions.create(
         {
           model,
@@ -64,7 +79,7 @@ function buildClient(transport: OpenAI): LlmClient {
           ...(config.reasoningEffort !== undefined ? { reasoning_effort: config.reasoningEffort } : {}),
           response_format: {
             type: "json_schema",
-            json_schema: { name: task, schema: jsonSchema, strict: false },
+            json_schema: { name: task, schema: jsonSchema, strict },
           },
         },
         { signal },

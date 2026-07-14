@@ -52,6 +52,23 @@ describe("getLlm", () => {
     expect(callArgs.response_format.json_schema.schema).toEqual(z.toJSONSchema(schema));
   });
 
+  it("sends strict:true and stamps additionalProperties:false on every object node when the task opts in", async () => {
+    process.env.OPENROUTER_API_KEY = "test-key";
+    mocks.create.mockResolvedValue(reply({ a: { b: "x" } }));
+    const llm = getLlm();
+
+    await llm.complete({
+      task: "resume-extract", // config sets strict:true in models.yml
+      messages: [{ role: "user", content: "hi" }],
+      responseSchema: z.object({ a: z.object({ b: z.string() }) }),
+    });
+
+    const rf = mocks.create.mock.calls[0][0].response_format.json_schema;
+    expect(rf.strict).toBe(true);
+    expect(rf.schema.additionalProperties).toBe(false);
+    expect(rf.schema.properties.a.additionalProperties).toBe(false);
+  });
+
   it("sends reasoning_effort from the task config (resume-extract → low)", async () => {
     process.env.OPENROUTER_API_KEY = "test-key";
     mocks.create.mockResolvedValue(reply({ ok: true }));
