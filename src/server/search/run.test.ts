@@ -109,6 +109,20 @@ const hangingLlm: LlmClient = {
   },
 };
 
+// Like hangingLlm but counts how many times the LLM was called — proves that
+// a candidate whose pool slot opens AFTER the hard cap fired never reaches the
+// LLM (no queue drain). Reset the counter at the top of the test that uses it.
+let hangingLlmCalls = 0;
+const countingHangingLlm: LlmClient = {
+  async complete(args) {
+    hangingLlmCalls += 1;
+    if (args.signal?.aborted) throw new Error("llm call aborted (hard runtime cap)");
+    return new Promise<never>((_resolve, reject) => {
+      args.signal?.addEventListener("abort", () => reject(new Error("llm call aborted (hard runtime cap)")));
+    });
+  },
+};
+
 async function findJobByDedupeKey(db: TestDb, dedupeKey: string) {
   const [row] = await db.select().from(jobs).where(eq(jobs.dedupeKey, dedupeKey)).limit(1);
   return row;
@@ -455,6 +469,32 @@ describe("startSearch", () => {
     expect(finalRow.status).toBe("completed");
     expect(finalRow.stats.scored).toBe(0);
     expect(getActiveRunForPersona(BOOTSTRAP_ADMIN_ID, "remote")).toBeUndefined();
+  });
+
+  it("hard runtime cap: candidates whose slot opens after the abort skip scoring entirely (no queue drain)", async () => {
+    const runsRepo = createSearchRunsRepo(state.testDb);
+    await insertResume(state.testDb, { ...resumeFixture, isActive: true });
+    const good = await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
+
+    // Two candidates, single-slot pool: candidate 1 opens its slot and hangs in
+    // the LLM call; the 100ms cap fires and aborts it (call #1). Candidate 2's
+    // slot then opens with the signal already aborted — it must bail BEFORE
+    // touching the LLM, so exactly ONE llm.complete call happens total.
+    hangingLlmCalls = 0;
+    const postings: RawPosting[] = [
+      { sourceId: good.id, url: "https://example.com/jobs/drain-1", title: "Data Engineer", company: "Acme", location: "Remote", description: "Build data pipelines with SQL." },
+      { sourceId: good.id, url: "https://example.com/jobs/drain-2", title: "Data Engineer", company: "Beta Corp", location: "Remote", description: "Build more data pipelines with SQL." },
+    ];
+
+    const run = await startSearch(BOOTSTRAP_ADMIN_ID,
+      { persona: "remote" },
+      { llm: countingHangingLlm, scoreConcurrency: 1, hardRunTimeoutMs: 100, connectorForSource: (source) => stubConnector(source, postings) },
+    );
+
+    const finalRow = await waitForTerminal(runsRepo, run.id);
+    expect(finalRow.status).toBe("completed");
+    expect(finalRow.stats.scored).toBe(0);
+    expect(hangingLlmCalls).toBe(1); // candidate 2 bailed at slot open, never reached the LLM
   });
 
   it("alias-merge preserves a previously-recorded cross-source alias across separate runs (regression)", async () => {

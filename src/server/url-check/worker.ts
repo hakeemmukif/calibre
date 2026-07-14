@@ -19,7 +19,7 @@ import { fetchPageText } from "./fetch-page";
 import { runPipeline, type UrlCheckDeps } from "./run";
 import { searchForPosting } from "./search-tier";
 
-export const SCORE_CONCURRENCY = 3; // matches SCORE_BATCH_SIZE (search/run.ts:32) — proven concurrent gpt-oss-120b fan-out
+export const SCORE_CONCURRENCY = 3; // matches SCORE_CONCURRENCY (search/run.ts) — proven concurrent gpt-oss-120b fan-out
 const SWEEP_MS = 15_000;
 const LEASE_MAX_ATTEMPTS = 2;
 

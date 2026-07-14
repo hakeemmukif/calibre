@@ -463,6 +463,11 @@ async function scoreTopCandidates(
   await Promise.all(
     topCandidates.map(({ job, source }) =>
       limit(async () => {
+        // Hard cap already fired: stop draining the queue — a candidate whose
+        // slot opens after the abort must not run ensureDescription (detail
+        // fetch + DB write) or the liveness probe. NOT a $-cap, so leave
+        // capStopped untouched; the run still completes via the tolerated path.
+        if (handle.signal.aborted) return;
         if (dailyCapUsd !== undefined && spentToday >= dailyCapUsd) {
           // Log once, on the first job that bails — matches the old batch loop's
           // single cap-reached diagnostic (dropped in the pool rewrite).
