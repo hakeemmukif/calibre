@@ -1,4 +1,4 @@
-import { desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import type { ScanPersona } from "@/types";
 import { getDb } from "../db";
 import { searchRuns } from "../schema";
@@ -22,11 +22,11 @@ export function createSearchRunsRepo(db: Db) {
     // (both-persona runs are possible), so persona containment is filtered
     // in JS rather than a jsonb `@>` SQL operator — dataset is single-
     // operator-MVP small (a handful of runs at most).
-    async getLatestCompleted(persona?: ScanPersona): Promise<SearchRunRow | null> {
+    async getLatestCompleted(userId: string, persona?: ScanPersona): Promise<SearchRunRow | null> {
       const rows = await db
         .select()
         .from(searchRuns)
-        .where(eq(searchRuns.status, "completed"))
+        .where(and(eq(searchRuns.status, "completed"), eq(searchRuns.userId, userId)))
         .orderBy(desc(searchRuns.finishedAt));
       const match = persona ? rows.find((r) => r.personas.includes(persona)) : rows[0];
       return match ?? null;
@@ -67,7 +67,7 @@ export function createSearchRunsRepo(db: Db) {
 export const searchRunsRepo: ReturnType<typeof createSearchRunsRepo> = {
   insert: (row) => createSearchRunsRepo(getDb()).insert(row),
   getById: (id) => createSearchRunsRepo(getDb()).getById(id),
-  getLatestCompleted: (persona) => createSearchRunsRepo(getDb()).getLatestCompleted(persona),
+  getLatestCompleted: (userId, persona) => createSearchRunsRepo(getDb()).getLatestCompleted(userId, persona),
   updateStatus: (id, status, patch) => createSearchRunsRepo(getDb()).updateStatus(id, status, patch),
   updateStats: (id, stats) => createSearchRunsRepo(getDb()).updateStats(id, stats),
   markAllUnfinishedAsFailed: (errorMessage) =>
