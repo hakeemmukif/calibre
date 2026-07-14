@@ -1,6 +1,6 @@
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import { jobs } from "../schema";
+import { jobs, users } from "../schema";
 import { createTestDb } from "../test-db";
 import { insertJobScore, insertResume, insertSource } from "./__fixtures__/helpers";
 import { createJobsRepo } from "./jobs";
@@ -199,6 +199,56 @@ describe("jobsRepo", () => {
       raw: {},
     });
     expect(third.aliases).toHaveLength(2);
+  });
+
+  it("does not merge another user's aliases when upserting a job with the same dedupeKey (cross-tenant isolation)", async () => {
+    const db = await createTestDb();
+    const repo = createJobsRepo(db);
+    const source = await insertSource(db);
+
+    const [userB] = await db
+      .insert(users)
+      .values({ email: "user-b-jobs@example.com", passwordHash: "h", role: "user" })
+      .returning();
+
+    const dedupeKey = "dk-cross-tenant";
+
+    const jobA = await repo.upsertByDedupeKey({
+      userId: BOOTSTRAP_ADMIN_ID,
+      dedupeKey,
+      url: "https://example.com/cross-tenant-a",
+      sourceId: source.id,
+      title: "Backend Engineer",
+      company: "Acme",
+      location: "Remote",
+      persona: "remote",
+      eligibility: "unknown",
+      eligibilityEvidence: "test fixture",
+      aliases: [{ sourceId: "jobstreet", url: "https://jobstreet.com/cross-tenant-a" }],
+      raw: {},
+    });
+
+    const jobB = await repo.upsertByDedupeKey({
+      userId: userB.id,
+      dedupeKey,
+      url: "https://example.com/cross-tenant-b",
+      sourceId: source.id,
+      title: "Backend Engineer",
+      company: "Acme",
+      location: "Remote",
+      persona: "remote",
+      eligibility: "unknown",
+      eligibilityEvidence: "test fixture",
+      aliases: [{ sourceId: "hiredly", url: "https://hiredly.com/cross-tenant-b" }],
+      raw: {},
+    });
+
+    expect(jobA.id).not.toBe(jobB.id);
+    expect(jobB.aliases).toEqual([{ sourceId: "hiredly", url: "https://hiredly.com/cross-tenant-b" }]);
+    expect(jobB.aliases).not.toContainEqual({ sourceId: "jobstreet", url: "https://jobstreet.com/cross-tenant-a" });
+
+    const rows = await db.select().from(jobs).where(eq(jobs.dedupeKey, dedupeKey));
+    expect(rows).toHaveLength(2);
   });
 
   it("listScored filters by tier + minScore and pages with a cursor", async () => {

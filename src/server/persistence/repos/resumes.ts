@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb } from "../db";
 import { resumes } from "../schema";
 import type { Db } from "./db";
@@ -14,7 +14,10 @@ export function createResumesRepo(db: Db) {
   return {
     async insertReplacingActive(row: NewResume): Promise<ResumeRow> {
       return db.transaction(async (tx) => {
-        await tx.update(resumes).set({ isActive: false }).where(eq(resumes.isActive, true));
+        await tx
+          .update(resumes)
+          .set({ isActive: false })
+          .where(and(eq(resumes.isActive, true), eq(resumes.userId, row.userId)));
         const [inserted] = await tx
           .insert(resumes)
           .values({ ...row, isActive: true })

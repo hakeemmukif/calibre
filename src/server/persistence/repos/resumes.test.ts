@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createTestDb } from "../test-db";
-import { resumes } from "../schema";
+import { resumes, users } from "../schema";
 import { createResumesRepo } from "./resumes";
 import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
@@ -60,6 +60,45 @@ describe("resumesRepo", () => {
     const rows = await db.select().from(resumes);
     const aAfter = rows.find((r) => r.id === a.id);
     expect(aAfter?.isActive).toBe(false);
+  });
+
+  it("does not deactivate another user's active résumé when superseding (cross-tenant isolation)", async () => {
+    const db = await createTestDb();
+    const repo = createResumesRepo(db);
+
+    const [userB] = await db
+      .insert(users)
+      .values({ email: "user-b-resumes@example.com", passwordHash: "h", role: "user" })
+      .returning();
+
+    const base = {
+      structured: {
+        name: "A",
+        contact: [],
+        summary: "s",
+        experience: [],
+        education: [],
+        skills: [],
+        extras: [],
+      },
+      sourceKind: "paste" as const,
+      isActive: true,
+    };
+
+    const resumeA = await repo.insertReplacingActive({ ...base, userId: BOOTSTRAP_ADMIN_ID, rawText: "resume A" });
+    const resumeB = await repo.insertReplacingActive({ ...base, userId: userB.id, rawText: "resume B" });
+
+    const rows = await db.select().from(resumes);
+    const aAfter = rows.find((r) => r.id === resumeA.id);
+    const bAfter = rows.find((r) => r.id === resumeB.id);
+
+    expect(aAfter?.isActive).toBe(true);
+    expect(bAfter?.isActive).toBe(true);
+
+    const activeForA = rows.filter((r) => r.userId === BOOTSTRAP_ADMIN_ID && r.isActive);
+    const activeForB = rows.filter((r) => r.userId === userB.id && r.isActive);
+    expect(activeForA).toHaveLength(1);
+    expect(activeForB).toHaveLength(1);
   });
 
   it("getById fetches a non-active résumé by id, and returns null for an unknown id", async () => {

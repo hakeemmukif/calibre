@@ -96,7 +96,7 @@ export function createJobsRepo(db: Db) {
       const [existing] = await db
         .select({ aliases: jobs.aliases })
         .from(jobs)
-        .where(eq(jobs.dedupeKey, row.dedupeKey))
+        .where(and(eq(jobs.dedupeKey, row.dedupeKey), eq(jobs.userId, row.userId)))
         .limit(1);
       const aliases = mergeAliases(existing?.aliases ?? [], row.aliases ?? []);
 
