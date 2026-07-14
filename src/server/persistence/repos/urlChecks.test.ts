@@ -1,6 +1,6 @@
 import { eq, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import { urlChecks } from "../schema";
+import { urlChecks, users } from "../schema";
 import { createTestDb } from "../test-db";
 import { insertJob, insertSource } from "./__fixtures__/helpers";
 import { createUrlChecksRepo } from "./urlChecks";
@@ -25,9 +25,9 @@ describe("urlChecksRepo", () => {
     expect(inserted.jobId).toBeNull();
     expect(inserted.finishedAt).toBeNull();
 
-    const fetched = await repo.getById(inserted.id);
+    const fetched = await repo.getById(inserted.id, BOOTSTRAP_ADMIN_ID);
     expect(fetched?.id).toBe(inserted.id);
-    expect(await repo.getById("00000000-0000-0000-0000-000000000000")).toBeNull();
+    expect(await repo.getById("00000000-0000-0000-0000-000000000000", BOOTSTRAP_ADMIN_ID)).toBeNull();
   });
 
   it("updateStage sets stage without touching status", async () => {
@@ -168,10 +168,10 @@ describe("requeueOrphanedRunning", () => {
     const result = await repo.requeueOrphanedRunning();
 
     expect(result).toEqual({ requeued: 1, failed: 1 });
-    expect((await repo.getById(young.id))?.status).toBe("queued");
-    expect((await repo.getById(young.id))?.stage).toBeNull();
-    expect((await repo.getById(old.id))?.status).toBe("failed");
-    expect((await repo.getById(queued.id))?.status).toBe("queued");
+    expect((await repo.getById(young.id, BOOTSTRAP_ADMIN_ID))?.status).toBe("queued");
+    expect((await repo.getById(young.id, BOOTSTRAP_ADMIN_ID))?.stage).toBeNull();
+    expect((await repo.getById(old.id, BOOTSTRAP_ADMIN_ID))?.status).toBe("failed");
+    expect((await repo.getById(queued.id, BOOTSTRAP_ADMIN_ID))?.status).toBe("queued");
   });
 });
 
@@ -196,10 +196,10 @@ describe("sweepExpiredLeases", () => {
     const result = await repo.sweepExpiredLeases();
 
     expect(result).toEqual({ requeued: 1, failed: 1 });
-    expect((await repo.getById(requeue.id))?.status).toBe("queued");
-    expect((await repo.getById(requeue.id))?.stage).toBeNull();
-    expect((await repo.getById(fail.id))?.status).toBe("failed");
-    expect((await repo.getById(healthy.id))?.status).toBe("running"); // future lease untouched
+    expect((await repo.getById(requeue.id, BOOTSTRAP_ADMIN_ID))?.status).toBe("queued");
+    expect((await repo.getById(requeue.id, BOOTSTRAP_ADMIN_ID))?.stage).toBeNull();
+    expect((await repo.getById(fail.id, BOOTSTRAP_ADMIN_ID))?.status).toBe("failed");
+    expect((await repo.getById(healthy.id, BOOTSTRAP_ADMIN_ID))?.status).toBe("running"); // future lease untouched
   });
 });
 
@@ -210,7 +210,7 @@ describe("listActive / listByIds", () => {
     await repo.insert(queuedRow({ status: "completed" }));
     const q = await repo.insert(queuedRow());
     const r = await repo.insert(queuedRow({ status: "running", attempts: 1 }));
-    const active = await repo.listActive();
+    const active = await repo.listActive(BOOTSTRAP_ADMIN_ID);
     expect(active.map((x) => x.id).sort()).toEqual([q.id, r.id].sort());
   });
 
@@ -220,8 +220,8 @@ describe("listActive / listByIds", () => {
     const a = await repo.insert(queuedRow({ status: "completed" }));
     const b = await repo.insert(queuedRow({ status: "failed" }));
     await repo.insert(queuedRow());
-    expect((await repo.listByIds([a.id, b.id])).map((x) => x.id).sort()).toEqual([a.id, b.id].sort());
-    expect(await repo.listByIds([])).toEqual([]);
+    expect((await repo.listByIds([a.id, b.id], BOOTSTRAP_ADMIN_ID)).map((x) => x.id).sort()).toEqual([a.id, b.id].sort());
+    expect(await repo.listByIds([], BOOTSTRAP_ADMIN_ID)).toEqual([]);
   });
 });
 
@@ -234,9 +234,50 @@ describe("attempt-fenced writes", () => {
 
     expect(await repo.updateStage(row.id, "scoring", 1)).toBeNull(); // stale
     expect(await repo.complete(row.id, { jobId: null as unknown as string, alreadyKnown: true }, 1)).toBeNull();
-    expect((await repo.getById(row.id))?.status).toBe("running"); // untouched
+    expect((await repo.getById(row.id, BOOTSTRAP_ADMIN_ID))?.status).toBe("running"); // untouched
 
     expect(await repo.updateStage(row.id, "scoring", 2)).not.toBeNull(); // owner
-    expect((await repo.getById(row.id))?.stage).toBe("scoring");
+    expect((await repo.getById(row.id, BOOTSTRAP_ADMIN_ID))?.stage).toBe("scoring");
+  });
+});
+
+describe("urlChecksRepo — cross-tenant isolation", () => {
+  async function makeUserB(db: Awaited<ReturnType<typeof createTestDb>>) {
+    const [userB] = await db
+      .insert(users)
+      .values({ email: `user-b-url-checks-${crypto.randomUUID()}@example.com`, passwordHash: "h", role: "user" })
+      .returning();
+    return userB;
+  }
+
+  it("getById returns null for a foreign-owned check id (404, never a leak)", async () => {
+    const db = await createTestDb();
+    const repo = createUrlChecksRepo(db);
+    const userB = await makeUserB(db);
+    const row = await repo.insert(queuedRow());
+
+    expect(await repo.getById(row.id, userB.id)).toBeNull();
+    expect(await repo.getById(row.id, BOOTSTRAP_ADMIN_ID)).not.toBeNull();
+  });
+
+  it("listActive excludes another user's rows", async () => {
+    const db = await createTestDb();
+    const repo = createUrlChecksRepo(db);
+    const userB = await makeUserB(db);
+    const rowA = await repo.insert(queuedRow());
+    const rowB = await repo.insert(queuedRow({ userId: userB.id }));
+
+    expect((await repo.listActive(BOOTSTRAP_ADMIN_ID)).map((r) => r.id)).toEqual([rowA.id]);
+    expect((await repo.listActive(userB.id)).map((r) => r.id)).toEqual([rowB.id]);
+  });
+
+  it("listByIds excludes another user's rows even when their id is requested", async () => {
+    const db = await createTestDb();
+    const repo = createUrlChecksRepo(db);
+    const userB = await makeUserB(db);
+    const rowA = await repo.insert(queuedRow());
+    const rowB = await repo.insert(queuedRow({ userId: userB.id }));
+
+    expect((await repo.listByIds([rowA.id, rowB.id], BOOTSTRAP_ADMIN_ID)).map((r) => r.id)).toEqual([rowA.id]);
   });
 });

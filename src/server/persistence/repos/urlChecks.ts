@@ -12,10 +12,15 @@ export function createUrlChecksRepo(db: Db) {
       const [inserted] = await db.insert(urlChecks).values(row).returning();
       return inserted;
     },
-    async getById(id: string): Promise<UrlCheckRow | null> {
-      const [row] = await db.select().from(urlChecks).where(eq(urlChecks.id, id)).limit(1);
+    // Every read is scoped by userId (Step 3 task 5): a foreign id/owner
+    // combination returns null, never a row, so callers 404 instead of
+    // leaking existence across tenants.
+    async getById(id: string, userId: string): Promise<UrlCheckRow | null> {
+      const [row] = await db.select().from(urlChecks).where(and(eq(urlChecks.id, id), eq(urlChecks.userId, userId))).limit(1);
       return row ?? null;
     },
+    // GLOBAL-BY-DECISION: worker infra, all-users queue — the worker claims
+    // across every tenant's rows, not one caller's.
     // Atomic claim (spec §4.4). One autocommit UPDATE — never wrapped in a
     // transaction (that would hold a connection across the ~30s run and defeat
     // SKIP LOCKED). The subquery is a raw sql fragment (mirrors the
@@ -41,6 +46,8 @@ export function createUrlChecksRepo(db: Db) {
         .returning();
       return claimed ?? null;
     },
+    // GLOBAL-BY-DECISION: worker infra, all-users queue — boot recovery sweeps
+    // every tenant's orphaned rows, not one caller's.
     // Boot recovery (spec §4.4) — replaces markAllUnfinishedAsFailed. On a
     // fresh process ALL running rows are orphaned (no in-memory owner): requeue
     // those within the attempt budget, terminal-fail the rest, leave queued
@@ -63,6 +70,8 @@ export function createUrlChecksRepo(db: Db) {
         .returning({ id: urlChecks.id });
       return { requeued: requeued.length, failed: failed.length };
     },
+    // GLOBAL-BY-DECISION: worker infra, all-users queue — the runtime
+    // sweeper reaps stale rows across every tenant.
     // Runtime sweeper (spec §4.3) — only reaps running rows whose lease has
     // expired, so a healthy peer's in-flight rows (future lease) are left alone.
     async sweepExpiredLeases(maxAttempts = 2): Promise<{ requeued: number; failed: number }> {
@@ -84,17 +93,20 @@ export function createUrlChecksRepo(db: Db) {
         .returning({ id: urlChecks.id });
       return { requeued: requeued.length, failed: failed.length };
     },
-    async listActive(): Promise<UrlCheckRow[]> {
+    async listActive(userId: string): Promise<UrlCheckRow[]> {
       return db
         .select()
         .from(urlChecks)
-        .where(inArray(urlChecks.status, ["queued", "running"]))
+        .where(and(inArray(urlChecks.status, ["queued", "running"]), eq(urlChecks.userId, userId)))
         .orderBy(urlChecks.createdAt);
     },
-    async listByIds(ids: string[]): Promise<UrlCheckRow[]> {
+    async listByIds(ids: string[], userId: string): Promise<UrlCheckRow[]> {
       if (ids.length === 0) return [];
-      return db.select().from(urlChecks).where(inArray(urlChecks.id, ids));
+      return db.select().from(urlChecks).where(and(inArray(urlChecks.id, ids), eq(urlChecks.userId, userId)));
     },
+    // GLOBAL-BY-DECISION: worker infra, attempt-fenced status write keyed on
+    // (id, status, attempt) — the worker owns this row for the run, not a
+    // per-caller tenant boundary.
     // Attempt-fenced (spec §4.5): only the worker holding this row's claimed
     // `attempts` value may write it. A stale attempt (a requeue/lease-expiry
     // already moved the row on) no-ops instead of clobbering the new owner.
@@ -106,6 +118,8 @@ export function createUrlChecksRepo(db: Db) {
         .returning();
       return updated ?? null;
     },
+    // GLOBAL-BY-DECISION: worker infra, attempt-fenced status write keyed on
+    // (id, status, attempt).
     async complete(
       id: string,
       patch: { jobId: string; alreadyKnown: boolean },
@@ -118,6 +132,8 @@ export function createUrlChecksRepo(db: Db) {
         .returning();
       return updated ?? null;
     },
+    // GLOBAL-BY-DECISION: worker infra, attempt-fenced status write keyed on
+    // (id, status, attempt).
     async fail(
       id: string,
       patch: { code: string; message: string; needsText: boolean },
@@ -135,6 +151,8 @@ export function createUrlChecksRepo(db: Db) {
         .returning();
       return updated ?? null;
     },
+    // GLOBAL-BY-DECISION: worker infra, attempt-fenced status write keyed on
+    // (id, status, attempt).
     async addCost(id: string, usd: number, attempt: number): Promise<UrlCheckRow | null> {
       const [updated] = await db
         .update(urlChecks)
@@ -148,7 +166,7 @@ export function createUrlChecksRepo(db: Db) {
 
 export const urlChecksRepo: ReturnType<typeof createUrlChecksRepo> = {
   insert: (row) => createUrlChecksRepo(getDb()).insert(row),
-  getById: (id) => createUrlChecksRepo(getDb()).getById(id),
+  getById: (id, userId) => createUrlChecksRepo(getDb()).getById(id, userId),
   updateStage: (id, stage, attempt) => createUrlChecksRepo(getDb()).updateStage(id, stage, attempt),
   complete: (id, patch, attempt) => createUrlChecksRepo(getDb()).complete(id, patch, attempt),
   fail: (id, patch, attempt) => createUrlChecksRepo(getDb()).fail(id, patch, attempt),
@@ -156,6 +174,6 @@ export const urlChecksRepo: ReturnType<typeof createUrlChecksRepo> = {
   claimNextQueued: () => createUrlChecksRepo(getDb()).claimNextQueued(),
   requeueOrphanedRunning: (maxAttempts) => createUrlChecksRepo(getDb()).requeueOrphanedRunning(maxAttempts),
   sweepExpiredLeases: (maxAttempts) => createUrlChecksRepo(getDb()).sweepExpiredLeases(maxAttempts),
-  listActive: () => createUrlChecksRepo(getDb()).listActive(),
-  listByIds: (ids) => createUrlChecksRepo(getDb()).listByIds(ids),
+  listActive: (userId) => createUrlChecksRepo(getDb()).listActive(userId),
+  listByIds: (ids, userId) => createUrlChecksRepo(getDb()).listByIds(ids, userId),
 };
