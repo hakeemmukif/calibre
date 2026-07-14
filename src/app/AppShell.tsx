@@ -46,7 +46,11 @@ export function AppShell({ children, user }: { children: React.ReactNode; user?:
   }, [user?.id]);
 
   async function handleLogout() {
-    await logout();
+    try {
+      await logout();
+    } catch {
+      // Session likely already invalid server-side — proceed to clear + redirect anyway.
+    }
     __resetChecksStore();
     router.push("/login");
   }

@@ -81,6 +81,16 @@ describe("AppShell", () => {
     await waitFor(() => expect(push).toHaveBeenCalledWith("/login"));
   });
 
+  it("still resets the checks store and redirects to /login when logout() rejects", async () => {
+    logout.mockRejectedValue(new Error("401"));
+    render(<AppShell user={user}>content</AppShell>);
+    fireEvent.click(screen.getByRole("button", { name: "Log out" }));
+
+    await waitFor(() => expect(logout).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(__resetChecksStore).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/login"));
+  });
+
   it("resets the checks store when the signed-in user id changes", () => {
     const { rerender } = render(<AppShell user={user}>content</AppShell>);
     expect(__resetChecksStore).not.toHaveBeenCalled();
