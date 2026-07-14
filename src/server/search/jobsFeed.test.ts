@@ -32,9 +32,9 @@ describe("resolveIsNewCutoff", () => {
       finishedAt: new Date(),
     });
 
-    expect(await resolveIsNewCutoff("pasted")).toBeNull();
+    expect(await resolveIsNewCutoff(BOOTSTRAP_ADMIN_ID, "pasted")).toBeNull();
     // Existing scan personas are untouched by the pasted short-circuit.
-    expect(await resolveIsNewCutoff("remote")).not.toBeNull();
+    expect(await resolveIsNewCutoff(BOOTSTRAP_ADMIN_ID, "remote")).not.toBeNull();
   });
 });
 
@@ -73,11 +73,11 @@ describe("listJobsFeed — Pasted scope eligibility predicate skip (spec §2.12)
     });
     await insertJobScore(state.testDb, abroadPasted.id, resume.id);
 
-    const remoteScope = await listJobsFeed({ persona: "remote" });
+    const remoteScope = await listJobsFeed({ persona: "remote" }, BOOTSTRAP_ADMIN_ID);
     expect(remoteScope.items).toHaveLength(0);
     expect(remoteScope.stats.excluded).toBe(1);
 
-    const pastedScope = await listJobsFeed({ persona: "pasted" });
+    const pastedScope = await listJobsFeed({ persona: "pasted" }, BOOTSTRAP_ADMIN_ID);
     expect(pastedScope.items).toHaveLength(1);
     expect(pastedScope.items[0].id).toBe(abroadPasted.id);
     expect(pastedScope.stats.excluded).toBe(0);

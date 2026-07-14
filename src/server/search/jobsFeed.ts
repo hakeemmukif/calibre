@@ -3,7 +3,6 @@
 // the `{items, nextCursor, stats}` response shape. Lives in server/search
 // (not features/feed, which must stay pure/no-db) because it touches the DB.
 import { assembleJob } from "@/features/feed/assemble";
-import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 import type { JobsQuery } from "@/server/persistence/repos/jobs";
 import { jobsRepo } from "@/server/persistence/repos/jobs";
 import { profileRepo } from "@/server/persistence/repos/profile";
@@ -11,7 +10,7 @@ import { searchRunsRepo } from "@/server/persistence/repos/searchRuns";
 import { EligibilityTier } from "@/types";
 import type { Job, Persona, SummaryStripStats } from "@/types";
 
-export type FeedQuery = Omit<JobsQuery, "isNew"> & {
+export type FeedQuery = Omit<JobsQuery, "isNew" | "userId"> & {
   // Wire boolean (api-contract.md §3 `isNew?`) — translated to the repo's
   // Date-cutoff `JobsQuery.isNew` inside this module using the same
   // previous-completed-run baseline `resolveIsNewCutoff` computes.
@@ -22,12 +21,12 @@ export type FeedQuery = Omit<JobsQuery, "isNew"> & {
 // `stats.sinceLast` count (task-B6-brief.md): the previous COMPLETED search
 // run's `finishedAt` for the query's persona (or the latest completed run of
 // any persona when unscoped). `null` when no completed run exists yet.
-export async function resolveIsNewCutoff(persona?: Persona): Promise<Date | null> {
+export async function resolveIsNewCutoff(userId: string, persona?: Persona): Promise<Date | null> {
   // Pasted jobs are never isNew (spec §2.10) — no scan run exists for the
   // scope, and short-circuiting before the repo call avoids widening
   // searchRunsRepo.getLatestCompleted beyond ScanPersona.
   if (persona === "pasted") return null;
-  const run = await searchRunsRepo.getLatestCompleted(persona);
+  const run = await searchRunsRepo.getLatestCompleted(userId, persona);
   return run?.finishedAt ?? null;
 }
 
@@ -39,11 +38,10 @@ const HIDDEN_TIERS: EligibilityTier[] = EligibilityTier.options.filter((t) => !S
 
 export async function listJobsFeed(
   query: FeedQuery,
+  userId: string,
 ): Promise<{ items: Job[]; nextCursor: string | null; stats: SummaryStripStats }> {
-  // TEMP read-scaffold (Task 3 threads the caller's session.userId here):
-  // this route doesn't call requireUser() yet.
-  const profile = await profileRepo.get(BOOTSTRAP_ADMIN_ID); // the predicate needs it — fail loud when unseeded
-  const cutoff = await resolveIsNewCutoff(query.persona);
+  const profile = await profileRepo.get(userId); // the predicate needs it — fail loud when unseeded
+  const cutoff = await resolveIsNewCutoff(userId, query.persona);
   // The operator pasted these deliberately — hiding a pasted `abroad` job
   // from its own scope would be absurd (spec §2.12). The tag still warns.
   const isPastedScope = query.persona === "pasted";
@@ -56,7 +54,7 @@ export async function listJobsFeed(
   // relocation "stay" hides abroad; "open" applies no eligibility condition;
   // the Pasted scope applies no eligibility condition either way.
   const eligibility = !isPastedScope && profile.relocation === "stay" ? STAY_TIERS : undefined;
-  const filterScope = { ...rest, isNew: isNewFilter, eligibility };
+  const filterScope = { ...rest, userId, isNew: isNewFilter, eligibility };
 
   const { items, nextCursor } = await jobsRepo.listScored({ ...filterScope, cursor, limit });
   // `stats` is computed over the SAME filter scope (task-B6-brief.md: "the
@@ -71,7 +69,13 @@ export async function listJobsFeed(
   // would also have passed your score filters".
   const excluded =
     !isPastedScope && profile.relocation === "stay"
-      ? await jobsRepo.countHiddenByEligibility({ persona: rest.persona, q: rest.q, isNew: isNewFilter, eligibility: HIDDEN_TIERS })
+      ? await jobsRepo.countHiddenByEligibility({
+          userId,
+          persona: rest.persona,
+          q: rest.q,
+          isNew: isNewFilter,
+          eligibility: HIDDEN_TIERS,
+        })
       : 0;
 
   return {
