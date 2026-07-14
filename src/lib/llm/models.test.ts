@@ -5,7 +5,13 @@ import { escalateModelFor, modelFor, priceFor } from "./models";
 describe("models", () => {
   it("modelFor reads model/maxTokens/temperature/reasoningEffort from config/models.yml", () => {
     const config = modelFor("resume-extract");
-    expect(config).toEqual({ model: "openai/gpt-oss-120b", maxTokens: 6000, temperature: 0.1, reasoningEffort: "low" });
+    expect(config).toEqual({
+      model: "openai/gpt-oss-120b",
+      maxTokens: 8000,
+      temperature: 0.1,
+      reasoningEffort: "low",
+      strict: true,
+    });
   });
 
   it("modelFor omits reasoningEffort for tasks that don't set it (provider default)", () => {
@@ -47,5 +53,19 @@ describe("models", () => {
   it("modelFor reads ghost-web task config", () => {
     const config = modelFor("ghost-web");
     expect(config).toEqual({ model: "perplexity/sonar", maxTokens: 2000, temperature: 0 });
+  });
+
+  it("resume-extract now budgets 8000 tokens with strict decoding", () => {
+    const cfg = modelFor("resume-extract");
+    expect(cfg.maxTokens).toBe(8000);
+    expect(cfg.strict).toBe(true);
+  });
+
+  it("routes resume-extract-vision to mistral-small with strict + a price row", () => {
+    const cfg = modelFor("resume-extract-vision");
+    expect(cfg.model).toBe("mistralai/mistral-small-3.2-24b-instruct");
+    expect(cfg.strict).toBe(true);
+    expect(cfg.maxTokens).toBe(8000);
+    expect(() => priceFor("mistralai/mistral-small-3.2-24b-instruct")).not.toThrow();
   });
 });

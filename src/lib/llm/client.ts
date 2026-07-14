@@ -8,6 +8,7 @@ import { scriptedFixtures } from "./scripted-fixtures";
 
 export type TaskName =
   | "resume-extract"
+  | "resume-extract-vision"
   | "jd-extract"
   | "match-score"
   | "question-extract"

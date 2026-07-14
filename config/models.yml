@@ -13,13 +13,22 @@ tasks:
     # gpt-oss-120b spends part of the max_tokens budget on reasoning tokens;
     # a full résumé's structured JSON plus that overhead overflows 2000 and
     # truncates mid-output, so the budget is sized for large résumés.
-    maxTokens: 6000
+    maxTokens: 8000
     temperature: 0.1
     # Extraction is transcription, not inference: low reasoning effort keeps
     # the reasoning-token overhead to a few hundred tokens (default effort
     # burns 1–3k) so a résumé's JSON no longer overflows maxTokens. Paired
     # with the ~2-page input cap in server/resume/extract-text.ts.
     reasoningEffort: low
+    # Constrained decoding: forces the model's output to conform to the JSON
+    # schema, eliminating parse/shape failures at generation time.
+    strict: true
+  resume-extract-vision:
+    model: mistralai/mistral-small-3.2-24b-instruct
+    maxTokens: 8000
+    temperature: 0.1
+    reasoningEffort: low
+    strict: true
   jd-extract:
     model: openai/gpt-oss-120b
     # Same reasoning-token overhead as resume-extract; long JDs overflow 1500.
@@ -40,12 +49,13 @@ tasks:
     temperature: 0.3
   tailor:
     model: openai/gpt-oss-120b
-    # 10k, not 4k: the tailor task emits a FULL ResumeStore JSON + diff, and
+    # 12k, not 4k: the tailor task emits a FULL ResumeStore JSON + diff, and
     # gpt-oss-120b spends part of the max_tokens budget on reasoning tokens —
     # a live run at 4k truncated mid-JSON ("Unparseable JSON in completion",
-    # 2026-07-12). ~10k output ≈ $0.0015 at this model's pricing.
-    maxTokens: 10000
+    # 2026-07-12). ~12k output ≈ $0.0018 at this model's pricing.
+    maxTokens: 12000
     temperature: 0.4
+    strict: true
   url-check-search:
     model: perplexity/sonar
     maxTokens: 4000
@@ -60,3 +70,5 @@ prices:
   # perplexity/sonar per-token rate; sonar's per-request search fee is not
   # modeled here (2026-07-12 spec §8 known unknown).
   perplexity/sonar: { promptUsdPerMTok: 1, completionUsdPerMTok: 1 }
+  # Placeholder per-MTok rates — confirm exact OpenRouter rates at first live use.
+  mistralai/mistral-small-3.2-24b-instruct: { promptUsdPerMTok: 0.05, completionUsdPerMTok: 0.10 }
