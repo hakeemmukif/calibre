@@ -37,8 +37,29 @@ describe("searchRunsRepo", () => {
     expect(done?.status).toBe("completed");
     expect(done?.finishedAt).not.toBeNull();
 
-    const fetched = await repo.getById(inserted.id);
+    const fetched = await repo.getById(inserted.id, BOOTSTRAP_ADMIN_ID);
     expect(fetched?.id).toBe(inserted.id);
+  });
+
+  it("getById is scoped by userId — a foreign-owned run id resolves to null (no existence leak)", async () => {
+    const db = await createTestDb();
+    const repo = createSearchRunsRepo(db);
+    const resume = await insertResume(db);
+    const [userB] = await db
+      .insert(users)
+      .values({ email: "user-b-searchruns-getbyid@example.com", passwordHash: "h", role: "user" })
+      .returning();
+
+    const run = await repo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
+      resumeId: resume.id,
+      personas: ["remote"],
+      status: "queued",
+      stats: { scanned: 0, matched: 0, scored: 0, worth: 0, ghosts: 0, perSource: [] },
+    });
+
+    expect(await repo.getById(run.id, userB.id)).toBeNull();
+    expect((await repo.getById(run.id, BOOTSTRAP_ADMIN_ID))?.id).toBe(run.id);
   });
 
   it("getLatestCompleted is per-user — a second user's completed runs never leak into another user's cutoff", async () => {
@@ -90,14 +111,14 @@ describe("searchRunsRepo", () => {
     const flipped = await repo.markAllUnfinishedAsFailed("stale: process restarted while running");
     expect(flipped.map((r) => r.id).sort()).toEqual([queued.id, running.id].sort());
 
-    expect((await repo.getById(running.id))?.status).toBe("failed");
-    expect((await repo.getById(running.id))?.error).toBe("stale: process restarted while running");
-    expect((await repo.getById(running.id))?.finishedAt).not.toBeNull();
-    expect((await repo.getById(queued.id))?.status).toBe("failed");
-    expect((await repo.getById(queued.id))?.error).toBe("stale: process restarted while running");
-    expect((await repo.getById(queued.id))?.finishedAt).not.toBeNull();
-    expect((await repo.getById(completed.id))?.status).toBe("completed");
-    expect((await repo.getById(alreadyFailed.id))?.status).toBe("failed");
+    expect((await repo.getById(running.id, BOOTSTRAP_ADMIN_ID))?.status).toBe("failed");
+    expect((await repo.getById(running.id, BOOTSTRAP_ADMIN_ID))?.error).toBe("stale: process restarted while running");
+    expect((await repo.getById(running.id, BOOTSTRAP_ADMIN_ID))?.finishedAt).not.toBeNull();
+    expect((await repo.getById(queued.id, BOOTSTRAP_ADMIN_ID))?.status).toBe("failed");
+    expect((await repo.getById(queued.id, BOOTSTRAP_ADMIN_ID))?.error).toBe("stale: process restarted while running");
+    expect((await repo.getById(queued.id, BOOTSTRAP_ADMIN_ID))?.finishedAt).not.toBeNull();
+    expect((await repo.getById(completed.id, BOOTSTRAP_ADMIN_ID))?.status).toBe("completed");
+    expect((await repo.getById(alreadyFailed.id, BOOTSTRAP_ADMIN_ID))?.status).toBe("failed");
   });
 
   it("getLatestCompleted returns the most recent completed run, optionally scoped to a persona, null if none", async () => {

@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb } from "../db";
 import { tailoredResumes } from "../schema";
 import type { Db } from "./db";
@@ -12,8 +12,12 @@ export function createTailoredResumesRepo(db: Db) {
       const [inserted] = await db.insert(tailoredResumes).values(row).returning();
       return inserted;
     },
-    async getById(id: string): Promise<TailoredResumeRow | null> {
-      const [row] = await db.select().from(tailoredResumes).where(eq(tailoredResumes.id, id)).limit(1);
+    async getById(id: string, userId: string): Promise<TailoredResumeRow | null> {
+      const [row] = await db
+        .select()
+        .from(tailoredResumes)
+        .where(and(eq(tailoredResumes.id, id), eq(tailoredResumes.userId, userId)))
+        .limit(1);
       return row ?? null;
     },
     async updateStatus(id: string, status: TailoredResumeRow["status"]): Promise<TailoredResumeRow | null> {
@@ -69,7 +73,7 @@ export function createTailoredResumesRepo(db: Db) {
 
 export const tailoredResumesRepo: ReturnType<typeof createTailoredResumesRepo> = {
   insert: (row) => createTailoredResumesRepo(getDb()).insert(row),
-  getById: (id) => createTailoredResumesRepo(getDb()).getById(id),
+  getById: (id, userId) => createTailoredResumesRepo(getDb()).getById(id, userId),
   updateStatus: (id, status) => createTailoredResumesRepo(getDb()).updateStatus(id, status),
   complete: (id, patch) => createTailoredResumesRepo(getDb()).complete(id, patch),
   finalize: (id, patch) => createTailoredResumesRepo(getDb()).finalize(id, patch),

@@ -13,8 +13,12 @@ export function createSearchRunsRepo(db: Db) {
       const [inserted] = await db.insert(searchRuns).values(row).returning();
       return inserted;
     },
-    async getById(id: string): Promise<SearchRunRow | null> {
-      const [row] = await db.select().from(searchRuns).where(eq(searchRuns.id, id)).limit(1);
+    async getById(id: string, userId: string): Promise<SearchRunRow | null> {
+      const [row] = await db
+        .select()
+        .from(searchRuns)
+        .where(and(eq(searchRuns.id, id), eq(searchRuns.userId, userId)))
+        .limit(1);
       return row ?? null;
     },
     // task-B6-brief.md `sinceLast`/wire-`isNew` cutoff: "the previous
@@ -66,7 +70,7 @@ export function createSearchRunsRepo(db: Db) {
 
 export const searchRunsRepo: ReturnType<typeof createSearchRunsRepo> = {
   insert: (row) => createSearchRunsRepo(getDb()).insert(row),
-  getById: (id) => createSearchRunsRepo(getDb()).getById(id),
+  getById: (id, userId) => createSearchRunsRepo(getDb()).getById(id, userId),
   getLatestCompleted: (userId, persona) => createSearchRunsRepo(getDb()).getLatestCompleted(userId, persona),
   updateStatus: (id, status, patch) => createSearchRunsRepo(getDb()).updateStatus(id, status, patch),
   updateStats: (id, stats) => createSearchRunsRepo(getDb()).updateStats(id, stats),

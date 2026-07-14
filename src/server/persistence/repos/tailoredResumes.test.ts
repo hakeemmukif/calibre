@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createTestDb } from "../test-db";
+import { users } from "../schema";
 import { insertJob, insertResume, insertSource } from "./__fixtures__/helpers";
 import { createTailoredResumesRepo } from "./tailoredResumes";
 import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
@@ -25,9 +26,33 @@ describe("tailoredResumesRepo", () => {
     expect(inserted.finalizedAt).toBeNull();
     expect(inserted.completedAt).toBeNull();
 
-    const fetched = await repo.getById(inserted.id);
+    const fetched = await repo.getById(inserted.id, BOOTSTRAP_ADMIN_ID);
     expect(fetched?.id).toBe(inserted.id);
     expect(fetched?.diff[0].section).toBe("summary");
+  });
+
+  it("getById is scoped by userId — a foreign-owned tailor run resolves to null (no existence leak)", async () => {
+    const db = await createTestDb();
+    const repo = createTailoredResumesRepo(db);
+    const source = await insertSource(db);
+    const resume = await insertResume(db);
+    const job = await insertJob(db, source.id);
+    const [userB] = await db
+      .insert(users)
+      .values({ email: "user-b-tailoredresumes@example.com", passwordHash: "h", role: "user" })
+      .returning();
+
+    const inserted = await repo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
+      jobId: job.id,
+      baseResumeId: resume.id,
+      diff: [],
+      status: "queued",
+      model: "openai/gpt-4.1",
+    });
+
+    expect(await repo.getById(inserted.id, userB.id)).toBeNull();
+    expect((await repo.getById(inserted.id, BOOTSTRAP_ADMIN_ID))?.id).toBe(inserted.id);
   });
 
   it("updateStatus / complete / finalize / markFailed transitions", async () => {
