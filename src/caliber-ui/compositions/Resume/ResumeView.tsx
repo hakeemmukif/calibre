@@ -49,10 +49,12 @@ export function ResumeView({ resume, onTailor, onReupload }: ResumeViewProps) {
 
       {tab === "overview" && (
         <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 20 }}>
-          <section>
-            <div style={{ font: "var(--type-label)", color: "var(--text-strong)", marginBottom: 6 }}>Summary</div>
-            <p style={{ font: "var(--type-body)", color: "var(--text-body)", margin: 0 }}>{resume.summary}</p>
-          </section>
+          {resume.summary && (
+            <section>
+              <div style={{ font: "var(--type-label)", color: "var(--text-strong)", marginBottom: 6 }}>Summary</div>
+              <p style={{ font: "var(--type-body)", color: "var(--text-body)", margin: 0 }}>{resume.summary}</p>
+            </section>
+          )}
 
           <section>
             <div style={{ font: "var(--type-label)", color: "var(--text-strong)", marginBottom: 10 }}>Experience</div>

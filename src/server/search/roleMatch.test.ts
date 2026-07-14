@@ -154,7 +154,7 @@ describe("deriveRoleTargets", () => {
     expect(target.keywords).toEqual(["TypeScript", "Go", "Kubernetes"]);
   });
 
-  it("falls back to a contact headline line over experience[0].title when present", () => {
+  it("no longer falls back to a contact headline line (contact-regex fallback removed — store.headline is the only best-effort source)", () => {
     const resume = {
       structured: {
         storeVersion: 2 as const,
@@ -173,6 +173,51 @@ describe("deriveRoleTargets", () => {
     };
 
     const [target] = deriveRoleTargets(resume, "local");
+    expect(target.titles).toEqual(["Senior Backend Engineer"]);
+  });
+
+  it("uses store.headline directly when present, over a contact headline line", () => {
+    const resume = {
+      structured: {
+        storeVersion: 2 as const,
+        extractionPath: "text" as const,
+        name: "Jane Doe",
+        headline: "Staff Platform Engineer",
+        contact: [{ label: "headline", value: "Some Other Title" }],
+        summary: "s",
+        experience: [{ company: "Acme", title: "Senior Backend Engineer", dates: "2022–Present", isCurrent: true, bullets: [] }],
+        education: [],
+        skills: [],
+        projects: [],
+        certifications: [],
+        languages: [],
+        sections: [],
+      },
+    };
+
+    const [target] = deriveRoleTargets(resume, "local");
     expect(target.titles).toEqual(["Senior Backend Engineer", "Staff Platform Engineer"]);
+  });
+
+  it("falls back to experience titles when store.headline is absent", () => {
+    const resume = {
+      structured: {
+        storeVersion: 2 as const,
+        extractionPath: "text" as const,
+        name: "Jane Doe",
+        contact: [],
+        summary: "s",
+        experience: [{ company: "Acme", title: "Senior Backend Engineer", dates: "2022–Present", isCurrent: true, bullets: [] }],
+        education: [],
+        skills: [],
+        projects: [],
+        certifications: [],
+        languages: [],
+        sections: [],
+      },
+    };
+
+    const [target] = deriveRoleTargets(resume, "local");
+    expect(target.titles).toEqual(["Senior Backend Engineer"]);
   });
 });

@@ -141,7 +141,7 @@ export const Resume = z.object({ // §5; `hasResume` is NOT a field — absence 
   updatedAt: z.string().datetime(), // wire form of kit's `updated`; UI derives "3d ago"
   headline: z.string(),
   location: z.string(),
-  summary: z.string(),
+  summary: z.string().optional(),
   experience: z.array(
     z.object({ title: z.string(), company: z.string(), dates: z.string(), bullets: z.array(z.string()) }),
   ),

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ResumeStore } from "./resume-store";
-import { ParseFailedError, toResumeView } from "./derive-view";
+import { assertResumeViewDerivable, ParseFailedError, toResumeView } from "./derive-view";
 
 function baseStore(overrides: Partial<ResumeStore> = {}): ResumeStore {
   return {
@@ -149,6 +149,71 @@ describe("toResumeView", () => {
     const store = baseStore({
       contact: [{ label: "email", value: "jane@example.com" }],
       experience: [],
+    });
+    expect(() => toResumeView(store, opts)).toThrow(ParseFailedError);
+  });
+
+  it("prefers store.headline over contact and experience", () => {
+    const store = baseStore({ headline: "Staff Platform Engineer" });
+    const resume = toResumeView(store, opts);
+    expect(resume.headline).toBe("Staff Platform Engineer");
+  });
+
+  it("prefers experience[0].title over education when both present", () => {
+    const store = baseStore({
+      contact: [{ label: "email", value: "jane@example.com" }],
+      education: [{ school: "University of Malaya", credential: "B.Sc. Computer Science", dates: "2018–2022", details: [] }],
+    });
+    const resume = toResumeView(store, opts);
+    expect(resume.headline).toBe("Senior Backend Engineer");
+  });
+
+  it("derives headline from education credential for an education-only fresh-grad résumé with no summary, and does not throw", () => {
+    const store = baseStore({
+      contact: [
+        { label: "email", value: "jane@example.com" },
+        { label: "location", value: "Kuala Lumpur, Malaysia" },
+      ],
+      summary: undefined,
+      experience: [],
+      education: [{ school: "University of Malaya", credential: "B.Sc. Computer Science", dates: "2022–2026", details: [] }],
+    });
+
+    expect(() => assertResumeViewDerivable(store)).not.toThrow();
+
+    const resume = toResumeView(store, opts);
+    expect(resume.headline).toBe("B.Sc. Computer Science");
+    expect(resume.location).toBe("Kuala Lumpur, Malaysia");
+    expect(resume.summary).toBeUndefined();
+  });
+
+  it("falls back to the education school when no credential is present", () => {
+    const store = baseStore({
+      contact: [
+        { label: "email", value: "jane@example.com" },
+        { label: "location", value: "Kuala Lumpur, Malaysia" },
+      ],
+      experience: [],
+      education: [{ school: "University of Malaya", dates: "2022–2026", details: [] }],
+    });
+    const resume = toResumeView(store, opts);
+    expect(resume.headline).toBe("University of Malaya");
+  });
+
+  it("still throws ParseFailedError when no headline source exists at all, including education", () => {
+    const store = baseStore({
+      contact: [{ label: "email", value: "jane@example.com" }],
+      experience: [],
+      education: [],
+    });
+    expect(() => toResumeView(store, opts)).toThrow(ParseFailedError);
+  });
+
+  it("location still fails loud when genuinely absent, even on an education-only résumé", () => {
+    const store = baseStore({
+      contact: [{ label: "email", value: "jane@example.com" }],
+      experience: [],
+      education: [{ school: "University of Malaya", credential: "B.Sc. Computer Science", dates: "2022–2026", details: [] }],
     });
     expect(() => toResumeView(store, opts)).toThrow(ParseFailedError);
   });

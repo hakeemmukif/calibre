@@ -825,7 +825,6 @@
           "updatedAt",
           "headline",
           "location",
-          "summary",
           "experience",
           "skills",
           "rawText"
@@ -1242,7 +1241,6 @@
               "updatedAt",
               "headline",
               "location",
-              "summary",
               "experience",
               "skills"
             ],
