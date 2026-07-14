@@ -15,6 +15,11 @@ tasks:
     # truncates mid-output, so the budget is sized for large résumés.
     maxTokens: 6000
     temperature: 0.1
+    # Extraction is transcription, not inference: low reasoning effort keeps
+    # the reasoning-token overhead to a few hundred tokens (default effort
+    # burns 1–3k) so a résumé's JSON no longer overflows maxTokens. Paired
+    # with the ~2-page input cap in server/resume/extract-text.ts.
+    reasoningEffort: low
   jd-extract:
     model: openai/gpt-oss-120b
     # Same reasoning-token overhead as resume-extract; long JDs overflow 1500.

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { PdfParseError } from "@/lib/pdf-text";
 import { ParseFailedError } from "./derive-view";
-import { extractText, UnsupportedMimeError } from "./extract-text";
+import { extractText, ResumeTooLongError, UnsupportedMimeError } from "./extract-text";
 
 const FIXTURES = join(__dirname, "__fixtures__");
 
@@ -26,6 +26,15 @@ describe("extractText", () => {
       file: { bytes, mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" },
     });
     expect(text).toContain("Jane Doe resume docx fixture");
+  });
+
+  it("accepts pasted text at exactly the 12,000-char cap", async () => {
+    const text = "a".repeat(12_000);
+    await expect(extractText({ text })).resolves.toBe(text);
+  });
+
+  it("throws ResumeTooLongError when pasted text exceeds the ~2-page cap", async () => {
+    await expect(extractText({ text: "a".repeat(12_001) })).rejects.toThrow(ResumeTooLongError);
   });
 
   it("throws UnsupportedMimeError for an unknown mime type", async () => {

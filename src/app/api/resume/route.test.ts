@@ -166,6 +166,17 @@ describe("/api/resume", () => {
     expect(body.error.message).toBeTruthy();
   });
 
+  it("POST rejects an over-long paste with 413 PAYLOAD_TOO_LARGE before hitting the LLM", async () => {
+    const create = vi.fn();
+    state.llm = { complete: create } as unknown as LlmClient;
+
+    const res = await POST(jsonRequest({ text: "a".repeat(12_001) }));
+
+    expect(res.status).toBe(413);
+    expect((await res.json()).error.code).toBe("PAYLOAD_TOO_LARGE");
+    expect(create).not.toHaveBeenCalled();
+  });
+
   it("POST {text} paste happy path persists and returns 200 Resume", async () => {
     const res = await POST(jsonRequest({ text: "a".repeat(120) }));
     expect(res.status).toBe(200);

@@ -3,9 +3,13 @@ import type { TaskName } from "./client";
 import { escalateModelFor, modelFor, priceFor } from "./models";
 
 describe("models", () => {
-  it("modelFor reads model/maxTokens/temperature from config/models.yml", () => {
+  it("modelFor reads model/maxTokens/temperature/reasoningEffort from config/models.yml", () => {
     const config = modelFor("resume-extract");
-    expect(config).toEqual({ model: "openai/gpt-oss-120b", maxTokens: 6000, temperature: 0.1 });
+    expect(config).toEqual({ model: "openai/gpt-oss-120b", maxTokens: 6000, temperature: 0.1, reasoningEffort: "low" });
+  });
+
+  it("modelFor omits reasoningEffort for tasks that don't set it (provider default)", () => {
+    expect(modelFor("match-score").reasoningEffort).toBeUndefined();
   });
 
   it("escalateModelFor returns null for match-score (no escalation valve configured)", () => {

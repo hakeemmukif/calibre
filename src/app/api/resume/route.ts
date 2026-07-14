@@ -8,7 +8,7 @@ import { PdfParseError } from "@/lib/pdf-text";
 import { requireUser } from "@/server/auth/session";
 import { UnauthorizedError } from "@/server/auth/errors";
 import { ParseFailedError } from "@/server/resume/derive-view";
-import { UnsupportedMimeError } from "@/server/resume/extract-text";
+import { ResumeTooLongError, UnsupportedMimeError } from "@/server/resume/extract-text";
 import { getActiveResume, ingestResume } from "@/server/resume/ingest";
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
@@ -55,6 +55,9 @@ export async function POST(request: NextRequest) {
     }
     if (err instanceof UnsupportedMimeError) {
       return errorResponse(422, "VALIDATION_ERROR", err.message);
+    }
+    if (err instanceof ResumeTooLongError) {
+      return errorResponse(413, "PAYLOAD_TOO_LARGE", err.message);
     }
     if (err instanceof PdfParseError || err instanceof ParseFailedError) {
       return errorResponse(502, "PARSE_FAILED", err.message);

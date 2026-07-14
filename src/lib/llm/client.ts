@@ -56,6 +56,11 @@ function buildClient(transport: OpenAI): LlmClient {
           messages,
           max_tokens: config.maxTokens,
           temperature: config.temperature,
+          // gpt-oss-120b bills reasoning tokens against max_tokens; "low"
+          // caps that overhead so structured extraction doesn't truncate.
+          // Absent from config → provider default (an explicit choice, not a
+          // silent fallback).
+          ...(config.reasoningEffort !== undefined ? { reasoning_effort: config.reasoningEffort } : {}),
           response_format: {
             type: "json_schema",
             json_schema: { name: task, schema: jsonSchema, strict: false },

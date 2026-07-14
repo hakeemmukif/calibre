@@ -52,6 +52,26 @@ describe("getLlm", () => {
     expect(callArgs.response_format.json_schema.schema).toEqual(z.toJSONSchema(schema));
   });
 
+  it("sends reasoning_effort from the task config (resume-extract → low)", async () => {
+    process.env.OPENROUTER_API_KEY = "test-key";
+    mocks.create.mockResolvedValue(reply({ ok: true }));
+    const llm = getLlm();
+
+    await llm.complete({ task: "resume-extract", messages: [], responseSchema: schema });
+
+    expect(mocks.create.mock.calls[0][0].reasoning_effort).toBe("low");
+  });
+
+  it("omits reasoning_effort for a task that doesn't configure it (match-score)", async () => {
+    process.env.OPENROUTER_API_KEY = "test-key";
+    mocks.create.mockResolvedValue(reply({ ok: true }));
+    const llm = getLlm();
+
+    await llm.complete({ task: "match-score", messages: [], responseSchema: schema });
+
+    expect(mocks.create.mock.calls[0][0]).not.toHaveProperty("reasoning_effort");
+  });
+
   it("Zod-parses a valid reply and returns it as data", async () => {
     process.env.OPENROUTER_API_KEY = "test-key";
     mocks.create.mockResolvedValue(reply({ ok: true }));
