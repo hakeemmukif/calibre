@@ -69,6 +69,28 @@ describe("getLlm", () => {
     expect(rf.schema.properties.a.additionalProperties).toBe(false);
   });
 
+  it("harden() forces additionalProperties:false on a node zod itself leaves open (proves harden() isn't a no-op)", async () => {
+    process.env.OPENROUTER_API_KEY = "test-key";
+    mocks.create.mockResolvedValue(reply({ a: { b: "x" } }));
+    const llm = getLlm();
+
+    // .catchall() is the one zod4 construct that does NOT default a node's
+    // additionalProperties to false — confirming that here means the
+    // assertion below only passes because harden() ran, not because zod
+    // already closed the schema (unlike the plain z.object() case above).
+    const schemaWithCatchall = z.object({ a: z.object({ b: z.string() }) }).catchall(z.unknown());
+    expect(z.toJSONSchema(schemaWithCatchall).additionalProperties).not.toBe(false);
+
+    await llm.complete({
+      task: "resume-extract", // config sets strict:true in models.yml
+      messages: [{ role: "user", content: "hi" }],
+      responseSchema: schemaWithCatchall,
+    });
+
+    const rf2 = mocks.create.mock.calls[0][0].response_format.json_schema;
+    expect(rf2.schema.additionalProperties).toBe(false);
+  });
+
   it("sends reasoning_effort from the task config (resume-extract → low)", async () => {
     process.env.OPENROUTER_API_KEY = "test-key";
     mocks.create.mockResolvedValue(reply({ ok: true }));
