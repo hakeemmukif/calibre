@@ -81,8 +81,8 @@ export function createUrlCheckWorker(overrides: UrlCheckWorkerDeps = {}) {
 
       // A duplicate that got scored while this row waited finishes as alreadyKnown
       // with zero LLM spend (spec §4.3 claim-time re-check).
-      const existingJob = await jobsRepo.getByDedupeKey(row.dedupeKey);
-      if (existingJob && (await jobsRepo.hasAnyScore(existingJob.id))) {
+      const existingJob = await jobsRepo.getByDedupeKey(row.dedupeKey, row.userId);
+      if (existingJob && (await jobsRepo.hasAnyScore(existingJob.id, row.userId))) {
         await urlChecksRepo.complete(row.id, { jobId: existingJob.id, alreadyKnown: true }, attempt);
         return;
       }

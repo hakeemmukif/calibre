@@ -9,6 +9,7 @@ import { z } from "zod";
 import { getLlm } from "@/lib/llm/client";
 import { renderTemplate } from "@/lib/llm/templates";
 import { assembleJob } from "@/features/feed/assemble";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 import { jobsRepo } from "@/server/persistence/repos/jobs";
 import { connectorForSource } from "@/server/search/connectors";
 import { resolveIsNewCutoff } from "@/server/search/jobsFeed";
@@ -68,10 +69,12 @@ export async function extractQuestions(input: {
   let tier1Fields: Awaited<ReturnType<NonNullable<ReturnType<typeof connectorForSource>["extractQuestions"]>>> | null = null;
 
   if (input.jobId !== undefined) {
-    const joined = await jobsRepo.getById(input.jobId);
+    // TEMP read-scaffold (Task 4 threads the caller's session.userId here):
+    // POST /api/apply/questions doesn't call requireUser() yet.
+    const joined = await jobsRepo.getById(input.jobId, BOOTSTRAP_ADMIN_ID);
     if (!joined) throw new UnknownJobError(input.jobId);
 
-    const cutoff = await resolveIsNewCutoff(joined.job.persona);
+    const cutoff = await resolveIsNewCutoff(BOOTSTRAP_ADMIN_ID, joined.job.persona);
     const job = assembleJob(joined, { isNewCutoff: cutoff });
     sourceUrl = job.applyUrl;
 

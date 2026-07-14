@@ -403,7 +403,10 @@ async function scoreTopCandidates(
 
   if (topCandidates.length === 0) return { scored, worth, ghosts, unscored, capStopped };
 
-  const isNewCutoff = await resolveIsNewCutoff(persona);
+  // TEMP read-scaffold (Task 4 threads the real per-run userId here):
+  // server/search/run.ts's userId threading lands in Task 4 (per-user
+  // registry + run.ts thread), not this task.
+  const isNewCutoff = await resolveIsNewCutoff(BOOTSTRAP_ADMIN_ID, persona);
   const llm = deps.llm ?? getLlm();
   const dailyCapUsd =
     deps.dailyCapUsd ?? (process.env.CALIBER_DAILY_LLM_USD ? Number(process.env.CALIBER_DAILY_LLM_USD) : undefined);

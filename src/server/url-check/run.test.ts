@@ -159,7 +159,7 @@ describe("startUrlCheck admission", () => {
       url: "https://example.com/orphan",
       persona: "pasted",
     });
-    expect(await orphanJobsRepo.hasAnyScore(orphan.id)).toBe(false);
+    expect(await orphanJobsRepo.hasAnyScore(orphan.id, BOOTSTRAP_ADMIN_ID)).toBe(false);
 
     const { check, started } = await startUrlCheck({ url: "https://example.com/orphan" });
 
@@ -478,7 +478,7 @@ describe("runPipeline — persisting edge cases", () => {
       url: "https://example.com/orphan",
       persona: "pasted",
     });
-    expect(await orphanJobsRepo.hasAnyScore(orphan.id)).toBe(false);
+    expect(await orphanJobsRepo.hasAnyScore(orphan.id, BOOTSTRAP_ADMIN_ID)).toBe(false);
     const checkId = await insertRunningCheck(db, { url: "https://example.com/orphan" });
 
     await runPipeline(checkId, { url: "https://example.com/orphan" }, {
@@ -521,7 +521,7 @@ describe("run.ts is agnostic to the tier-1 LinkedIn guest-endpoint rewrite", () 
     const finalRow = await createUrlChecksRepo(db).getById(checkId);
     expect(finalRow?.status).toBe("completed");
 
-    const persisted = await createJobsRepo(db).getByDedupeKey(dedupeKeyFor(reqUrl));
+    const persisted = await createJobsRepo(db).getByDedupeKey(dedupeKeyFor(reqUrl), BOOTSTRAP_ADMIN_ID);
     expect(persisted).not.toBeNull();
     expect(persisted!.url).toBe(reqUrl);
     expect(persisted!.applyUrl).toBe(reqUrl);

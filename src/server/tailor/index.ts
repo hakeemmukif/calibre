@@ -95,10 +95,10 @@ export interface StartTailorDeps {
 }
 
 export async function startTailor(input: StartTailorInput, deps: StartTailorDeps = {}): Promise<TailoredResume> {
-  if (!(await jobsRepo.existsById(input.jobId))) throw new UnknownJobError(input.jobId);
-
   // TEMP read-scaffold (Task 4 threads the caller's session.userId here):
   // POST /api/tailor doesn't call requireUser() yet.
+  if (!(await jobsRepo.existsById(input.jobId, BOOTSTRAP_ADMIN_ID))) throw new UnknownJobError(input.jobId);
+
   const resumeRow = await resumesRepo.getActive(BOOTSTRAP_ADMIN_ID);
   if (!resumeRow) throw new NoActiveResumeError();
 

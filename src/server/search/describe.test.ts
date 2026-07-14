@@ -106,7 +106,7 @@ describe("ensureDescription", () => {
     expect(result.id).toBe(job.id);
     expect(result.description).toBe("Full JD text.");
 
-    const reloaded = await repo.existsById(job.id);
+    const reloaded = await repo.existsById(job.id, BOOTSTRAP_ADMIN_ID);
     expect(reloaded).toBe(true);
   });
 

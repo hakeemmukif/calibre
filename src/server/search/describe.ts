@@ -22,5 +22,5 @@ export async function ensureDescription(job: JobRow, source: SourceRow): Promise
   const description = detail.description.slice(0, DESCRIPTION_CAP);
   if (!description.trim()) return job;
 
-  return jobsRepo.updateDescription(job.id, description);
+  return jobsRepo.updateDescription(job.id, job.userId, description);
 }

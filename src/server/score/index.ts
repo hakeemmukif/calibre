@@ -64,7 +64,7 @@ export async function scoreJob(args: {
     location: job.location || undefined,
     jdFacts: jdFactsResult.data,
   });
-  await jobsRepo.updateEligibility(job.id, eligibility.tier, eligibility.evidence);
+  await jobsRepo.updateEligibility(job.id, job.userId, eligibility.tier, eligibility.evidence);
 
   const cheap = await scoreMatch(llm, { jdFacts: jdFactsResult.data, resume: resume.structured });
 

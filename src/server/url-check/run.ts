@@ -314,7 +314,9 @@ export async function startUrlCheck(req: UrlCheckRequest): Promise<{ check: UrlC
   }
 
   const dedupeKey = dedupeKeyFor(req.url);
-  const existingJob = await jobsRepo.getByDedupeKey(dedupeKey);
+  // TEMP read-scaffold (Task 5 threads the caller's session.userId here):
+  // POST /api/jobs/check doesn't call requireUser() yet.
+  const existingJob = await jobsRepo.getByDedupeKey(dedupeKey, BOOTSTRAP_ADMIN_ID);
 
   // A dedupe hit only short-circuits to alreadyKnown when it's actually
   // scored (final review fix wave FIX 1a). An unscored hit is a
@@ -322,7 +324,7 @@ export async function startUrlCheck(req: UrlCheckRequest): Promise<{ check: UrlC
   // succeeded but scoreJob then threw) — falling through to the normal
   // pipeline below self-heals it: the persist stage's upsert hits the same
   // dedupe key and updates the row, then scoring completes it.
-  if (existingJob && (await jobsRepo.hasAnyScore(existingJob.id))) {
+  if (existingJob && (await jobsRepo.hasAnyScore(existingJob.id, BOOTSTRAP_ADMIN_ID))) {
     const row = await urlChecksRepo.insert({
       userId: BOOTSTRAP_ADMIN_ID,
       id: crypto.randomUUID(),

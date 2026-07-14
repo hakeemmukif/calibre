@@ -44,6 +44,9 @@ export function createJobScoresRepo(db: Db) {
     // been scored (JdFacts). A job can carry multiple job_scores rows (résumé
     // replacement / policy bump) — this picks the most recent one by
     // created_at, regardless of resumeId (v1 holds exactly one active résumé).
+    // GLOBAL-BY-DECISION: no user_id filter here (step 3 plan, Task 3) —
+    // caller verifies job ownership first (draftAnswers gates on
+    // jobsRepo.existsById before this is ever called).
     async getLatestByJobId(jobId: string): Promise<JobScoreRow | null> {
       const [row] = await db
         .select()

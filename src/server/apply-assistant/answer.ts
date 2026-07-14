@@ -61,10 +61,10 @@ export async function draftAnswers(
   input: { jobId: string; questions: ApplicationQuestion[] },
   deps: { llm?: LlmClient } = {},
 ): Promise<ApplicationAnswers> {
-  if (!(await jobsRepo.existsById(input.jobId))) throw new UnknownJobError(input.jobId);
-
   // TEMP read-scaffold (Task 4 threads the caller's session.userId here):
   // POST /api/apply/answers doesn't call requireUser() yet.
+  if (!(await jobsRepo.existsById(input.jobId, BOOTSTRAP_ADMIN_ID))) throw new UnknownJobError(input.jobId);
+
   const resumeRow = await resumesRepo.getActive(BOOTSTRAP_ADMIN_ID);
   if (!resumeRow) throw new NoActiveResumeError();
 
