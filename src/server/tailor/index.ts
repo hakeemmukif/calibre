@@ -10,7 +10,6 @@ import { modelFor } from "@/lib/llm/models";
 import { renderTemplate } from "@/lib/llm/templates";
 import { htmlToPdf } from "@/lib/pdf";
 import { renderCvHtml } from "@/lib/resume-render";
-import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 import { jobScoresRepo } from "@/server/persistence/repos/jobScores";
 import { jobsRepo } from "@/server/persistence/repos/jobs";
 import { resumesRepo, type ResumeRow } from "@/server/persistence/repos/resumes";
@@ -94,16 +93,18 @@ export interface StartTailorDeps {
   llm?: LlmClient;
 }
 
-export async function startTailor(input: StartTailorInput, deps: StartTailorDeps = {}): Promise<TailoredResume> {
-  // TEMP read-scaffold (Task 4 threads the caller's session.userId here):
-  // POST /api/tailor doesn't call requireUser() yet.
-  if (!(await jobsRepo.existsById(input.jobId, BOOTSTRAP_ADMIN_ID))) throw new UnknownJobError(input.jobId);
+export async function startTailor(
+  userId: string,
+  input: StartTailorInput,
+  deps: StartTailorDeps = {},
+): Promise<TailoredResume> {
+  if (!(await jobsRepo.existsById(input.jobId, userId))) throw new UnknownJobError(input.jobId);
 
-  const resumeRow = await resumesRepo.getActive(BOOTSTRAP_ADMIN_ID);
+  const resumeRow = await resumesRepo.getActive(userId);
   if (!resumeRow) throw new NoActiveResumeError();
 
   const inserted = await tailoredResumesRepo.insert({
-    userId: BOOTSTRAP_ADMIN_ID,
+    userId,
     jobId: input.jobId,
     baseResumeId: resumeRow.id,
     diff: [],
@@ -194,8 +195,8 @@ async function runTailorJob(
 // (assemble.ts's toTailoredResume, renderTailorPdf below) — so re-finalize
 // with a different accepted set is always correct (api-contract.md §3
 // "GET .../pdf renders whatever this route LAST finalized").
-export async function finalizeTailor(id: string, acceptedIndices: number[]): Promise<TailoredResume> {
-  const row = await tailoredResumesRepo.getById(id);
+export async function finalizeTailor(id: string, userId: string, acceptedIndices: number[]): Promise<TailoredResume> {
+  const row = await tailoredResumesRepo.getById(id, userId);
   if (!row) throw new UnknownTailorIdError(id);
   if (row.status !== "completed" || !row.structured) {
     throw new RunNotReadyError(`Tailor run ${id} is not ready to finalize (status: ${row.status}).`);
@@ -215,8 +216,8 @@ export async function finalizeTailor(id: string, acceptedIndices: number[]): Pro
   return toTailoredResume(updated);
 }
 
-export async function renderTailorPdf(id: string): Promise<Buffer> {
-  const row = await tailoredResumesRepo.getById(id);
+export async function renderTailorPdf(id: string, userId: string): Promise<Buffer> {
+  const row = await tailoredResumesRepo.getById(id, userId);
   if (!row) throw new UnknownTailorIdError(id);
   if (!row.finalizedAt || row.status !== "completed" || !row.structured) {
     throw new RunNotReadyError(`Tailor run ${id} has not been finalized yet.`);

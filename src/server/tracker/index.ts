@@ -2,7 +2,6 @@
 // §4 "F5 Mark applied"). No LLM. `features/applied/status-map.ts` owns all
 // status folding; this module only calls it — never re-derives labels/tones
 // itself (task-B9-brief.md "status folding ONLY in status-map").
-import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 import { applicationsRepo, ApplicationConflictError, type AppJoinJobScore } from "@/server/persistence/repos/applications";
 import { jobsRepo } from "@/server/persistence/repos/jobs";
 import { resumesRepo } from "@/server/persistence/repos/resumes";
@@ -74,19 +73,17 @@ export interface MarkAppliedInput {
   answersId?: string;
 }
 
-export async function markApplied(input: MarkAppliedInput): Promise<Application> {
-  // TEMP read-scaffold (Task 4 threads the caller's session.userId here):
-  // POST /api/applications doesn't call requireUser() yet.
-  if (!(await jobsRepo.existsById(input.jobId, BOOTSTRAP_ADMIN_ID))) throw new UnknownJobError(input.jobId);
-  if (!(await jobsRepo.getById(input.jobId, BOOTSTRAP_ADMIN_ID))) throw new JobNotScoredError(input.jobId);
+export async function markApplied(userId: string, input: MarkAppliedInput): Promise<Application> {
+  if (!(await jobsRepo.existsById(input.jobId, userId))) throw new UnknownJobError(input.jobId);
+  if (!(await jobsRepo.getById(input.jobId, userId))) throw new JobNotScoredError(input.jobId);
 
-  const resumeRow = await resumesRepo.getActive(BOOTSTRAP_ADMIN_ID);
+  const resumeRow = await resumesRepo.getActive(userId);
   if (!resumeRow) throw new NoActiveResumeError();
 
   const folded = foldStatus(0, "open");
 
   const inserted = await applicationsRepo.insertUniqueByJob({
-    userId: BOOTSTRAP_ADMIN_ID,
+    userId,
     jobId: input.jobId,
     resumeId: resumeRow.id,
     tailoredResumeId: input.tailoredResumeId ?? null,
@@ -97,7 +94,7 @@ export async function markApplied(input: MarkAppliedInput): Promise<Application>
     note: input.note ?? "",
   });
 
-  const joined = await applicationsRepo.getJoined(inserted.id);
+  const joined = await applicationsRepo.getJoined(inserted.id, userId);
   if (!joined) throw new Error(`applications row ${inserted.id} vanished right after insert`);
   return toApplication(joined);
 }
@@ -111,8 +108,9 @@ export interface ListApplicationsQuery {
 
 export async function listApplications(
   q: ListApplicationsQuery,
+  userId: string,
 ): Promise<{ items: Application[]; nextCursor: string | null }> {
-  const { items, nextCursor } = await applicationsRepo.listJoined(q);
+  const { items, nextCursor } = await applicationsRepo.listJoined({ ...q, userId });
   return { items: items.map(toApplication), nextCursor };
 }
 
@@ -132,16 +130,23 @@ export type PatchApplicationInput = Partial<{
 // accepted (locked interface) but never persisted — it's derived from
 // `tailoredResumeId` on every read (see toApplication above), so patching it
 // alone is a no-op; pair it with `tailoredResumeId` to actually change it.
-export async function patchApplication(id: string, patch: PatchApplicationInput): Promise<Application | null> {
+export async function patchApplication(
+  id: string,
+  userId: string,
+  patch: PatchApplicationInput,
+): Promise<Application | null> {
   const { tailored: _tailored, ...rest } = patch;
 
   const shouldRefold = rest.stage !== undefined && rest.statusLabel === undefined && rest.statusTone === undefined;
   const toApply = shouldRefold ? { ...rest, ...foldStatus(rest.stage!, "open") } : rest;
 
-  const updated = await applicationsRepo.patch(id, toApply);
+  // By-uuid PATCH leak fix (Fable design review, CRITICAL): applicationsRepo.patch
+  // is now scoped by userId — a foreign application id no-ops (null) rather
+  // than updating another tenant's row.
+  const updated = await applicationsRepo.patch(id, userId, toApply);
   if (!updated) return null;
 
-  const joined = await applicationsRepo.getJoined(id);
+  const joined = await applicationsRepo.getJoined(id, userId);
   if (!joined) throw new Error(`applications row ${id} vanished right after patch`);
   return toApplication(joined);
 }

@@ -1,8 +1,9 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { makeMockLlm } from "@/lib/llm/mock";
 import { insertJob, insertJobScore, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
-import { jobs, jobScores, resumes, sources, tailoredResumes } from "@/server/persistence/schema";
+import { jobs, jobScores, resumes, sources, tailoredResumes, users } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
@@ -33,7 +34,7 @@ const TAILOR_DIFF = [
 async function waitForTerminal(id: string, timeoutMs = 2000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const row = await tailoredResumesRepo.getById(id);
+    const row = await tailoredResumesRepo.getById(id, BOOTSTRAP_ADMIN_ID);
     if (row && (row.status === "completed" || row.status === "failed")) return;
     await new Promise((r) => setTimeout(r, 5));
   }
@@ -55,13 +56,24 @@ describe("startTailor", () => {
   });
 
   it("404s (UnknownJobError) for an unknown job id", async () => {
-    await expect(startTailor({ jobId: crypto.randomUUID() })).rejects.toBeInstanceOf(UnknownJobError);
+    await expect(startTailor(BOOTSTRAP_ADMIN_ID, { jobId: crypto.randomUUID() })).rejects.toBeInstanceOf(UnknownJobError);
+  });
+
+  it("404s (UnknownJobError) for a foreign-owned job id (no existence leak)", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id);
+    const [userB] = await state.testDb
+      .insert(users)
+      .values({ email: "user-b-starttailor@example.com", passwordHash: "h", role: "user" })
+      .returning();
+
+    await expect(startTailor(userB.id, { jobId: job.id })).rejects.toBeInstanceOf(UnknownJobError);
   });
 
   it("409s (NoActiveResumeError) when no résumé is active", async () => {
     const source = await insertSource(state.testDb);
     const job = await insertJob(state.testDb, source.id);
-    await expect(startTailor({ jobId: job.id })).rejects.toBeInstanceOf(NoActiveResumeError);
+    await expect(startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id })).rejects.toBeInstanceOf(NoActiveResumeError);
   });
 
   it("returns a queued draft immediately, then completes async with structured + diff", async () => {
@@ -75,7 +87,7 @@ describe("startTailor", () => {
 
     const llm = makeMockLlm({ tailor: { resume: TAILORED_STORE, diff: TAILOR_DIFF } });
 
-    const draft = await startTailor({ jobId: job.id }, { llm });
+    const draft = await startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id }, { llm });
     expect(draft.status).toBe("queued");
     expect(draft.resume).toBeNull();
     expect(draft.diff).toEqual([]);
@@ -83,7 +95,7 @@ describe("startTailor", () => {
 
     await waitForTerminal(draft.id);
 
-    const row = await tailoredResumesRepo.getById(draft.id);
+    const row = await tailoredResumesRepo.getById(draft.id, BOOTSTRAP_ADMIN_ID);
     expect(row?.status).toBe("completed");
     expect(row?.structured).toEqual(TAILORED_STORE);
     expect(row?.diff).toEqual(TAILOR_DIFF);
@@ -99,7 +111,7 @@ describe("startTailor", () => {
     const llm = makeMockLlm({ tailor: { resume: TAILORED_STORE, diff: TAILOR_DIFF } });
 
     const events: { event: string; stage?: string }[] = [];
-    const draft = await startTailor({ jobId: job.id }, { llm });
+    const draft = await startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id }, { llm });
     const handle = getRunHandle(draft.id);
     expect(handle).toBeDefined();
 
@@ -131,10 +143,10 @@ describe("startTailor", () => {
     ];
     const llm = makeMockLlm({ tailor: { resume: TAILORED_STORE, diff: duplicateSectionDiff } });
 
-    const draft = await startTailor({ jobId: job.id }, { llm });
+    const draft = await startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id }, { llm });
     await waitForTerminal(draft.id);
 
-    const row = await tailoredResumesRepo.getById(draft.id);
+    const row = await tailoredResumesRepo.getById(draft.id, BOOTSTRAP_ADMIN_ID);
     expect(row?.status).toBe("failed");
   });
 });

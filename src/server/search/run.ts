@@ -9,7 +9,6 @@ import pLimit from "p-limit";
 import type { LlmClient } from "@/lib/llm/client";
 import { getLlm } from "@/lib/llm/client";
 import { assembleJob } from "@/features/feed/assemble";
-import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 import { jobsRepo, type JobRow } from "@/server/persistence/repos/jobs";
 import { jobScoresRepo } from "@/server/persistence/repos/jobScores";
 import { profileRepo, type ProfileRow } from "@/server/persistence/repos/profile";
@@ -82,8 +81,12 @@ export interface StartSearchDeps {
   dailyCapUsd?: number;
 }
 
-export async function startSearch(input: StartSearchInput, deps: StartSearchDeps = {}): Promise<SearchRun> {
-  const activeRunId = getActiveRunForPersona(input.persona);
+export async function startSearch(
+  userId: string,
+  input: StartSearchInput,
+  deps: StartSearchDeps = {},
+): Promise<SearchRun> {
+  const activeRunId = getActiveRunForPersona(userId, input.persona);
   if (activeRunId) throw new ActiveRunConflictError(activeRunId);
 
   // Reserve the persona slot synchronously, right after the check above and
@@ -93,21 +96,17 @@ export async function startSearch(input: StartSearchInput, deps: StartSearchDeps
   // check and both start a run. Released on any throw before the run row
   // exists (below); the normal completion/failure paths release it too.
   const runId = crypto.randomUUID();
-  const handle = create("search", runId, input.persona);
+  const handle = create("search", runId, userId, input.persona);
 
   try {
-    // TEMP read-scaffold (Task 4 threads the caller's session.userId here):
-    // this route doesn't call requireUser() yet.
     const resumeRow = input.resumeId
-      ? await resumesRepo.getById(input.resumeId, BOOTSTRAP_ADMIN_ID)
-      : await resumesRepo.getActive(BOOTSTRAP_ADMIN_ID);
+      ? await resumesRepo.getById(input.resumeId, userId)
+      : await resumesRepo.getActive(userId);
     if (!resumeRow) throw new NoActiveResumeError();
 
     // Eligibility needs the operator profile (spec §5) — a missing row aborts
     // the run before any fetch (ProfileMissingError, fail loud).
-    // TEMP read-scaffold (Task 4 threads the caller's session.userId here):
-    // this route doesn't call requireUser() yet.
-    const profile = await profileRepo.get(BOOTSTRAP_ADMIN_ID);
+    const profile = await profileRepo.get(userId);
 
     const enabledSources = await sourcesRepo.listEnabledByPersona(input.persona);
     let scopedSources = enabledSources;
@@ -119,7 +118,7 @@ export async function startSearch(input: StartSearchInput, deps: StartSearchDeps
     }
 
     const row = await searchRunsRepo.insert({
-      userId: BOOTSTRAP_ADMIN_ID,
+      userId,
       id: runId,
       resumeId: resumeRow.id,
       personas: [input.persona],
@@ -136,13 +135,13 @@ export async function startSearch(input: StartSearchInput, deps: StartSearchDeps
       },
     });
 
-    void runFanOut(row, scopedSources, resumeRow, input.persona, profile, handle, deps).catch((err) => {
-      void failRun(row.id, input.persona, handle, err);
+    void runFanOut(userId, row, scopedSources, resumeRow, input.persona, profile, handle, deps).catch((err) => {
+      void failRun(userId, row.id, input.persona, handle, err);
     });
 
     return toSearchRun(row);
   } catch (err) {
-    release(runId, input.persona);
+    release(runId, userId, input.persona);
     throw err;
   }
 }
@@ -154,7 +153,13 @@ export async function startSearch(input: StartSearchInput, deps: StartSearchDeps
 // row stayed 'running' forever (worse combined with a process restart,
 // since nothing else ever revisits it) and no live SSE subscriber ever saw a
 // terminal event. Mark the row 'failed' and emit a terminal 'error' event.
-async function failRun(runId: string, persona: ScanPersona, handle: RunHandle, err: unknown): Promise<void> {
+async function failRun(
+  userId: string,
+  runId: string,
+  persona: ScanPersona,
+  handle: RunHandle,
+  err: unknown,
+): Promise<void> {
   console.error(`search run ${runId} crashed unexpectedly:`, err);
   const message = err instanceof Error ? err.message : String(err);
 
@@ -166,10 +171,11 @@ async function failRun(runId: string, persona: ScanPersona, handle: RunHandle, e
 
   const envelope: ErrorEnvelope = { error: { code: "INTERNAL", message } };
   handle.emit({ event: "error", data: envelope });
-  release(runId, persona);
+  release(runId, userId, persona);
 }
 
 async function runFanOut(
+  userId: string,
   row: SearchRunRow,
   sources: SourceRow[],
   resumeRow: ResumeRow,
@@ -254,8 +260,9 @@ async function runFanOut(
   await Promise.all(tasks);
   clearTimeout(hardCapTimer);
 
-  const upsertedJobs = await upsertMatchedPostings(matchedPostings, persona, profile);
+  const upsertedJobs = await upsertMatchedPostings(userId, matchedPostings, persona, profile);
   const { scored, worth, ghosts, unscored, capStopped } = await scoreTopCandidates(
+    userId,
     row,
     upsertedJobs,
     resumeRow,
@@ -278,8 +285,8 @@ async function runFanOut(
   await searchRunsRepo.updateStats(row.id, stats);
   const finished = await searchRunsRepo.updateStatus(row.id, "completed", { finishedAt: new Date() });
 
-  release(row.id, persona);
-  const finalRow = finished ?? (await searchRunsRepo.getById(row.id));
+  release(row.id, userId, persona);
+  const finalRow = finished ?? (await searchRunsRepo.getById(row.id, userId));
   if (!finalRow) throw new Error(`search_runs row ${row.id} vanished before completion could be recorded`);
   handle.emit({ event: "done", data: toSearchRun(finalRow) });
 }
@@ -328,6 +335,7 @@ function groupByCollision(matched: { posting: RawPosting; source: SourceRow }[])
 // Returns the upserted rows (+ each one's canonical source) so the caller can
 // score them — B5 discarded these since scoring didn't exist yet.
 async function upsertMatchedPostings(
+  userId: string,
   matched: { posting: RawPosting; source: SourceRow }[],
   persona: ScanPersona,
   profile: ProfileRow,
@@ -346,7 +354,7 @@ async function upsertMatchedPostings(
       connectorGeo: canonical.geo,
     });
     const job = await jobsRepo.upsertByDedupeKey({
-      userId: BOOTSTRAP_ADMIN_ID,
+      userId,
       dedupeKey: dedupeKeyFor(canonical.url),
       url: canonical.url,
       sourceId: canonicalSource.id,
@@ -383,6 +391,7 @@ function startOfToday(): Date {
 // the `job` SSE event B5 deferred as each job is scored, plus `score` /
 // `legitimacy` progress stages.
 async function scoreTopCandidates(
+  userId: string,
   row: SearchRunRow,
   candidates: { job: JobRow; source: SourceRow }[],
   resume: ResumeRow,
@@ -403,10 +412,7 @@ async function scoreTopCandidates(
 
   if (topCandidates.length === 0) return { scored, worth, ghosts, unscored, capStopped };
 
-  // TEMP read-scaffold (Task 4 threads the real per-run userId here):
-  // server/search/run.ts's userId threading lands in Task 4 (per-user
-  // registry + run.ts thread), not this task.
-  const isNewCutoff = await resolveIsNewCutoff(BOOTSTRAP_ADMIN_ID, persona);
+  const isNewCutoff = await resolveIsNewCutoff(userId, persona);
   const llm = deps.llm ?? getLlm();
   const dailyCapUsd =
     deps.dailyCapUsd ?? (process.env.CALIBER_DAILY_LLM_USD ? Number(process.env.CALIBER_DAILY_LLM_USD) : undefined);

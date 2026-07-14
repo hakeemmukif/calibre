@@ -9,7 +9,6 @@
 import { z } from "zod";
 import { getLlm, type LlmClient } from "@/lib/llm/client";
 import { renderTemplate } from "@/lib/llm/templates";
-import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 import { applicationAnswersRepo, type ApplicationAnswersRow } from "@/server/persistence/repos/applicationAnswers";
 import { jobsRepo } from "@/server/persistence/repos/jobs";
 import { jobScoresRepo } from "@/server/persistence/repos/jobScores";
@@ -58,14 +57,13 @@ function toApplicationAnswers(row: ApplicationAnswersRow): ApplicationAnswers {
 }
 
 export async function draftAnswers(
+  userId: string,
   input: { jobId: string; questions: ApplicationQuestion[] },
   deps: { llm?: LlmClient } = {},
 ): Promise<ApplicationAnswers> {
-  // TEMP read-scaffold (Task 4 threads the caller's session.userId here):
-  // POST /api/apply/answers doesn't call requireUser() yet.
-  if (!(await jobsRepo.existsById(input.jobId, BOOTSTRAP_ADMIN_ID))) throw new UnknownJobError(input.jobId);
+  if (!(await jobsRepo.existsById(input.jobId, userId))) throw new UnknownJobError(input.jobId);
 
-  const resumeRow = await resumesRepo.getActive(BOOTSTRAP_ADMIN_ID);
+  const resumeRow = await resumesRepo.getActive(userId);
   if (!resumeRow) throw new NoActiveResumeError();
 
   const scoreRow = await jobScoresRepo.getLatestByJobId(input.jobId);
@@ -90,7 +88,7 @@ export async function draftAnswers(
   }
 
   const inserted = await applicationAnswersRepo.insert({
-    userId: BOOTSTRAP_ADMIN_ID,
+    userId,
     jobId: input.jobId,
     resumeId: resumeRow.id,
     // KNOWN GAP: neither draftAnswers' locked input ({jobId, questions}) nor
@@ -108,8 +106,11 @@ export async function draftAnswers(
   return toApplicationAnswers(inserted);
 }
 
-export async function patchAnswers(id: string, answers: ApplicationAnswer[]): Promise<ApplicationAnswers> {
-  const updated = await applicationAnswersRepo.update(id, answers);
+export async function patchAnswers(id: string, userId: string, answers: ApplicationAnswer[]): Promise<ApplicationAnswers> {
+  // By-uuid PATCH leak fix (Fable design review, CRITICAL): scoped by userId
+  // — a foreign answers id 404s (UnknownAnswersIdError) instead of
+  // overwriting another tenant's drafted answers.
+  const updated = await applicationAnswersRepo.update(id, userId, answers);
   if (!updated) throw new UnknownAnswersIdError(id);
   return toApplicationAnswers(updated);
 }
