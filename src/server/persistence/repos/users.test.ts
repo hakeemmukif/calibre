@@ -3,6 +3,7 @@ import { createTestDb } from "../test-db";
 import { users } from "../schema";
 import { createUserRepo } from "./users";
 import { EmailTakenError } from "@/server/auth/errors";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 describe("users schema", () => {
   it("migration creates an insertable users table on an empty PGlite DB", async () => {
@@ -39,11 +40,13 @@ describe("usersRepo", () => {
     ).rejects.toMatchObject({ cause: { code: "23505" } });
   });
 
-  it("findById returns the row; list() returns all", async () => {
+  it("findById returns the row; list() returns all (including the migration-seeded admin)", async () => {
     const repo = createUserRepo(await createTestDb());
     const a = await repo.create({ email: "a@x.co", passwordHash: "h", role: "admin" });
-    await repo.create({ email: "b@x.co", passwordHash: "h", role: "user" });
+    const b = await repo.create({ email: "b@x.co", passwordHash: "h", role: "user" });
     expect((await repo.findById(a.id))?.role).toBe("admin");
-    expect((await repo.list()).length).toBe(2);
+    const list = await repo.list();
+    expect(list.length).toBe(3);
+    expect(list.map((u) => u.id).sort()).toEqual([BOOTSTRAP_ADMIN_ID, a.id, b.id].sort());
   });
 });
