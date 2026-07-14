@@ -11,6 +11,7 @@ import { profileRepo } from "../persistence/repos/profile";
 import { parseSourceGeo } from "../search/geo";
 import { resolveEligibility } from "./eligibility";
 import type { JdFacts } from "./jdFacts";
+import { resolveTzBand, tzBandForToken } from "./tzBand";
 
 export async function recomputeEligibility() {
   const db = getDb();
@@ -36,8 +37,19 @@ export async function recomputeEligibility() {
       location: job.location || undefined,
       jdFacts,
     });
-    if (tier !== job.eligibility || evidence !== job.eligibilityEvidence) {
-      await db.update(jobs).set({ eligibility: tier, eligibilityEvidence: evidence }).where(eq(jobs.id, job.id));
+    // Migrate legacy rows (pre Task-2 template fix): a stated TZ term that
+    // landed in hiringCountries instead of tzRequirement.
+    const legacyTzTerm = jdFacts?.tzRequirement ? undefined : jdFacts?.hiringCountries?.find((c) => tzBandForToken(c) !== null);
+    const tz = resolveTzBand({ tzRequirement: jdFacts?.tzRequirement ?? legacyTzTerm, location: job.location || undefined });
+    const tzBand = tz?.band ?? null;
+    const hiringStructure = jdFacts?.hiringStructure ?? null;
+    if (
+      tier !== job.eligibility ||
+      evidence !== job.eligibilityEvidence ||
+      tzBand !== job.tzBand ||
+      hiringStructure !== job.hiringStructure
+    ) {
+      await db.update(jobs).set({ eligibility: tier, eligibilityEvidence: evidence, tzBand, hiringStructure }).where(eq(jobs.id, job.id));
       changed += 1;
     }
   }

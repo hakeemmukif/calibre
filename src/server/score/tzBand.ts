@@ -24,6 +24,15 @@ function bandForString(s: string): { band: TzBand; matched: string } | "ambiguou
   return null;
 }
 
+// Silent per-token band lookup — no fail-loud warning (contrast resolveTzBand
+// below). Used to scan jd_facts.hiringCountries for a legacy TZ term
+// (Task 9 migration): most entries there are ordinary country/region names,
+// not TZ statements, so a miss is expected and NOT a curated-map drift signal.
+export function tzBandForToken(s: string): TzBand | null {
+  const r = bandForString(s);
+  return r && r !== "ambiguous" ? r.band : null;
+}
+
 export function resolveTzBand(args: { tzRequirement?: string | null; location?: string | null }): { band: TzBand; evidence: string } | null {
   const tz = args.tzRequirement?.trim();
   const loc = args.location?.trim();

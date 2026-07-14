@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { hiddenBandsFor, hiddenStructuresFor, resolveTzBand } from "./tzBand";
+import { hiddenBandsFor, hiddenStructuresFor, resolveTzBand, tzBandForToken } from "./tzBand";
 
 describe("resolveTzBand token table (spec 2026-07-14 §5)", () => {
   it.each([
@@ -27,6 +27,24 @@ describe("resolveTzBand token table (spec 2026-07-14 §5)", () => {
   it("nothing stated → null, no log", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     expect(resolveTzBand({})).toBeNull();
+    expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+describe("tzBandForToken (Task 9 legacy hiringCountries migration scan)", () => {
+  it("maps a TZ token to its band, silently", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(tzBandForToken("4h overlap with PST")).toBe("americas");
+    expect(warn).not.toHaveBeenCalled();
+  });
+  it("an ordinary country name (not a TZ statement) is null, no warning — unlike resolveTzBand", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(tzBandForToken("United States")).toBeNull();
+    expect(warn).not.toHaveBeenCalled();
+  });
+  it("ambiguous CST is null, no warning", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(tzBandForToken("CST hours")).toBeNull();
     expect(warn).not.toHaveBeenCalled();
   });
 });
