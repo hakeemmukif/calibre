@@ -4,7 +4,7 @@
 // (file write / DB insert).
 import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname } from "node:path";
 import { getLlm, type LlmClient } from "@/lib/llm/client";
 import { renderTemplate } from "@/lib/llm/templates";
 import { resumesRepo, type ResumeRow } from "@/server/persistence/repos/resumes";
@@ -12,9 +12,9 @@ import type { Resume } from "@/types";
 import { assertResumeViewDerivable, ParseFailedError, toResumeView } from "./derive-view";
 import { computeAtsScore } from "./atsScore";
 import { extractText } from "./extract-text";
+import { resolveUpload, resumeKey } from "./uploads";
 import { ResumeStoreSchema, type ResumeStore } from "./resume-store";
 
-const UPLOADS_DIR = join(process.cwd(), "data", "uploads");
 const PDF_MIME = "application/pdf";
 
 export interface IngestResumeInput {
@@ -74,9 +74,11 @@ export async function ingestResume(
   if (input.file) {
     sourceKind = input.file.mime === PDF_MIME ? "pdf" : "docx";
     const hash = createHash("sha256").update(input.file.bytes).digest("hex");
-    await mkdir(UPLOADS_DIR, { recursive: true });
-    originalPath = join(UPLOADS_DIR, `${hash}.${sourceKind}`);
-    await writeFile(originalPath, input.file.bytes);
+    const key = resumeKey(userId, hash, sourceKind);
+    const abs = resolveUpload(key);
+    await mkdir(dirname(abs), { recursive: true });
+    await writeFile(abs, input.file.bytes);
+    originalPath = key;
   }
 
   const inserted = await resumesRepo.insertReplacingActive({
