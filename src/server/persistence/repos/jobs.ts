@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, gte, ilike, inArray, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, gte, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
 import type { EligibilityTier, Persona } from "@/types";
 import { getDb } from "../db";
 import { jobs, jobScores, sources, type JobAlias } from "../schema";
@@ -19,6 +19,7 @@ export type SourceRow = typeof sources.$inferSelect;
 export type JobJoinScore = { job: JobRow; score: JobScoreRow; source: SourceRow };
 
 export type JobsQuery = {
+  userId: string;
   persona?: Persona;
   tier?: string[]; // job_scores.legitimacy.tier, repeatable (api-contract §3 `tier?`)
   minScore?: number;
@@ -43,6 +44,10 @@ const DEFAULT_LIMIT = 25;
 // — unique key is (jobId, resumeId, policyVersion)). Joins must pick exactly
 // one — the latest by created_at — so a job never fans out into duplicate
 // rows and getById never returns an arbitrary score.
+// GLOBAL-BY-DECISION: this DISTINCT ON subquery carries no user_id filter of
+// its own (perf-only, not a leak) — every caller inner-joins it back onto
+// the already userId-scoped `jobs` rows (see listScored/getById/statsForQuery
+// below), so a foreign user's job_scores row can never surface through it.
 function latestJobScores(db: Db) {
   return db
     .selectDistinctOn([jobScores.jobId], { id: jobScores.id })
@@ -57,7 +62,7 @@ function latestJobScores(db: Db) {
 // task-B6-brief.md "stats computed server-side over the FULL scoped result
 // set, not the page") — same filters, no cursor/limit (those are page-only).
 function buildFilterConditions(q: Omit<JobsQuery, "cursor" | "limit">) {
-  const conditions = [];
+  const conditions: (SQL<unknown> | undefined)[] = [eq(jobs.userId, q.userId)];
   if (q.persona) conditions.push(eq(jobs.persona, q.persona));
   if (q.eligibility && q.eligibility.length > 0) conditions.push(inArray(jobs.eligibility, q.eligibility));
   if (q.tier && q.tier.length > 0) {
@@ -116,8 +121,12 @@ export function createJobsRepo(db: Db) {
     // (scanned or previously pasted) — the admission short-circuit needs a
     // direct lookup, not `getById` (needs a `job_scores` join) or
     // `upsertByDedupeKey` (which would spend a write to answer a read).
-    async getByDedupeKey(dedupeKey: string): Promise<JobRow | null> {
-      const [row] = await db.select().from(jobs).where(eq(jobs.dedupeKey, dedupeKey)).limit(1);
+    async getByDedupeKey(dedupeKey: string, userId: string): Promise<JobRow | null> {
+      const [row] = await db
+        .select()
+        .from(jobs)
+        .where(and(eq(jobs.dedupeKey, dedupeKey), eq(jobs.userId, userId)))
+        .limit(1);
       return row ?? null;
     },
 
@@ -127,8 +136,15 @@ export function createJobsRepo(db: Db) {
     // short-circuiting to alreadyKnown for that job would hide it forever
     // (every feed/detail view inner-joins job_scores). Callers must only
     // treat a dedupe hit as alreadyKnown when it has at least one score row.
-    async hasAnyScore(jobId: string): Promise<boolean> {
-      const [row] = await db.select({ id: jobScores.id }).from(jobScores).where(eq(jobScores.jobId, jobId)).limit(1);
+    // Scoped via a join back to `jobs` (Step 3 task 3) rather than a bare
+    // job_scores lookup, so a foreign jobId can never answer true.
+    async hasAnyScore(jobId: string, userId: string): Promise<boolean> {
+      const [row] = await db
+        .select({ id: jobScores.id })
+        .from(jobScores)
+        .innerJoin(jobs, eq(jobs.id, jobScores.jobId))
+        .where(and(eq(jobScores.jobId, jobId), eq(jobs.userId, userId)))
+        .limit(1);
       return row !== undefined;
     },
 
@@ -138,8 +154,15 @@ export function createJobsRepo(db: Db) {
 
       if (q.cursor) {
         const c = decodeCursorId(q.cursor);
+        // Cursor-oracle fix (Fable design review): the subquery must carry
+        // the SAME user_id filter as the outer query. Without it, a cursor
+        // encoding another user's job id resolves to a real row here (while
+        // the outer WHERE still hides it), producing a differential — an
+        // empty subquery match (nonexistent id) behaves differently from a
+        // real-but-foreign one — which is an existence oracle across
+        // tenants. Scoping the subquery makes both cases identical: no row.
         conditions.push(
-          sql`(${jobs.firstSeenAt}, ${jobs.id}) < (SELECT ${jobs.firstSeenAt}, ${jobs.id} FROM ${jobs} WHERE ${jobs.id} = ${c.id})`,
+          sql`(${jobs.firstSeenAt}, ${jobs.id}) < (SELECT ${jobs.firstSeenAt}, ${jobs.id} FROM ${jobs} WHERE ${jobs.id} = ${c.id} AND ${jobs.userId} = ${q.userId})`,
         );
       }
 
@@ -161,7 +184,7 @@ export function createJobsRepo(db: Db) {
       return { items, nextCursor };
     },
 
-    async getById(id: string): Promise<JobJoinScore | null> {
+    async getById(id: string, userId: string): Promise<JobJoinScore | null> {
       const latest = latestJobScores(db);
       const [row] = await db
         .select({ job: jobs, score: jobScores, source: sources })
@@ -169,7 +192,7 @@ export function createJobsRepo(db: Db) {
         .innerJoin(jobScores, eq(jobScores.jobId, jobs.id))
         .innerJoin(latest, eq(latest.id, jobScores.id))
         .innerJoin(sources, eq(sources.id, jobs.sourceId))
-        .where(eq(jobs.id, id))
+        .where(and(eq(jobs.id, id), eq(jobs.userId, userId)))
         .limit(1);
       return row ?? null;
     },
@@ -178,8 +201,12 @@ export function createJobsRepo(db: Db) {
     // board connector's search API carries no description, so the detail
     // fetch's result is persisted here once, ahead of scoring. Fail loud on
     // an unknown id rather than silently no-op'ing.
-    async updateDescription(id: string, description: string): Promise<JobRow> {
-      const [updated] = await db.update(jobs).set({ description }).where(eq(jobs.id, id)).returning();
+    async updateDescription(id: string, userId: string, description: string): Promise<JobRow> {
+      const [updated] = await db
+        .update(jobs)
+        .set({ description })
+        .where(and(eq(jobs.id, id), eq(jobs.userId, userId)))
+        .returning();
       if (!updated) throw new Error(`jobsRepo.updateDescription: no job ${id}`);
       return updated;
     },
@@ -206,11 +233,11 @@ export function createJobsRepo(db: Db) {
     // Layer-C refresh (spec §5 write points): the scoring path re-resolves
     // with JD facts and overwrites the ingest-time stamp. Unknown id throws —
     // a refresh for a vanished row is a bug, not a no-op.
-    async updateEligibility(id: string, tier: JobRow["eligibility"], evidence: string): Promise<void> {
+    async updateEligibility(id: string, userId: string, tier: JobRow["eligibility"], evidence: string): Promise<void> {
       const [row] = await db
         .update(jobs)
         .set({ eligibility: tier, eligibilityEvidence: evidence })
-        .where(eq(jobs.id, id))
+        .where(and(eq(jobs.id, id), eq(jobs.userId, userId)))
         .returning({ id: jobs.id });
       if (!row) throw new Error(`jobsRepo.updateEligibility: no job with id "${id}"`);
     },
@@ -218,12 +245,12 @@ export function createJobsRepo(db: Db) {
     // Job+source only (no job_scores join) — Task 6's per-job evaluate
     // endpoint needs a job regardless of whether it's been scored before
     // (unlike `getById`, which requires an existing job_scores row).
-    async getRowWithSourceById(id: string): Promise<{ job: JobRow; source: SourceRow } | undefined> {
+    async getRowWithSourceById(id: string, userId: string): Promise<{ job: JobRow; source: SourceRow } | undefined> {
       const [row] = await db
         .select({ job: jobs, source: sources })
         .from(jobs)
         .innerJoin(sources, eq(sources.id, jobs.sourceId))
-        .where(eq(jobs.id, id))
+        .where(and(eq(jobs.id, id), eq(jobs.userId, userId)))
         .limit(1);
       return row ?? undefined;
     },
@@ -232,8 +259,12 @@ export function createJobsRepo(db: Db) {
     // joins job_scores, so an existing-but-unscored job would falsely read
     // as "doesn't exist" here (fix pass finding 3: draftAnswers must 404 an
     // unknown jobId, not an unscored one).
-    async existsById(id: string): Promise<boolean> {
-      const [row] = await db.select({ id: jobs.id }).from(jobs).where(eq(jobs.id, id)).limit(1);
+    async existsById(id: string, userId: string): Promise<boolean> {
+      const [row] = await db
+        .select({ id: jobs.id })
+        .from(jobs)
+        .where(and(eq(jobs.id, id), eq(jobs.userId, userId)))
+        .limit(1);
       return row !== undefined;
     },
 
@@ -277,14 +308,15 @@ export function createJobsRepo(db: Db) {
 
 export const jobsRepo: ReturnType<typeof createJobsRepo> = {
   upsertByDedupeKey: (row) => createJobsRepo(getDb()).upsertByDedupeKey(row),
-  getByDedupeKey: (dedupeKey) => createJobsRepo(getDb()).getByDedupeKey(dedupeKey),
-  hasAnyScore: (jobId) => createJobsRepo(getDb()).hasAnyScore(jobId),
+  getByDedupeKey: (dedupeKey, userId) => createJobsRepo(getDb()).getByDedupeKey(dedupeKey, userId),
+  hasAnyScore: (jobId, userId) => createJobsRepo(getDb()).hasAnyScore(jobId, userId),
   listScored: (q) => createJobsRepo(getDb()).listScored(q),
-  getById: (id) => createJobsRepo(getDb()).getById(id),
-  getRowWithSourceById: (id) => createJobsRepo(getDb()).getRowWithSourceById(id),
-  updateDescription: (id, description) => createJobsRepo(getDb()).updateDescription(id, description),
-  updateEligibility: (id, tier, evidence) => createJobsRepo(getDb()).updateEligibility(id, tier, evidence),
+  getById: (id, userId) => createJobsRepo(getDb()).getById(id, userId),
+  getRowWithSourceById: (id, userId) => createJobsRepo(getDb()).getRowWithSourceById(id, userId),
+  updateDescription: (id, userId, description) => createJobsRepo(getDb()).updateDescription(id, userId, description),
+  updateEligibility: (id, userId, tier, evidence) =>
+    createJobsRepo(getDb()).updateEligibility(id, userId, tier, evidence),
   countHiddenByEligibility: (q) => createJobsRepo(getDb()).countHiddenByEligibility(q),
-  existsById: (id) => createJobsRepo(getDb()).existsById(id),
+  existsById: (id, userId) => createJobsRepo(getDb()).existsById(id, userId),
   statsForQuery: (q, sinceLastCutoff) => createJobsRepo(getDb()).statsForQuery(q, sinceLastCutoff),
 };

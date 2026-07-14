@@ -2,6 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { jobs, users } from "../schema";
 import { createTestDb } from "../test-db";
+import { encodeCursorId } from "./cursor";
 import { insertJobScore, insertResume, insertSource } from "./__fixtures__/helpers";
 import { createJobsRepo } from "./jobs";
 import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
@@ -103,10 +104,10 @@ describe("jobsRepo", () => {
       raw: {},
     });
 
-    const found = await repo.getByDedupeKey("dk-getbykey");
+    const found = await repo.getByDedupeKey("dk-getbykey", BOOTSTRAP_ADMIN_ID);
     expect(found?.dedupeKey).toBe("dk-getbykey");
 
-    const missing = await repo.getByDedupeKey("dk-does-not-exist");
+    const missing = await repo.getByDedupeKey("dk-does-not-exist", BOOTSTRAP_ADMIN_ID);
     expect(missing).toBeNull();
   });
 
@@ -131,11 +132,11 @@ describe("jobsRepo", () => {
       raw: {},
     });
 
-    expect(await repo.hasAnyScore(job.id)).toBe(false);
+    expect(await repo.hasAnyScore(job.id, BOOTSTRAP_ADMIN_ID)).toBe(false);
 
     await insertJobScore(db, job.id, resume.id);
 
-    expect(await repo.hasAnyScore(job.id)).toBe(true);
+    expect(await repo.hasAnyScore(job.id, BOOTSTRAP_ADMIN_ID)).toBe(true);
   });
 
   it("upsertByDedupeKey merges aliases across re-sightings instead of replacing them (regression)", async () => {
@@ -280,12 +281,18 @@ describe("jobsRepo", () => {
       rows.push({ jobId: job.id });
     }
 
-    const page1 = await repo.listScored({ tier: ["clear"], minScore: 4, limit: 1 });
+    const page1 = await repo.listScored({ userId: BOOTSTRAP_ADMIN_ID, tier: ["clear"], minScore: 4, limit: 1 });
     expect(page1.items).toHaveLength(1);
     expect(page1.nextCursor).not.toBeNull();
     expect(page1.items[0].score.legitimacy.tier).toBe("clear");
 
-    const page2 = await repo.listScored({ tier: ["clear"], minScore: 4, limit: 1, cursor: page1.nextCursor! });
+    const page2 = await repo.listScored({
+      userId: BOOTSTRAP_ADMIN_ID,
+      tier: ["clear"],
+      minScore: 4,
+      limit: 1,
+      cursor: page1.nextCursor!,
+    });
     expect(page2.items).toHaveLength(1);
     expect(page2.items[0].job.id).not.toBe(page1.items[0].job.id);
     expect(page2.nextCursor).toBeNull();
@@ -324,7 +331,7 @@ describe("jobsRepo", () => {
     const seen: string[] = [];
     let cursor: string | undefined;
     for (let i = 0; i < insertedIds.length; i += 1) {
-      const page = await repo.listScored({ limit: 1, cursor });
+      const page = await repo.listScored({ userId: BOOTSTRAP_ADMIN_ID, limit: 1, cursor });
       expect(page.items).toHaveLength(1);
       seen.push(page.items[0].job.id);
       if (!page.nextCursor) break;
@@ -361,12 +368,12 @@ describe("jobsRepo", () => {
     await new Promise((r) => setTimeout(r, 5));
     const newer = await insertJobScore(db, job.id, resume.id, { policyVersion: "v2", score: 4.5 });
 
-    const { items } = await repo.listScored({});
+    const { items } = await repo.listScored({ userId: BOOTSTRAP_ADMIN_ID });
     const matches = items.filter((i) => i.job.id === job.id);
     expect(matches).toHaveLength(1);
     expect(matches[0].score.id).toBe(newer.id);
 
-    const found = await repo.getById(job.id);
+    const found = await repo.getById(job.id, BOOTSTRAP_ADMIN_ID);
     expect(found?.score.id).toBe(newer.id);
   });
 
@@ -400,7 +407,7 @@ describe("jobsRepo", () => {
       });
     }
 
-    const stats = await repo.statsForQuery({});
+    const stats = await repo.statsForQuery({ userId: BOOTSTRAP_ADMIN_ID });
     expect(stats.scanned).toBe(10);
     // verdicts cycle 0..9 (period 4): Apply at 0,4,8; Consider at 1,5,9 -> 6 worth
     expect(stats.worth).toBe(6);
@@ -409,7 +416,7 @@ describe("jobsRepo", () => {
     // flagged = suspicious|ghost|scam: i=1,2,3,6,7,8 -> 6
     expect(stats.flagged).toBe(6);
 
-    const page = await repo.listScored({ limit: 2 });
+    const page = await repo.listScored({ userId: BOOTSTRAP_ADMIN_ID, limit: 2 });
     expect(page.items).toHaveLength(2);
     // the full-set stats must not shrink to match the small page
     expect(stats.scanned).toBeGreaterThan(page.items.length);
@@ -455,10 +462,10 @@ describe("jobsRepo", () => {
     });
     await insertJobScore(db, newer.id, resume.id);
 
-    const withCutoff = await repo.statsForQuery({}, new Date("2026-03-01T00:00:00.000Z"));
+    const withCutoff = await repo.statsForQuery({ userId: BOOTSTRAP_ADMIN_ID }, new Date("2026-03-01T00:00:00.000Z"));
     expect(withCutoff.sinceLast).toBe(1);
 
-    const withoutCutoff = await repo.statsForQuery({});
+    const withoutCutoff = await repo.statsForQuery({ userId: BOOTSTRAP_ADMIN_ID });
     expect(withoutCutoff.sinceLast).toBe(0);
   });
 
@@ -483,7 +490,7 @@ describe("jobsRepo", () => {
     });
     await insertJobScore(db, job.id, resume.id);
 
-    const found = await repo.getById(job.id);
+    const found = await repo.getById(job.id, BOOTSTRAP_ADMIN_ID);
     expect(found?.job.id).toBe(job.id);
     expect(found?.score.jobId).toBe(job.id);
   });
@@ -508,7 +515,7 @@ describe("jobsRepo", () => {
     });
     expect(job.description).toBeNull();
 
-    const updated = await repo.updateDescription(job.id, "Full JD text.");
+    const updated = await repo.updateDescription(job.id, BOOTSTRAP_ADMIN_ID, "Full JD text.");
     expect(updated.id).toBe(job.id);
     expect(updated.description).toBe("Full JD text.");
   });
@@ -516,7 +523,7 @@ describe("jobsRepo", () => {
   it("updateDescription throws for an unknown job id (fail loud)", async () => {
     const db = await createTestDb();
     const repo = createJobsRepo(db);
-    await expect(repo.updateDescription(crypto.randomUUID(), "text")).rejects.toThrow(/no job/);
+    await expect(repo.updateDescription(crypto.randomUUID(), BOOTSTRAP_ADMIN_ID, "text")).rejects.toThrow(/no job/);
   });
 
   it("existsById is true for an unscored job (unlike getById) and false for an unknown id", async () => {
@@ -538,9 +545,9 @@ describe("jobsRepo", () => {
       raw: {},
     });
 
-    expect(await repo.existsById(job.id)).toBe(true);
-    expect(await repo.getById(job.id)).toBeNull();
-    expect(await repo.existsById(crypto.randomUUID())).toBe(false);
+    expect(await repo.existsById(job.id, BOOTSTRAP_ADMIN_ID)).toBe(true);
+    expect(await repo.getById(job.id, BOOTSTRAP_ADMIN_ID)).toBeNull();
+    expect(await repo.existsById(crypto.randomUUID(), BOOTSTRAP_ADMIN_ID)).toBe(false);
   });
 
   it("getRowWithSourceById returns the joined job+source row, undefined for an unknown id", async () => {
@@ -562,11 +569,11 @@ describe("jobsRepo", () => {
       raw: {},
     });
 
-    const found = await repo.getRowWithSourceById(job.id);
+    const found = await repo.getRowWithSourceById(job.id, BOOTSTRAP_ADMIN_ID);
     expect(found?.job.id).toBe(job.id);
     expect(found?.source.id).toBe(source.id);
 
-    expect(await repo.getRowWithSourceById(crypto.randomUUID())).toBeUndefined();
+    expect(await repo.getRowWithSourceById(crypto.randomUUID(), BOOTSTRAP_ADMIN_ID)).toBeUndefined();
   });
 
   it("updateEligibility overwrites tier + evidence and throws on unknown id", async () => {
@@ -588,12 +595,14 @@ describe("jobsRepo", () => {
       raw: {},
     });
 
-    await repo.updateEligibility(job.id, "eligible", "JD: hires in APAC");
-    const after = await repo.getRowWithSourceById(job.id);
+    await repo.updateEligibility(job.id, BOOTSTRAP_ADMIN_ID, "eligible", "JD: hires in APAC");
+    const after = await repo.getRowWithSourceById(job.id, BOOTSTRAP_ADMIN_ID);
     expect(after?.job.eligibility).toBe("eligible");
     expect(after?.job.eligibilityEvidence).toBe("JD: hires in APAC");
 
-    await expect(repo.updateEligibility(crypto.randomUUID(), "unknown", "x")).rejects.toThrow(/no job with id/);
+    await expect(repo.updateEligibility(crypto.randomUUID(), BOOTSTRAP_ADMIN_ID, "unknown", "x")).rejects.toThrow(
+      /no job with id/,
+    );
   });
 
   it("filters by eligibility[]", async () => {
@@ -623,7 +632,10 @@ describe("jobsRepo", () => {
     await mk("abroad");
     await mk("unknown");
 
-    const { items } = await repo.listScored({ eligibility: ["anywhere", "eligible", "local", "unknown"] });
+    const { items } = await repo.listScored({
+      userId: BOOTSTRAP_ADMIN_ID,
+      eligibility: ["anywhere", "eligible", "local", "unknown"],
+    });
     expect(items).toHaveLength(2);
   });
 
@@ -660,7 +672,235 @@ describe("jobsRepo", () => {
     await mk("abroad", { key: "abroad-unscored", scored: false }); // hidden, gated out of scoring entirely
     await mk("abroad", { key: "abroad-other-persona", persona: "local" }); // hidden but wrong persona scope
 
-    const hidden = await repo.countHiddenByEligibility({ persona: "remote", eligibility: ["abroad"] });
+    const hidden = await repo.countHiddenByEligibility({
+      userId: BOOTSTRAP_ADMIN_ID,
+      persona: "remote",
+      eligibility: ["abroad"],
+    });
     expect(hidden).toBe(2);
+  });
+});
+
+// Step 3 task 3: read scoping + cursor-oracle fix (Fable design review).
+describe("jobsRepo — cross-tenant isolation", () => {
+  async function makeUserB(db: Awaited<ReturnType<typeof createTestDb>>) {
+    const [userB] = await db
+      .insert(users)
+      .values({ email: `user-b-jobs-isolation-${crypto.randomUUID()}@example.com`, passwordHash: "h", role: "user" })
+      .returning();
+    return userB;
+  }
+
+  it("A's feed (listScored) excludes B's jobs, and vice versa", async () => {
+    const db = await createTestDb();
+    const repo = createJobsRepo(db);
+    const source = await insertSource(db);
+    const resumeA = await insertResume(db);
+    const userB = await makeUserB(db);
+    const resumeB = await insertResume(db, { userId: userB.id });
+
+    const jobA = await repo.upsertByDedupeKey({
+      userId: BOOTSTRAP_ADMIN_ID,
+      dedupeKey: "dk-isolation-a",
+      url: "https://example.com/isolation-a",
+      sourceId: source.id,
+      title: "A's Job",
+      company: "Acme",
+      location: "Remote",
+      persona: "remote",
+      eligibility: "unknown",
+      eligibilityEvidence: "t",
+      aliases: [],
+      raw: {},
+    });
+    await insertJobScore(db, jobA.id, resumeA.id);
+
+    const jobB = await repo.upsertByDedupeKey({
+      userId: userB.id,
+      dedupeKey: "dk-isolation-b",
+      url: "https://example.com/isolation-b",
+      sourceId: source.id,
+      title: "B's Job",
+      company: "Acme",
+      location: "Remote",
+      persona: "remote",
+      eligibility: "unknown",
+      eligibilityEvidence: "t",
+      aliases: [],
+      raw: {},
+    });
+    await insertJobScore(db, jobB.id, resumeB.id);
+
+    const feedA = await repo.listScored({ userId: BOOTSTRAP_ADMIN_ID });
+    expect(feedA.items.map((i) => i.job.id)).toEqual([jobA.id]);
+
+    const feedB = await repo.listScored({ userId: userB.id });
+    expect(feedB.items.map((i) => i.job.id)).toEqual([jobB.id]);
+  });
+
+  it("getById/getRowWithSourceById/existsById return null/undefined/false for a foreign job id (404, never a leak)", async () => {
+    const db = await createTestDb();
+    const repo = createJobsRepo(db);
+    const source = await insertSource(db);
+    const resume = await insertResume(db);
+    const userB = await makeUserB(db);
+
+    const job = await repo.upsertByDedupeKey({
+      userId: BOOTSTRAP_ADMIN_ID,
+      dedupeKey: "dk-isolation-getters",
+      url: "https://example.com/isolation-getters",
+      sourceId: source.id,
+      title: "A's Job",
+      company: "Acme",
+      location: "Remote",
+      persona: "remote",
+      eligibility: "unknown",
+      eligibilityEvidence: "t",
+      aliases: [],
+      raw: {},
+    });
+    await insertJobScore(db, job.id, resume.id);
+
+    expect(await repo.getById(job.id, userB.id)).toBeNull();
+    expect(await repo.getRowWithSourceById(job.id, userB.id)).toBeUndefined();
+    expect(await repo.existsById(job.id, userB.id)).toBe(false);
+    expect(await repo.hasAnyScore(job.id, userB.id)).toBe(false);
+
+    // Sanity: the owner still sees it.
+    expect(await repo.getById(job.id, BOOTSTRAP_ADMIN_ID)).not.toBeNull();
+  });
+
+  it("updateDescription/updateEligibility throw for a foreign job id (a foreign id must not be mutated)", async () => {
+    const db = await createTestDb();
+    const repo = createJobsRepo(db);
+    const source = await insertSource(db);
+    const userB = await makeUserB(db);
+
+    const job = await repo.upsertByDedupeKey({
+      userId: BOOTSTRAP_ADMIN_ID,
+      dedupeKey: "dk-isolation-writes",
+      url: "https://example.com/isolation-writes",
+      sourceId: source.id,
+      title: "A's Job",
+      company: "Acme",
+      location: "Remote",
+      persona: "remote",
+      eligibility: "unknown",
+      eligibilityEvidence: "t",
+      aliases: [],
+      raw: {},
+    });
+
+    await expect(repo.updateDescription(job.id, userB.id, "hijacked")).rejects.toThrow(/no job/);
+    await expect(repo.updateEligibility(job.id, userB.id, "eligible", "hijacked")).rejects.toThrow(/no job with id/);
+
+    const after = await repo.getRowWithSourceById(job.id, BOOTSTRAP_ADMIN_ID);
+    expect(after?.job.description).toBeNull();
+    expect(after?.job.eligibility).toBe("unknown");
+  });
+
+  it("getByDedupeKey returns only the caller's own row when A and B each own a job under the same dedupeKey", async () => {
+    const db = await createTestDb();
+    const repo = createJobsRepo(db);
+    const source = await insertSource(db);
+    const userB = await makeUserB(db);
+    const dedupeKey = "dk-isolation-samekey";
+
+    const jobA = await repo.upsertByDedupeKey({
+      userId: BOOTSTRAP_ADMIN_ID,
+      dedupeKey,
+      url: "https://example.com/isolation-samekey-a",
+      sourceId: source.id,
+      title: "A's Job",
+      company: "Acme",
+      location: "Remote",
+      persona: "remote",
+      eligibility: "unknown",
+      eligibilityEvidence: "t",
+      aliases: [],
+      raw: {},
+    });
+    const jobB = await repo.upsertByDedupeKey({
+      userId: userB.id,
+      dedupeKey,
+      url: "https://example.com/isolation-samekey-b",
+      sourceId: source.id,
+      title: "B's Job",
+      company: "Acme",
+      location: "Remote",
+      persona: "remote",
+      eligibility: "unknown",
+      eligibilityEvidence: "t",
+      aliases: [],
+      raw: {},
+    });
+
+    expect((await repo.getByDedupeKey(dedupeKey, BOOTSTRAP_ADMIN_ID))?.id).toBe(jobA.id);
+    expect((await repo.getByDedupeKey(dedupeKey, userB.id))?.id).toBe(jobB.id);
+  });
+
+  // The cursor-oracle fix (task-3-brief.md item 2): before the fix, the
+  // cursor subquery at listScored's `WHERE id = ${c.id}` carried NO user_id
+  // filter, so a cursor encoding a foreign-but-real job id resolved to a
+  // real row (producing a normal, non-empty page) while a cursor encoding a
+  // truly nonexistent id resolved to nothing (producing an empty page) — an
+  // existence oracle across tenants. Both must now be indistinguishable.
+  it("a cursor encoding A's job id behaves identically to a cursor encoding a nonexistent id, when read as B", async () => {
+    const db = await createTestDb();
+    const repo = createJobsRepo(db);
+    const source = await insertSource(db);
+    const resumeA = await insertResume(db);
+    const userB = await makeUserB(db);
+    const resumeB = await insertResume(db, { userId: userB.id });
+
+    const jobA = await repo.upsertByDedupeKey({
+      userId: BOOTSTRAP_ADMIN_ID,
+      dedupeKey: "dk-oracle-a",
+      url: "https://example.com/oracle-a",
+      sourceId: source.id,
+      title: "A's Job",
+      company: "Acme",
+      location: "Remote",
+      persona: "remote",
+      eligibility: "unknown",
+      eligibilityEvidence: "t",
+      aliases: [],
+      raw: {},
+    });
+    await insertJobScore(db, jobA.id, resumeA.id);
+
+    // B owns a job too, older than A's, so a correctly-scoped cursor query
+    // (one that finds no matching row for the cursor id) still has a
+    // candidate row it *could* return — making the oracle observable if the
+    // subquery leaked A's real firstSeenAt instead of NULL.
+    const jobBOlder = await repo.upsertByDedupeKey({
+      userId: userB.id,
+      dedupeKey: "dk-oracle-b-older",
+      url: "https://example.com/oracle-b-older",
+      sourceId: source.id,
+      title: "B's older job",
+      company: "Acme",
+      location: "Remote",
+      persona: "remote",
+      eligibility: "unknown",
+      eligibilityEvidence: "t",
+      aliases: [],
+      raw: {},
+      firstSeenAt: new Date("2020-01-01T00:00:00.000Z"),
+    });
+    await insertJobScore(db, jobBOlder.id, resumeB.id);
+
+    const cursorEncodingForeignJob = encodeCursorId(jobA.id);
+    const cursorEncodingNonexistentId = encodeCursorId(crypto.randomUUID());
+
+    const pageViaForeignCursor = await repo.listScored({ userId: userB.id, cursor: cursorEncodingForeignJob });
+    const pageViaNonexistentCursor = await repo.listScored({ userId: userB.id, cursor: cursorEncodingNonexistentId });
+
+    expect(pageViaForeignCursor.items.map((i) => i.job.id)).toEqual(pageViaNonexistentCursor.items.map((i) => i.job.id));
+    expect(pageViaForeignCursor.nextCursor).toBe(pageViaNonexistentCursor.nextCursor);
+    // Both must be empty — neither is a valid "less than A's firstSeenAt"
+    // comparison from B's perspective (subquery resolves to NULL in both
+    // cases), so nothing before an unresolvable cursor can be paginated.
+    expect(pageViaForeignCursor.items).toHaveLength(0);
   });
 });
