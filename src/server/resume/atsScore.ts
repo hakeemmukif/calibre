@@ -7,7 +7,7 @@
 import type { ResumeStore } from "./resume-store";
 
 export function computeAtsScore(store: ResumeStore): number {
-  const summaryLength = store.summary.trim().length;
+  const summaryLength = (store.summary ?? "").trim().length;
   const summaryScore = summaryLength >= 80 ? 20 : summaryLength >= 40 ? 12 : summaryLength > 0 ? 6 : 0;
 
   const experienceScore = Math.min(store.experience.filter((e) => e.bullets.length > 0).length, 4) * 10;

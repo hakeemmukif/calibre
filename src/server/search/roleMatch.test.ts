@@ -127,19 +127,24 @@ describe("deriveRoleTargets", () => {
   it("derives titles from experience + headline, keywords from skills", () => {
     const resume = {
       structured: {
+        storeVersion: 2 as const,
+        extractionPath: "text" as const,
         name: "Jane Doe",
         contact: [{ label: "email", value: "jane@example.com" }],
         summary: "Backend engineer.",
         experience: [
-          { company: "Acme", title: "Senior Backend Engineer", dates: "2022–Present", bullets: [] },
-          { company: "Old Co", title: "Backend Engineer", dates: "2018–2022", bullets: [] },
+          { company: "Acme", title: "Senior Backend Engineer", dates: "2022–Present", isCurrent: true, bullets: [] },
+          { company: "Old Co", title: "Backend Engineer", dates: "2018–2022", isCurrent: false, bullets: [] },
         ],
         education: [],
         skills: [
           { label: "Languages", items: ["TypeScript", "Go"] },
           { label: "Infra", items: ["Kubernetes"] },
         ],
-        extras: [],
+        projects: [],
+        certifications: [],
+        languages: [],
+        sections: [],
       },
     };
 
@@ -152,13 +157,18 @@ describe("deriveRoleTargets", () => {
   it("falls back to a contact headline line over experience[0].title when present", () => {
     const resume = {
       structured: {
+        storeVersion: 2 as const,
+        extractionPath: "text" as const,
         name: "Jane Doe",
         contact: [{ label: "headline", value: "Staff Platform Engineer" }],
         summary: "s",
-        experience: [{ company: "Acme", title: "Senior Backend Engineer", dates: "2022–Present", bullets: [] }],
+        experience: [{ company: "Acme", title: "Senior Backend Engineer", dates: "2022–Present", isCurrent: true, bullets: [] }],
         education: [],
         skills: [],
-        extras: [],
+        projects: [],
+        certifications: [],
+        languages: [],
+        sections: [],
       },
     };
 

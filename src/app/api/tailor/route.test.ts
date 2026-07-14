@@ -93,6 +93,8 @@ describe("POST /api/tailor", () => {
     llm.scripted = {
       tailor: {
         resume: {
+          storeVersion: 2,
+          extractionPath: "text",
           name: "Jane Doe",
           contact: [
             { label: "email", value: "jane@example.com" },
@@ -103,7 +105,10 @@ describe("POST /api/tailor", () => {
           experience: [],
           education: [],
           skills: [],
-          extras: [],
+          projects: [],
+          certifications: [],
+          languages: [],
+          sections: [],
         },
         diff: [],
       },

@@ -13,7 +13,7 @@ import { assertResumeViewDerivable, ParseFailedError, toResumeView } from "./der
 import { computeAtsScore } from "./atsScore";
 import { extractText } from "./extract-text";
 import { resolveUpload, resumeKey } from "./uploads";
-import { ResumeStoreSchema, type ResumeStore } from "./resume-store";
+import { ResumeStoreEmitSchema, emitToStore, type ResumeStore } from "./resume-store";
 
 const PDF_MIME = "application/pdf";
 
@@ -55,9 +55,9 @@ export async function ingestResume(
     const result = await llm.complete({
       task: "resume-extract",
       messages: renderTemplate("resume-extract", { rawText }),
-      responseSchema: ResumeStoreSchema,
+      responseSchema: ResumeStoreEmitSchema,
     });
-    structured = result.data;
+    structured = emitToStore(result.data, "text");
   } catch (err) {
     throw new ParseFailedError(`Résumé structuring failed: ${err instanceof Error ? err.message : String(err)}`);
   }

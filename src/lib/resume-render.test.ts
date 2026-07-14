@@ -4,15 +4,20 @@ import { renderCvHtml } from "./resume-render";
 
 function makeStore(overrides: Partial<ResumeStore> = {}): ResumeStore {
   return {
+    storeVersion: 2,
+    extractionPath: "text",
     name: "Jane Doe",
     contact: [{ label: "email", value: "jane@example.com" }],
     summary: "Backend engineer with 6 years of experience.",
     experience: [
-      { company: "Acme Corp", title: "Senior Backend Engineer", dates: "2020–Present", bullets: ["Built the payments API"] },
+      { company: "Acme Corp", title: "Senior Backend Engineer", dates: "2020–Present", isCurrent: true, bullets: ["Built the payments API"] },
     ],
-    education: [{ school: "State University", credential: "B.Sc. Computer Science", dates: "2012–2016" }],
+    education: [{ school: "State University", credential: "B.Sc. Computer Science", dates: "2012–2016", details: [] }],
     skills: [{ label: "Languages", items: ["TypeScript", "Go"] }],
-    extras: ["Speaks English and Malay"],
+    projects: [],
+    certifications: [],
+    languages: [],
+    sections: [{ heading: "Additional Info", items: ["Speaks English and Malay"] }],
     ...overrides,
   };
 }

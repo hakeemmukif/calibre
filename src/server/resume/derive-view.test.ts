@@ -4,6 +4,8 @@ import { ParseFailedError, toResumeView } from "./derive-view";
 
 function baseStore(overrides: Partial<ResumeStore> = {}): ResumeStore {
   return {
+    storeVersion: 2,
+    extractionPath: "text",
     name: "Jane Doe",
     contact: [
       { label: "email", value: "jane@example.com" },
@@ -16,6 +18,7 @@ function baseStore(overrides: Partial<ResumeStore> = {}): ResumeStore {
         company: "Acme Co",
         title: "Senior Backend Engineer",
         dates: "2022–Present",
+        isCurrent: true,
         bullets: ["Led migration to Kubernetes", "Cut p99 latency by 40%"],
         location: "Kuala Lumpur",
       },
@@ -25,7 +28,10 @@ function baseStore(overrides: Partial<ResumeStore> = {}): ResumeStore {
       { label: "Languages", items: ["TypeScript", "Go", "TypeScript"] },
       { label: "Cloud", items: ["AWS", "Go"] },
     ],
-    extras: [],
+    projects: [],
+    certifications: [],
+    languages: [],
+    sections: [],
     ...overrides,
   };
 }
@@ -97,6 +103,7 @@ describe("toResumeView", () => {
           company: "Acme Co",
           title: "Senior Backend Engineer",
           dates: "2022–Present",
+          isCurrent: true,
           bullets: ["Led migration to Kubernetes"],
         },
       ],
@@ -114,6 +121,7 @@ describe("toResumeView", () => {
           company: "Acme Co",
           title: "Senior Backend Engineer",
           dates: "2022–Present",
+          isCurrent: true,
           bullets: ["Led migration to Kubernetes"],
         },
       ],
@@ -129,6 +137,7 @@ describe("toResumeView", () => {
           company: "Acme Co",
           title: "Senior Backend Engineer",
           dates: "2022–Present",
+          isCurrent: true,
           bullets: ["Led migration to Kubernetes"],
         },
       ],

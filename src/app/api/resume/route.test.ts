@@ -11,7 +11,7 @@ import { UnauthorizedError } from "@/server/auth/errors";
 import { users } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import { resolveUpload } from "@/server/resume/uploads";
-import type { ResumeStore } from "@/server/resume/resume-store";
+import type { ResumeStoreEmit } from "@/server/resume/resume-store";
 
 const PDF_FIXTURE = join(process.cwd(), "src/server/resume/__fixtures__/tiny.pdf");
 const DOCX_FIXTURE = join(process.cwd(), "src/server/resume/__fixtures__/tiny.docx");
@@ -42,9 +42,15 @@ vi.mock("@/server/auth/session", async (orig) => ({
 
 const { GET, POST } = await import("./route");
 
-function structuredFixture(overrides: Partial<ResumeStore> = {}): ResumeStore {
+// Mock "resume-extract" output — ingest.ts now validates this against
+// ResumeStoreEmitSchema (every field required, scalars nullable) and runs it
+// through emitToStore(), so this fixture is EMIT-shaped, not STORE-shaped.
+function structuredFixture(overrides: Partial<ResumeStoreEmit> = {}): ResumeStoreEmit {
   return {
+    storeVersion: 2,
     name: "Jane Doe",
+    headline: null,
+    location: null,
     contact: [
       { label: "email", value: "jane@example.com" },
       { label: "location", value: "Kuala Lumpur, Malaysia" },
@@ -55,12 +61,18 @@ function structuredFixture(overrides: Partial<ResumeStore> = {}): ResumeStore {
         company: "Acme Co",
         title: "Senior Backend Engineer",
         dates: "2022–Present",
+        start: null,
+        end: null,
+        location: null,
         bullets: ["Led migration to Kubernetes"],
       },
     ],
     education: [],
     skills: [{ label: "Languages", items: ["TypeScript", "Go"] }],
-    extras: [],
+    projects: [],
+    certifications: [],
+    languages: [],
+    sections: [],
     ...overrides,
   };
 }

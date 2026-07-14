@@ -3,19 +3,37 @@
 // test-profile seam via getLlm. Leaf module: only imports the TaskName type.
 import type { TaskName } from "./client";
 
+// The mock "resume-extract" task response — validated against
+// ResumeStoreEmitSchema (every field required, scalars nullable), same as
+// the real LLM call now wired in server/resume/ingest.ts. Flows through
+// emitToStore() before it reaches any consumer.
 export const RESUME_STORE = {
+  storeVersion: 2,
   name: "Jane Doe",
+  headline: null,
+  location: null,
+  summary: "Backend engineer with six years of experience building payments systems.",
   contact: [
     { label: "email", value: "jane@example.com" },
     { label: "location", value: "Kuala Lumpur, Malaysia" },
   ],
-  summary: "Backend engineer with six years of experience building payments systems.",
   experience: [
-    { company: "Acme Co", title: "Senior Backend Engineer", dates: "2022–Present", bullets: ["Led migration to Kubernetes"] },
+    {
+      company: "Acme Co",
+      title: "Senior Backend Engineer",
+      dates: "2022–Present",
+      start: "2022-01",
+      end: null,
+      location: null,
+      bullets: ["Led migration to Kubernetes"],
+    },
   ],
   education: [],
   skills: [{ label: "Domain", items: ["Payments", "TypeScript"] }],
-  extras: [],
+  projects: [],
+  certifications: [],
+  languages: [],
+  sections: [],
 };
 
 export const JD_FACTS = {
@@ -65,14 +83,38 @@ export const MATCH_SCORE = {
   lowConfidence: false,
 };
 
+// The mock "tailor" task response — its `resume` field validates against the
+// STORE schema directly (TailorResultSchema, server/tailor/index.ts), not
+// the emit schema, so it's a separate v2 STORE literal rather than a spread
+// of the (now emit-shaped) RESUME_STORE above.
+const TAILORED_RESUME_STORE = {
+  storeVersion: 2 as const,
+  extractionPath: "text" as const,
+  name: "Jane Doe",
+  contact: [
+    { label: "email", value: "jane@example.com" },
+    { label: "location", value: "Kuala Lumpur, Malaysia" },
+  ],
+  summary: "Backend engineer specializing in payments infrastructure.",
+  experience: [
+    { company: "Acme Co", title: "Senior Backend Engineer", dates: "2022–Present", isCurrent: true, bullets: ["Led migration to Kubernetes"] },
+  ],
+  education: [],
+  skills: [{ label: "Domain", items: ["Payments", "TypeScript"] }],
+  projects: [],
+  certifications: [],
+  languages: [],
+  sections: [],
+};
+
 export const TAILOR_RESULT = {
-  resume: { ...RESUME_STORE, summary: "Backend engineer specializing in payments infrastructure." },
+  resume: TAILORED_RESUME_STORE,
   diff: [
     {
       section: "summary",
       op: "modify" as const,
       before: RESUME_STORE.summary,
-      after: "Backend engineer specializing in payments infrastructure.",
+      after: TAILORED_RESUME_STORE.summary,
       reason: "Ties the summary to the payments domain named in the posting.",
     },
   ],

@@ -3,7 +3,20 @@ import type { ResumeStore } from "./resume-store";
 import { computeAtsScore } from "./atsScore";
 
 function emptyStore(): ResumeStore {
-  return { name: "", contact: [], summary: "", experience: [], education: [], skills: [], extras: [] };
+  return {
+    storeVersion: 2,
+    extractionPath: "text",
+    name: "",
+    contact: [],
+    summary: "",
+    experience: [],
+    education: [],
+    skills: [],
+    projects: [],
+    certifications: [],
+    languages: [],
+    sections: [],
+  };
 }
 
 describe("computeAtsScore", () => {
@@ -13,6 +26,8 @@ describe("computeAtsScore", () => {
 
   it("scores a complete résumé at the documented fixed value", () => {
     const store: ResumeStore = {
+      storeVersion: 2,
+      extractionPath: "text",
       name: "Jane Doe",
       contact: [
         { label: "email", value: "jane@example.com" },
@@ -22,12 +37,15 @@ describe("computeAtsScore", () => {
       summary:
         "Backend engineer with six years of experience designing and operating distributed systems at scale.",
       experience: [
-        { company: "Acme", title: "Senior Engineer", dates: "2022–Present", bullets: ["Led migration"] },
-        { company: "Beta", title: "Engineer", dates: "2019–2022", bullets: ["Built pipeline"] },
+        { company: "Acme", title: "Senior Engineer", dates: "2022–Present", isCurrent: true, bullets: ["Led migration"] },
+        { company: "Beta", title: "Engineer", dates: "2019–2022", isCurrent: false, bullets: ["Built pipeline"] },
       ],
       education: [],
       skills: [{ label: "Languages", items: ["TypeScript", "Go"] }],
-      extras: [],
+      projects: [],
+      certifications: [],
+      languages: [],
+      sections: [],
     };
     // summary(20) + experience(2 entries * 10 = 20) + skills(2) + contact(3*3=9) = 51
     expect(computeAtsScore(store)).toBe(51);
@@ -35,6 +53,8 @@ describe("computeAtsScore", () => {
 
   it("caps experience score at 4 entries with bullets", () => {
     const store: ResumeStore = {
+      storeVersion: 2,
+      extractionPath: "text",
       name: "",
       contact: [],
       summary: "",
@@ -42,37 +62,51 @@ describe("computeAtsScore", () => {
         company: `Co ${i}`,
         title: "Engineer",
         dates: "2020",
+        isCurrent: false,
         bullets: ["Did a thing"],
       })),
       education: [],
       skills: [],
-      extras: [],
+      projects: [],
+      certifications: [],
+      languages: [],
+      sections: [],
     };
     expect(computeAtsScore(store)).toBe(40);
   });
 
   it("does not count experience entries with no bullets", () => {
     const store: ResumeStore = {
+      storeVersion: 2,
+      extractionPath: "text",
       name: "",
       contact: [],
       summary: "",
-      experience: [{ company: "Co", title: "Engineer", dates: "2020", bullets: [] }],
+      experience: [{ company: "Co", title: "Engineer", dates: "2020", isCurrent: false, bullets: [] }],
       education: [],
       skills: [],
-      extras: [],
+      projects: [],
+      certifications: [],
+      languages: [],
+      sections: [],
     };
     expect(computeAtsScore(store)).toBe(0);
   });
 
   it("caps skills score at 25 distinct items", () => {
     const store: ResumeStore = {
+      storeVersion: 2,
+      extractionPath: "text",
       name: "",
       contact: [],
       summary: "",
       experience: [],
       education: [],
       skills: [{ label: "All", items: Array.from({ length: 40 }, (_, i) => `Skill ${i}`) }],
-      extras: [],
+      projects: [],
+      certifications: [],
+      languages: [],
+      sections: [],
     };
     expect(computeAtsScore(store)).toBe(25);
   });

@@ -13,6 +13,8 @@ const { tailoredResumesRepo } = await import("@/server/persistence/repos/tailore
 const { get: getRunHandle, __resetForTests } = await import("@/server/runs/registry");
 
 const TAILORED_STORE = {
+  storeVersion: 2,
+  extractionPath: "text",
   name: "Jane Doe",
   contact: [
     { label: "email", value: "jane@example.com" },
@@ -20,11 +22,14 @@ const TAILORED_STORE = {
   ],
   summary: "Backend engineer, now framed around payments infra.",
   experience: [
-    { company: "Acme Corp", title: "Senior Backend Engineer", dates: "2020–Present", bullets: ["Led the payments API rewrite"] },
+    { company: "Acme Corp", title: "Senior Backend Engineer", dates: "2020–Present", isCurrent: true, bullets: ["Led the payments API rewrite"] },
   ],
   education: [],
   skills: [{ label: "Languages", items: ["TypeScript", "Go"] }],
-  extras: [],
+  projects: [],
+  certifications: [],
+  languages: [],
+  sections: [],
 };
 
 const TAILOR_DIFF = [

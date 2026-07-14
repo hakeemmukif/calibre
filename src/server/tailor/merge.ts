@@ -32,12 +32,16 @@ export class UnknownDiffSectionError extends Error {
 // than silently no-op'ing (constraints: fail loud, no fallback).
 const MERGEABLE_SECTIONS = new Set<keyof ResumeStore>([
   "name",
-  "contact",
+  "headline",
   "summary",
+  "contact",
   "experience",
   "education",
   "skills",
-  "extras",
+  "projects",
+  "certifications",
+  "languages",
+  "sections",
 ]);
 
 // KNOWN LIMITATION (task-B8 review pass, Finding 1): `diff[]` is a frozen
