@@ -7,6 +7,7 @@ import { jobs, resumes, searchRuns, sources } from "@/server/persistence/schema"
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import type { RawPosting, SourceConnector } from "@/server/search/connector";
 import { ErrorEnvelope } from "@/types";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb, hang: false }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
@@ -153,6 +154,7 @@ describe("GET /api/search/:id", () => {
     const resume = await insertResume(state.testDb, { isActive: true });
     const repo = (await import("@/server/persistence/repos/searchRuns")).createSearchRunsRepo(state.testDb);
     const runningRun = await repo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
       resumeId: resume.id,
       personas: ["remote"],
       status: "running",
@@ -172,6 +174,7 @@ describe("GET /api/search/:id", () => {
     const resume = await insertResume(state.testDb, { isActive: true });
     const repo = (await import("@/server/persistence/repos/searchRuns")).createSearchRunsRepo(state.testDb);
     const failedRun = await repo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
       resumeId: resume.id,
       personas: ["remote"],
       status: "failed",

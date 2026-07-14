@@ -7,6 +7,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { getLlm, type LlmClient } from "@/lib/llm/client";
 import { renderTemplate } from "@/lib/llm/templates";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 import { resumesRepo, type ResumeRow } from "@/server/persistence/repos/resumes";
 import type { Resume } from "@/types";
 import { assertResumeViewDerivable, ParseFailedError, toResumeView } from "./derive-view";
@@ -76,6 +77,7 @@ export async function ingestResume(input: IngestResumeInput, deps: IngestResumeD
   }
 
   const inserted = await resumesRepo.insertReplacingActive({
+    userId: BOOTSTRAP_ADMIN_ID,
     rawText,
     structured,
     originalPath,

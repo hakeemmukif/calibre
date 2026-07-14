@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createTestDb } from "../test-db";
 import { resumes } from "../schema";
 import { createResumesRepo } from "./resumes";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 describe("resumesRepo", () => {
   it("round-trips insertReplacingActive → getActive", async () => {
@@ -9,6 +10,7 @@ describe("resumesRepo", () => {
     const repo = createResumesRepo(db);
 
     const inserted = await repo.insertReplacingActive({
+      userId: BOOTSTRAP_ADMIN_ID,
       rawText: "raw text",
       structured: {
         name: "Jane Doe",
@@ -34,6 +36,7 @@ describe("resumesRepo", () => {
     const repo = createResumesRepo(db);
 
     const base = {
+      userId: BOOTSTRAP_ADMIN_ID,
       structured: {
         name: "A",
         contact: [],
@@ -64,12 +67,14 @@ describe("resumesRepo", () => {
     const repo = createResumesRepo(db);
 
     const a = await repo.insertReplacingActive({
+      userId: BOOTSTRAP_ADMIN_ID,
       rawText: "resume A",
       structured: { name: "A", contact: [], summary: "s", experience: [], education: [], skills: [], extras: [] },
       sourceKind: "paste",
       isActive: true,
     });
     await repo.insertReplacingActive({
+      userId: BOOTSTRAP_ADMIN_ID,
       rawText: "resume B",
       structured: { name: "B", contact: [], summary: "s", experience: [], education: [], skills: [], extras: [] },
       sourceKind: "paste",

@@ -3,6 +3,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { insertJob, insertProfile, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
 import { jobs, jobScores, profile, resumes, searchRuns, sources } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
@@ -23,6 +24,7 @@ describe("resolveIsNewCutoff", () => {
   it("returns null for persona 'pasted' without touching search_runs (spec §11.4)", async () => {
     const resume = await insertResume(state.testDb);
     await state.testDb.insert(searchRuns).values({
+      userId: BOOTSTRAP_ADMIN_ID,
       resumeId: resume.id,
       personas: ["remote"],
       status: "completed",

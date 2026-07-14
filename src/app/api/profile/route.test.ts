@@ -3,6 +3,7 @@ import { NextRequest } from "next/server";
 import { profile } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import { Profile } from "@/types";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
@@ -34,7 +35,7 @@ describe("/api/profile", () => {
   });
 
   it("GET returns the seeded row as a valid Profile", async () => {
-    await state.testDb.insert(profile).values({ id: "default", baseCountry: "MY", relocation: "stay" });
+    await state.testDb.insert(profile).values({ id: "default", userId: BOOTSTRAP_ADMIN_ID, baseCountry: "MY", relocation: "stay" });
     const res = await GET();
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -43,7 +44,7 @@ describe("/api/profile", () => {
   });
 
   it("PUT full-replaces and returns the updated Profile", async () => {
-    await state.testDb.insert(profile).values({ id: "default", baseCountry: "MY", relocation: "stay" });
+    await state.testDb.insert(profile).values({ id: "default", userId: BOOTSTRAP_ADMIN_ID, baseCountry: "MY", relocation: "stay" });
     const res = await PUT(putRequest({ baseCountry: "MY", relocation: "open" }));
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -51,7 +52,7 @@ describe("/api/profile", () => {
   });
 
   it("PUT 422s on an invalid body", async () => {
-    await state.testDb.insert(profile).values({ id: "default", baseCountry: "MY", relocation: "stay" });
+    await state.testDb.insert(profile).values({ id: "default", userId: BOOTSTRAP_ADMIN_ID, baseCountry: "MY", relocation: "stay" });
     const res = await PUT(putRequest({ baseCountry: "Malaysia", relocation: "maybe" }));
     expect(res.status).toBe(422);
     const body = await res.json();

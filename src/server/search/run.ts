@@ -9,6 +9,7 @@ import pLimit from "p-limit";
 import type { LlmClient } from "@/lib/llm/client";
 import { getLlm } from "@/lib/llm/client";
 import { assembleJob } from "@/features/feed/assemble";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 import { jobsRepo, type JobRow } from "@/server/persistence/repos/jobs";
 import { jobScoresRepo } from "@/server/persistence/repos/jobScores";
 import { profileRepo, type ProfileRow } from "@/server/persistence/repos/profile";
@@ -112,6 +113,7 @@ export async function startSearch(input: StartSearchInput, deps: StartSearchDeps
     }
 
     const row = await searchRunsRepo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
       id: runId,
       resumeId: resumeRow.id,
       personas: [input.persona],
@@ -338,6 +340,7 @@ async function upsertMatchedPostings(
       connectorGeo: canonical.geo,
     });
     const job = await jobsRepo.upsertByDedupeKey({
+      userId: BOOTSTRAP_ADMIN_ID,
       dedupeKey: dedupeKeyFor(canonical.url),
       url: canonical.url,
       sourceId: canonicalSource.id,

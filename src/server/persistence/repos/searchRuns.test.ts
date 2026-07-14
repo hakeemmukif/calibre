@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createTestDb } from "../test-db";
 import { insertResume } from "./__fixtures__/helpers";
 import { createSearchRunsRepo } from "./searchRuns";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 describe("searchRunsRepo", () => {
   it("round-trips insert/getById and updates status + stats", async () => {
@@ -10,6 +11,7 @@ describe("searchRunsRepo", () => {
     const resume = await insertResume(db);
 
     const inserted = await repo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
       resumeId: resume.id,
       personas: ["remote"],
       status: "queued",
@@ -43,7 +45,7 @@ describe("searchRunsRepo", () => {
     const repo = createSearchRunsRepo(db);
     const resume = await insertResume(db);
 
-    const base = { resumeId: resume.id, personas: ["remote" as const], stats: { scanned: 0, matched: 0, scored: 0, worth: 0, ghosts: 0, perSource: [] } };
+    const base = { userId: BOOTSTRAP_ADMIN_ID, resumeId: resume.id, personas: ["remote" as const], stats: { scanned: 0, matched: 0, scored: 0, worth: 0, ghosts: 0, perSource: [] } };
     const running = await repo.insert({ ...base, status: "running" });
     const queued = await repo.insert({ ...base, status: "queued" });
     const completed = await repo.insert({ ...base, status: "completed" });
@@ -66,7 +68,7 @@ describe("searchRunsRepo", () => {
     const db = await createTestDb();
     const repo = createSearchRunsRepo(db);
     const resume = await insertResume(db);
-    const base = { resumeId: resume.id, stats: { scanned: 0, matched: 0, scored: 0, worth: 0, ghosts: 0, perSource: [] } };
+    const base = { userId: BOOTSTRAP_ADMIN_ID, resumeId: resume.id, stats: { scanned: 0, matched: 0, scored: 0, worth: 0, ghosts: 0, perSource: [] } };
 
     expect(await repo.getLatestCompleted()).toBeNull();
 
