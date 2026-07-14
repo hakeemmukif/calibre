@@ -16,6 +16,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { waitFor } from "@/app/api/__test-utils__/poll";
 import { makeMockLlm } from "@/lib/llm/mock";
 import { JD_FACTS, MATCH_SCORE, QUESTION_ANSWER, QUESTION_EXTRACT, RESUME_STORE, TAILOR_RESULT } from "@/lib/llm/scripted-fixtures";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 import { insertProfile, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
 import {
   applicationAnswers,
@@ -33,6 +34,15 @@ import type { SourceRow } from "@/server/persistence/repos/sources";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
+
+// /api/resume now requires a session (Step 3 task 2) — this spine is
+// single-user, and every fixture below already assumes BOOTSTRAP_ADMIN_ID,
+// so the "caller" is always the bootstrap admin (mirrors src/app/api/profile/
+// route.test.ts's requireUser mock).
+vi.mock("@/server/auth/session", async (orig) => ({
+  ...(await orig<typeof import("@/server/auth/session")>()),
+  requireUser: async () => ({ id: BOOTSTRAP_ADMIN_ID, email: "admin@example.com", role: "admin" as const }),
+}));
 
 const llm = vi.hoisted(() => ({ scripted: {} as Record<string, unknown> }));
 vi.mock("@/lib/llm/client", async (importOriginal) => {

@@ -304,7 +304,9 @@ export async function startUrlCheck(req: UrlCheckRequest): Promise<{ check: UrlC
   // Admission order is load-bearing (spec §6): résumé check runs before any
   // URL/text work, so a no-résumé request never reaches an LLM call or a
   // url_checks write — see run.test.ts's zero-LLM-call assertion.
-  const resumeRow = await resumesRepo.getActive();
+  // TEMP read-scaffold (Task 5 threads the caller's session.userId here):
+  // POST /api/jobs/check doesn't call requireUser() yet.
+  const resumeRow = await resumesRepo.getActive(BOOTSTRAP_ADMIN_ID);
   if (!resumeRow) throw new NoActiveResumeError();
 
   if (req.text !== undefined && req.text.length > MAX_TEXT_CHARS) {

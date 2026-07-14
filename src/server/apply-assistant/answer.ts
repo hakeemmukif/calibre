@@ -63,7 +63,9 @@ export async function draftAnswers(
 ): Promise<ApplicationAnswers> {
   if (!(await jobsRepo.existsById(input.jobId))) throw new UnknownJobError(input.jobId);
 
-  const resumeRow = await resumesRepo.getActive();
+  // TEMP read-scaffold (Task 4 threads the caller's session.userId here):
+  // POST /api/apply/answers doesn't call requireUser() yet.
+  const resumeRow = await resumesRepo.getActive(BOOTSTRAP_ADMIN_ID);
   if (!resumeRow) throw new NoActiveResumeError();
 
   const scoreRow = await jobScoresRepo.getLatestByJobId(input.jobId);

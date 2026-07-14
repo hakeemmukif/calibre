@@ -23,10 +23,10 @@ export class UnknownJobError extends Error {
 export async function evaluateJob(jobId: string, deps: { llm?: LlmClient } = {}): Promise<Job> {
   const found = await jobsRepo.getRowWithSourceById(jobId);
   if (!found) throw new UnknownJobError(jobId);
-  const resume = await resumesRepo.getActive();
-  if (!resume) throw new NoActiveResumeError();
   // TEMP read-scaffold (a later task threads the caller's session.userId
   // here): POST /api/jobs/:id/evaluate doesn't call requireUser() yet.
+  const resume = await resumesRepo.getActive(BOOTSTRAP_ADMIN_ID);
+  if (!resume) throw new NoActiveResumeError();
   const profile = await profileRepo.get(BOOTSTRAP_ADMIN_ID);
   const job = await ensureDescription(found.job, found.source).catch((err) => {
     console.error(`evaluateJob ${jobId}: detail fetch failed:`, err);

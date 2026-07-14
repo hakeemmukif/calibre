@@ -87,7 +87,7 @@ export function createUrlCheckWorker(overrides: UrlCheckWorkerDeps = {}) {
         return;
       }
 
-      const resumeRow = await resumesRepo.getActive();
+      const resumeRow = await resumesRepo.getActive(row.userId);
       if (!resumeRow) {
         await urlChecksRepo.fail(row.id, { code: "INTERNAL", message: "no active résumé at claim time", needsText: false }, attempt);
         return;

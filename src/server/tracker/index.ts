@@ -78,7 +78,9 @@ export async function markApplied(input: MarkAppliedInput): Promise<Application>
   if (!(await jobsRepo.existsById(input.jobId))) throw new UnknownJobError(input.jobId);
   if (!(await jobsRepo.getById(input.jobId))) throw new JobNotScoredError(input.jobId);
 
-  const resumeRow = await resumesRepo.getActive();
+  // TEMP read-scaffold (Task 4 threads the caller's session.userId here):
+  // POST /api/applications doesn't call requireUser() yet.
+  const resumeRow = await resumesRepo.getActive(BOOTSTRAP_ADMIN_ID);
   if (!resumeRow) throw new NoActiveResumeError();
 
   const folded = foldStatus(0, "open");

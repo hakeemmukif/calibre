@@ -96,7 +96,11 @@ export async function startSearch(input: StartSearchInput, deps: StartSearchDeps
   const handle = create("search", runId, input.persona);
 
   try {
-    const resumeRow = input.resumeId ? await resumesRepo.getById(input.resumeId) : await resumesRepo.getActive();
+    // TEMP read-scaffold (Task 4 threads the caller's session.userId here):
+    // this route doesn't call requireUser() yet.
+    const resumeRow = input.resumeId
+      ? await resumesRepo.getById(input.resumeId, BOOTSTRAP_ADMIN_ID)
+      : await resumesRepo.getActive(BOOTSTRAP_ADMIN_ID);
     if (!resumeRow) throw new NoActiveResumeError();
 
     // Eligibility needs the operator profile (spec §5) — a missing row aborts
