@@ -47,6 +47,27 @@ export function renderCvHtml(store: ResumeStore): string {
     )
     .join("");
 
+  const projectsHtml = store.projects
+    .map(
+      (p) => `<section class="project-entry">
+  <h3>${escapeHtml(p.name)}${p.url ? ` — ${escapeHtml(p.url)}` : ""}</h3>
+  <ul>${p.bullets.map((b) => `<li>${escapeHtml(b)}</li>`).join("")}</ul>
+</section>`,
+    )
+    .join("");
+
+  const certificationsHtml = store.certifications
+    .map((c) => {
+      const parts = [c.name, c.issuer].filter(Boolean).map((s) => escapeHtml(s as string)).join(", ");
+      const year = c.year ? ` (${escapeHtml(c.year)})` : "";
+      return `<li>${parts}${year}</li>`;
+    })
+    .join("");
+
+  const languagesHtml = store.languages
+    .map((l) => `<li>${escapeHtml(l.language)}${l.proficiency ? ` (${escapeHtml(l.proficiency)})` : ""}</li>`)
+    .join("");
+
   const sectionsHtml = store.sections
     .map(
       (s) => `<section class="extra-section">
@@ -66,6 +87,9 @@ export function renderCvHtml(store: ResumeStore): string {
 <section class="experience">${experienceHtml}</section>
 <section class="education"><ul>${educationHtml}</ul></section>
 <section class="skills">${skillsHtml}</section>
+<section class="projects">${projectsHtml}</section>
+<section class="certifications"><ul>${certificationsHtml}</ul></section>
+<section class="languages"><ul>${languagesHtml}</ul></section>
 <section class="sections">${sectionsHtml}</section>
 </body>
 </html>`;

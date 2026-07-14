@@ -15,7 +15,7 @@ import { jobsRepo } from "@/server/persistence/repos/jobs";
 import { resumesRepo, type ResumeRow } from "@/server/persistence/repos/resumes";
 import { tailoredResumesRepo, type TailoredResumeRow } from "@/server/persistence/repos/tailoredResumes";
 import { create, type RunHandle } from "@/server/runs/registry";
-import { ResumeStoreSchema } from "@/server/resume/resume-store";
+import { emitToStore, ResumeStoreEmitSchema } from "@/server/resume/resume-store";
 import { TailoredResume } from "@/types";
 import { toTailoredResume } from "./assemble";
 import { applyAcceptedDiff, DiffEntrySchema } from "./merge";
@@ -58,6 +58,14 @@ export { InvalidDiffIndexError, UnknownDiffSectionError } from "./merge";
 // the changes list. Escalate (don't invent op values) if this can't express
 // what the template actually returns.
 //
+// `resume` is the EMIT schema (every field required, scalars nullable) —
+// the same jdFacts.ts/resume-extract fix for gpt-oss-120b dropping
+// `.optional()` fields under strict:false. runTailorJob normalizes the
+// parsed result via emitToStore() before persisting; strict:true stays OFF
+// for this task (config/models.yml) because diff[]'s before?/after?
+// optionals are semantically absent-on-add/remove, not a model-drop bug —
+// they'd 400 under strict.
+//
 // task-B8 review pass, Finding 1: a model response with two diff entries
 // naming the SAME section is rejected here (fail loud) rather than merged —
 // applyAcceptedDiff's `merged[section] = tailored[section]` copies the
@@ -67,7 +75,7 @@ export { InvalidDiffIndexError, UnknownDiffSectionError } from "./merge";
 // exactly one entry per section.
 export const TailorResultSchema = z
   .object({
-    resume: ResumeStoreSchema,
+    resume: ResumeStoreEmitSchema,
     diff: z.array(DiffEntrySchema),
   })
   .superRefine((value, ctx) => {
@@ -176,7 +184,7 @@ async function runTailorJob(
 
   const completedAt = new Date();
   const completed = await tailoredResumesRepo.complete(row.id, {
-    structured: result.data.resume,
+    structured: emitToStore(result.data.resume, "text"),
     diff: result.data.diff,
     model: result.model,
     costUsd: result.costUsd,

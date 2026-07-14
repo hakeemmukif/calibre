@@ -3,6 +3,7 @@ import { makeMockLlm } from "@/lib/llm/mock";
 import { insertJob, insertJobScore, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
 import { jobs, jobScores, resumes, sources, tailoredResumes, users } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
+import { emitToStore } from "@/server/resume/resume-store";
 import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
@@ -12,17 +13,30 @@ const { startTailor, UnknownJobError, NoActiveResumeError } = await import("./in
 const { tailoredResumesRepo } = await import("@/server/persistence/repos/tailoredResumes");
 const { get: getRunHandle, __resetForTests } = await import("@/server/runs/registry");
 
-const TAILORED_STORE = {
-  storeVersion: 2,
-  extractionPath: "text",
+// EMIT-shaped mock LLM output (TailorResultSchema.resume is
+// ResumeStoreEmitSchema — every field required, scalars nullable). The
+// persisted row's `structured` is the STORE shape runTailorJob normalizes it
+// into via emitToStore(), asserted below with the same helper.
+const TAILORED_RESUME_EMIT = {
+  storeVersion: 2 as const,
   name: "Jane Doe",
+  headline: null,
+  location: null,
+  summary: "Backend engineer, now framed around payments infra.",
   contact: [
     { label: "email", value: "jane@example.com" },
     { label: "location", value: "Kuala Lumpur, Malaysia" },
   ],
-  summary: "Backend engineer, now framed around payments infra.",
   experience: [
-    { company: "Acme Corp", title: "Senior Backend Engineer", dates: "2020–Present", isCurrent: true, bullets: ["Led the payments API rewrite"] },
+    {
+      company: "Acme Corp",
+      title: "Senior Backend Engineer",
+      dates: "2020–Present",
+      start: null,
+      end: null,
+      location: null,
+      bullets: ["Led the payments API rewrite"],
+    },
   ],
   education: [],
   skills: [{ label: "Languages", items: ["TypeScript", "Go"] }],
@@ -33,7 +47,7 @@ const TAILORED_STORE = {
 };
 
 const TAILOR_DIFF = [
-  { section: "summary", op: "modify" as const, before: "Backend engineer.", after: TAILORED_STORE.summary, reason: "emphasize payments overlap" },
+  { section: "summary", op: "modify" as const, before: "Backend engineer.", after: TAILORED_RESUME_EMIT.summary, reason: "emphasize payments overlap" },
 ];
 
 async function waitForTerminal(id: string, timeoutMs = 2000): Promise<void> {
@@ -90,7 +104,7 @@ describe("startTailor", () => {
       gaps: [{ tone: "warn", k: "payments", v: "No direct payments experience listed" }],
     });
 
-    const llm = makeMockLlm({ tailor: { resume: TAILORED_STORE, diff: TAILOR_DIFF } });
+    const llm = makeMockLlm({ tailor: { resume: TAILORED_RESUME_EMIT, diff: TAILOR_DIFF } });
 
     const draft = await startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id }, { llm });
     expect(draft.status).toBe("queued");
@@ -102,7 +116,7 @@ describe("startTailor", () => {
 
     const row = await tailoredResumesRepo.getById(draft.id, BOOTSTRAP_ADMIN_ID);
     expect(row?.status).toBe("completed");
-    expect(row?.structured).toEqual(TAILORED_STORE);
+    expect(row?.structured).toEqual(emitToStore(TAILORED_RESUME_EMIT, "text"));
     expect(row?.diff).toEqual(TAILOR_DIFF);
     expect(row?.model).toBe("mock");
     expect(row?.completedAt).not.toBeNull();
@@ -113,7 +127,7 @@ describe("startTailor", () => {
     const job = await insertJob(state.testDb, source.id);
     await insertResume(state.testDb, { isActive: true });
 
-    const llm = makeMockLlm({ tailor: { resume: TAILORED_STORE, diff: TAILOR_DIFF } });
+    const llm = makeMockLlm({ tailor: { resume: TAILORED_RESUME_EMIT, diff: TAILOR_DIFF } });
 
     const events: { event: string; stage?: string }[] = [];
     const draft = await startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id }, { llm });
@@ -146,7 +160,7 @@ describe("startTailor", () => {
       { section: "experience", op: "modify" as const, before: "old bullet A", after: "new bullet A", reason: "surface relevant work" },
       { section: "experience", op: "modify" as const, before: "old bullet B", after: "new bullet B", reason: "surface more relevant work" },
     ];
-    const llm = makeMockLlm({ tailor: { resume: TAILORED_STORE, diff: duplicateSectionDiff } });
+    const llm = makeMockLlm({ tailor: { resume: TAILORED_RESUME_EMIT, diff: duplicateSectionDiff } });
 
     const draft = await startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id }, { llm });
     await waitForTerminal(draft.id);

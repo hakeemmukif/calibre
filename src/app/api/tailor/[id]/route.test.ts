@@ -40,17 +40,21 @@ function postRequest(body: unknown): NextRequest {
   });
 }
 
+// Mock "tailor" LLM response — validates against ResumeStoreEmitSchema
+// (every field required, scalars nullable), same as scripted-fixtures.ts's
+// TAILOR_RESULT.
 const TAILOR_RESULT = {
   resume: {
     storeVersion: 2,
-    extractionPath: "text",
     name: "Jane Doe",
+    headline: null,
+    location: null,
+    summary: "Tailored summary.",
     contact: [
       { label: "email", value: "jane@example.com" },
       { label: "location", value: "Kuala Lumpur, Malaysia" },
       { label: "headline", value: "Backend Engineer" },
     ],
-    summary: "Tailored summary.",
     experience: [],
     education: [],
     skills: [],

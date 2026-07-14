@@ -90,18 +90,22 @@ describe("POST /api/tailor", () => {
     const job = await insertJob(state.testDb, source.id);
     await insertResume(state.testDb, { isActive: true });
 
+    // Mock "tailor" LLM response — validates against ResumeStoreEmitSchema
+    // (every field required, scalars nullable), same as
+    // scripted-fixtures.ts's TAILOR_RESULT.
     llm.scripted = {
       tailor: {
         resume: {
           storeVersion: 2,
-          extractionPath: "text",
           name: "Jane Doe",
+          headline: null,
+          location: null,
+          summary: "Tailored summary.",
           contact: [
             { label: "email", value: "jane@example.com" },
             { label: "location", value: "Kuala Lumpur, Malaysia" },
             { label: "headline", value: "Backend Engineer" },
           ],
-          summary: "Tailored summary.",
           experience: [],
           education: [],
           skills: [],

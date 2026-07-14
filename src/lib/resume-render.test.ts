@@ -44,4 +44,59 @@ describe("renderCvHtml", () => {
     expect(html).not.toContain("<script>");
     expect(html).toContain("&lt;script&gt;");
   });
+
+  it("renders projects with an optional url and their bullets", () => {
+    const html = renderCvHtml(
+      makeStore({
+        projects: [
+          { name: "Ledger Reconciler", url: "https://github.com/jane/ledger-reconciler", bullets: ["Reconciled 1M+ daily transactions"] },
+          { name: "Side Project", bullets: [] },
+        ],
+      }),
+    );
+    expect(html).toContain("Ledger Reconciler");
+    expect(html).toContain("https://github.com/jane/ledger-reconciler");
+    expect(html).toContain("Reconciled 1M+ daily transactions");
+    expect(html).toContain("Side Project");
+  });
+
+  it("renders certifications with optional issuer/year", () => {
+    const html = renderCvHtml(
+      makeStore({
+        certifications: [
+          { name: "AWS Certified Solutions Architect", issuer: "Amazon Web Services", year: "2023" },
+          { name: "Unaffiliated Cert" },
+        ],
+      }),
+    );
+    expect(html).toContain("AWS Certified Solutions Architect");
+    expect(html).toContain("Amazon Web Services");
+    expect(html).toContain("2023");
+    expect(html).toContain("Unaffiliated Cert");
+  });
+
+  it("renders languages with optional proficiency", () => {
+    const html = renderCvHtml(
+      makeStore({
+        languages: [
+          { language: "Malay", proficiency: "Native" },
+          { language: "English" },
+        ],
+      }),
+    );
+    expect(html).toContain("Malay");
+    expect(html).toContain("Native");
+    expect(html).toContain("English");
+  });
+
+  it("escapes HTML-significant characters in the new sections", () => {
+    const html = renderCvHtml(
+      makeStore({
+        projects: [{ name: '<script>alert("p")</script>', bullets: [] }],
+        certifications: [{ name: '<script>alert("c")</script>' }],
+        languages: [{ language: '<script>alert("l")</script>' }],
+      }),
+    );
+    expect(html).not.toContain("<script>");
+  });
 });

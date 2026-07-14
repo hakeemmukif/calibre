@@ -83,21 +83,30 @@ export const MATCH_SCORE = {
   lowConfidence: false,
 };
 
-// The mock "tailor" task response — its `resume` field validates against the
-// STORE schema directly (TailorResultSchema, server/tailor/index.ts), not
-// the emit schema, so it's a separate v2 STORE literal rather than a spread
-// of the (now emit-shaped) RESUME_STORE above.
-const TAILORED_RESUME_STORE = {
+// The mock "tailor" task response — its `resume` field validates against
+// ResumeStoreEmitSchema (every field required, scalars nullable), same as
+// RESUME_STORE above (TailorResultSchema, server/tailor/index.ts). Flows
+// through emitToStore() before it reaches any consumer.
+const TAILORED_RESUME_EMIT = {
   storeVersion: 2 as const,
-  extractionPath: "text" as const,
   name: "Jane Doe",
+  headline: null,
+  location: null,
+  summary: "Backend engineer specializing in payments infrastructure.",
   contact: [
     { label: "email", value: "jane@example.com" },
     { label: "location", value: "Kuala Lumpur, Malaysia" },
   ],
-  summary: "Backend engineer specializing in payments infrastructure.",
   experience: [
-    { company: "Acme Co", title: "Senior Backend Engineer", dates: "2022–Present", isCurrent: true, bullets: ["Led migration to Kubernetes"] },
+    {
+      company: "Acme Co",
+      title: "Senior Backend Engineer",
+      dates: "2022–Present",
+      start: "2022-01",
+      end: null,
+      location: null,
+      bullets: ["Led migration to Kubernetes"],
+    },
   ],
   education: [],
   skills: [{ label: "Domain", items: ["Payments", "TypeScript"] }],
@@ -108,13 +117,13 @@ const TAILORED_RESUME_STORE = {
 };
 
 export const TAILOR_RESULT = {
-  resume: TAILORED_RESUME_STORE,
+  resume: TAILORED_RESUME_EMIT,
   diff: [
     {
       section: "summary",
       op: "modify" as const,
       before: RESUME_STORE.summary,
-      after: TAILORED_RESUME_STORE.summary,
+      after: TAILORED_RESUME_EMIT.summary,
       reason: "Ties the summary to the payments domain named in the posting.",
     },
   ],
