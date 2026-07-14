@@ -141,4 +141,89 @@ describe("assembleJob", () => {
     (joined.score as unknown as { legitimacy: unknown }).legitimacy = null;
     expect(() => assembleJob(joined)).toThrow(/legitimacy/i);
   });
+
+  describe("schedule/structure pills (spec §7)", () => {
+    it("tzBand americas adds a US hours warn tag", () => {
+      const job = assembleJob(baseJoined({ tzBand: "americas" }));
+      expect(job.tags).toEqual([
+        { tone: "good", label: "Looks legit" },
+        { tone: "warn", label: "US hours" },
+      ]);
+    });
+
+    it("tzBand emea adds an EU hours warn tag", () => {
+      const job = assembleJob(baseJoined({ tzBand: "emea" }));
+      expect(job.tags).toEqual([
+        { tone: "good", label: "Looks legit" },
+        { tone: "warn", label: "EU hours" },
+      ]);
+    });
+
+    it("tzBand apac is suppressed — no schedule tag (business-as-usual from MY)", () => {
+      const job = assembleJob(baseJoined({ tzBand: "apac" }));
+      expect(job.tags).toEqual([{ tone: "good", label: "Looks legit" }]);
+    });
+
+    it("tzBand null adds no schedule tag", () => {
+      const job = assembleJob(baseJoined({ tzBand: null }));
+      expect(job.tags).toEqual([{ tone: "good", label: "Looks legit" }]);
+    });
+
+    it("hiringStructure contractor adds a Contractor warn tag", () => {
+      const job = assembleJob(baseJoined({ hiringStructure: "contractor" }));
+      expect(job.tags).toEqual([
+        { tone: "good", label: "Looks legit" },
+        { tone: "warn", label: "Contractor" },
+      ]);
+    });
+
+    it("hiringStructure eor adds an EOR warn tag", () => {
+      const job = assembleJob(baseJoined({ hiringStructure: "eor" }));
+      expect(job.tags).toEqual([
+        { tone: "good", label: "Looks legit" },
+        { tone: "warn", label: "EOR" },
+      ]);
+    });
+
+    it("hiringStructure local-entity adds a good-tone Local entity tag", () => {
+      const job = assembleJob(baseJoined({ hiringStructure: "local-entity" }));
+      expect(job.tags).toEqual([
+        { tone: "good", label: "Looks legit" },
+        { tone: "good", label: "Local entity" },
+      ]);
+    });
+
+    it("hiringStructure null adds no structure tag", () => {
+      const job = assembleJob(baseJoined({ hiringStructure: null }));
+      expect(job.tags).toEqual([{ tone: "good", label: "Looks legit" }]);
+    });
+
+    it("both tzBand and hiringStructure stated append both pills after the legitimacy tag", () => {
+      const job = assembleJob(baseJoined({ tzBand: "emea", hiringStructure: "eor" }));
+      expect(job.tags).toEqual([
+        { tone: "good", label: "Looks legit" },
+        { tone: "warn", label: "EU hours" },
+        { tone: "warn", label: "EOR" },
+      ]);
+    });
+  });
+
+  describe("workCalendar -> gaps (spec §7)", () => {
+    it("a stated workCalendar in jd_facts appears in job.gaps", () => {
+      const joined = baseJoined();
+      joined.score.jdFacts = { workCalendar: "US public holidays" };
+      const job = assembleJob(joined);
+      expect(job.gaps).toEqual([
+        { tone: "ok", k: "Cloud", v: "AWS present" },
+        { tone: "warn", k: "Work calendar", v: "US public holidays" },
+      ]);
+    });
+
+    it("no workCalendar in jd_facts adds no gap entry", () => {
+      const joined = baseJoined();
+      joined.score.jdFacts = {};
+      const job = assembleJob(joined);
+      expect(job.gaps).toEqual([{ tone: "ok", k: "Cloud", v: "AWS present" }]);
+    });
+  });
 });

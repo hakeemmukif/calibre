@@ -3,7 +3,8 @@
 // everything it needs arrives already loaded on `JobJoinScore`.
 import type { JobJoinScore } from "@/server/persistence/repos/jobs";
 import { eligibilityTone } from "@/server/score/eligibility";
-import { Job, type LegitimacyTier } from "@/types";
+import type { JdFacts } from "@/server/score/jdFacts";
+import { Job, type HiringStructure, type LegitimacyTier, type Tone, type TzBand } from "@/types";
 
 // Locked interface is `assembleJob(joined: JobJoinScore): Job`; the second,
 // OPTIONAL argument is an addition this task needed — `Job.isNew` depends on
@@ -27,6 +28,17 @@ const TIER_LABEL: Record<LegitimacyTier, string> = {
   scam: "Flagged: scam",
 };
 
+// Schedule/structure row pills (spec §7). `Tone` has no `neutral`, so these
+// informational pills reuse `warn`/`good` (display decision, reconciliation
+// #3) rather than widen the enum. `apac` is suppressed — business-as-usual
+// from MY, same reasoning as suppressing "Malaysia" on local rows.
+const SCHEDULE_LABEL: Record<Exclude<TzBand, "apac">, string> = { emea: "EU hours", americas: "US hours" };
+const STRUCTURE_PILL: Record<HiringStructure, { tone: Tone; label: string }> = {
+  contractor: { tone: "warn", label: "Contractor" },
+  eor: { tone: "warn", label: "EOR" },
+  "local-entity": { tone: "good", label: "Local entity" },
+};
+
 export function assembleJob(joined: JobJoinScore, opts: AssembleJobOptions = {}): Job {
   const { job, score, source } = joined;
 
@@ -47,6 +59,15 @@ export function assembleJob(joined: JobJoinScore, opts: AssembleJobOptions = {})
   const applyUrl = job.applyUrl ?? job.url; // documented rule — api-contract.md Job.applyUrl
   const isNew = opts.isNewCutoff ? job.firstSeenAt > opts.isNewCutoff : false;
 
+  const extraTags: { tone: Tone; label: string }[] = [];
+  if (job.tzBand && job.tzBand !== "apac") extraTags.push({ tone: "warn", label: SCHEDULE_LABEL[job.tzBand] });
+  if (job.hiringStructure) extraTags.push(STRUCTURE_PILL[job.hiringStructure]);
+
+  // workCalendar (spec §7): stated-only calendar expectation, surfaced as a
+  // gap row — no dial hides on it, display only.
+  const { workCalendar } = score.jdFacts as JdFacts;
+  const gaps = workCalendar ? [...score.gaps, { tone: "warn" as const, k: "Work calendar", v: workCalendar }] : score.gaps;
+
   return Job.parse({
     id: job.id,
     score: score.score,
@@ -56,12 +77,13 @@ export function assembleJob(joined: JobJoinScore, opts: AssembleJobOptions = {})
     meta: `${job.location} · ${job.salaryRaw ?? "—"}`,
     verdict: score.verdict,
     why: score.why,
-    // Legitimacy tag only — eligibility renders as its own EligibilityTag
-    // pill (with hover evidence, spec §8) alongside `tags[]`, not inside it.
-    tags: [{ tone, label: TIER_LABEL[tier] }],
+    // Legitimacy tag + stated schedule/structure pills (spec §7). Eligibility
+    // renders as its own EligibilityTag pill (with hover evidence, spec §8)
+    // alongside `tags[]`, not inside it.
+    tags: [{ tone, label: TIER_LABEL[tier] }, ...extraTags],
     breakdown: score.breakdown,
     fit: score.fit,
-    gaps: score.gaps,
+    gaps,
     legitimacy: { tier, tone, summary, confidence },
     eligibility,
     applyUrl,
