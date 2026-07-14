@@ -458,6 +458,11 @@ async function scoreTopCandidates(
     topCandidates.map(({ job, source }) =>
       limit(async () => {
         if (dailyCapUsd !== undefined && spentToday >= dailyCapUsd) {
+          // Log once, on the first job that bails — matches the old batch loop's
+          // single cap-reached diagnostic (dropped in the pool rewrite).
+          if (!capStopped) {
+            console.error(`search run ${row.id}: daily LLM cost cap ($${dailyCapUsd}) reached — stopping further scoring`);
+          }
           capStopped = true;
           return;
         }
