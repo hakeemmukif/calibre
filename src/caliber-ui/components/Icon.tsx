@@ -6,7 +6,7 @@ import {
   RefreshCw, ArrowRight, ArrowLeft, ChevronDown, ChevronUp, Calendar, BookOpen, BarChart3,
   TriangleAlert, Search, Ghost, Layers, Plus, CircleHelp, MessageSquare, Pencil,
   Copy, Link2, Circle, Activity, Building2, Slash, Bell, Bookmark, Link,
-  ExternalLink, Trash2,
+  ExternalLink, Trash2, LogOut,
   type LucideIcon, type LucideProps,
 } from "lucide-react";
 
@@ -59,6 +59,7 @@ const ICONS: Record<string, LucideIcon> = {
   "link": Link,
   "external-link": ExternalLink,
   "trash-2": Trash2,
+  "log-out": LogOut,
 };
 
 export type IconName = keyof typeof ICONS;
