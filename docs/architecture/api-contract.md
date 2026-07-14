@@ -1,6 +1,6 @@
 # Caliber API Contract v1 (MVP)
 
-Schema-first: Zod schemas in `src/types` are the single source of truth; OpenAPI, TS types, and runtime validation all derive from them (§12). Entities align with the frozen §5 contract plus §11.8 hero extensions. Auth: email+password sessions. Registration/login mint an opaque token stored as a SHA-256 hash; it rides in an httpOnly SameSite=Lax cookie (`caliber_session`). Route handlers enforce via `requireUser()`/`requireAdmin()` (never Next middleware); `/api/health` and the auth routes themselves are the only unauthenticated endpoints. Per-user data scoping and admin routes arrive in later tenancy steps.
+Schema-first: Zod schemas in `src/types` are the single source of truth; OpenAPI, TS types, and runtime validation all derive from them (§12). Entities align with the frozen §5 contract plus §11.8 hero extensions. Auth: email+password sessions. Registration/login mint an opaque token stored as a SHA-256 hash; it rides in an httpOnly SameSite=Lax cookie (`caliber_session`). Route handlers enforce via `requireUser()`/`requireAdmin()` (never Next middleware); `/api/health` and the auth routes themselves are the only unauthenticated endpoints. Every user-owned table carries a `user_id` and every route scopes reads/writes to the caller (§1a); `/api/admin/*` gives admins read access to any user's content via the same scoped repos (§1b).
 
 ## 1. Endpoint table
 
@@ -29,9 +29,13 @@ Schema-first: Zod schemas in `src/types` are the single source of truth; OpenAPI
 | F7 | POST | `/api/jobs/check` | Paste-URL front door: fetch→sonar-search→paste-text ladder, gate, persist, ghost-check, score | async, 202 |
 | F7 | GET | `/api/jobs/check/:id` | Poll a pasted-URL check's stage/result | sync |
 | F7 | DELETE | `/api/jobs/:id` | Delete a pasted job (persona `pasted` only; blocked if a tracked application exists) | sync |
-| — | GET | `/api/profile` | Operator profile (base country + relocation). 404 when unseeded | sync |
-| — | PUT | `/api/profile` | Full-replace the operator profile | sync |
+| — | GET | `/api/profile` | Caller's own profile (base country + relocation). 404 when the caller hasn't onboarded yet | sync |
+| — | PUT | `/api/profile` | Upsert (create-or-replace) the caller's own profile — also the onboarding path | sync |
 | — | GET | `/api/health` | Liveness check, unauthenticated | sync |
+| — | GET | `/api/admin/users` | Admin: list every account + per-user résumé/job/application counts | sync |
+| — | GET | `/api/admin/users/:id/resume` | Admin: target user's active résumé | sync |
+| — | GET | `/api/admin/users/:id/jobs` | Admin: target user's scored feed (same query params as `GET /api/jobs`) | sync |
+| — | GET | `/api/admin/users/:id/applications` | Admin: target user's tracker rows (same query params as `GET /api/applications`) | sync |
 
 `GET /api/jobs/:id` returns the frozen `Job` entity verbatim — there is no separate detail/`MatchDetail` entity in MVP; `JobDetail`'s Fit/Legitimacy/Breakdown tabs are derived entirely from `Job.fit`/`Job.legitimacy`/`Job.breakdown`. An `archetype` field (e.g. "Global remote — APAC-friendly") was drafted during component design but is **deferred** — not part of `Job`, not returned by this route.
 
@@ -51,7 +55,21 @@ Email+password sessions, cookie-based. `Schema.parse(body)` boundary rule applie
 
 The session cookie (`caliber_session`) is httpOnly, `SameSite=Lax`, `Secure` unless `SESSION_COOKIE_SECURE=false` (local http dev only), 30-day `maxAge`. Its value is an opaque random token; only its SHA-256 hash is persisted (`sessions` table), so a DB read never yields a usable token. Route handlers call `requireUser()` (any authenticated user) or `requireAdmin()` (role `admin`) — enforcement lives in the handler, not in Next middleware. `ErrorCode` gained two values for this: `UNAUTHORIZED` (401) and `FORBIDDEN` (403).
 
-Per-user data scoping (rows filtered by the caller's `user_id`) and admin-only content routes are **forthcoming** in later tenancy steps — not part of this contract yet.
+Per-user data scoping is live: `user_id` (NOT NULL) sits on all 9 user-owned tables (`profile, resumes, search_runs, jobs, job_scores, application_answers, tailored_resumes, url_checks, applications`) — `sources` stays global reference data. Every route below threads `requireUser()`'s `session.id` through to a userId-scoped repo call; a foreign id (another user's job/application/etc.) 404s, it never leaks a cross-tenant row. `profile` is **no longer a singleton** — one row per user (`profile_user_id_unique`), and `PUT /api/profile` upserts (create-or-replace), which doubles as the onboarding path for a fresh registrant with no row yet. Admin-only content routes exist under `/api/admin/*`, `requireAdmin()`-guarded (§1b). The daily LLM cost cap (`CALIBER_DAILY_LLM_USD`) stays **global** across all users for now — a deliberate tripwire, not per-user (see `DEPLOY.md` pre-public tripwires).
+
+## 1b. Admin
+
+All `/api/admin/*` routes call `requireAdmin()` — 401 `UNAUTHORIZED` with no session, 403 `FORBIDDEN` for a non-admin caller (role `user`). Admin access is additive: it never impersonates a login, it reads the same scoped repos/queries the equivalent user-facing route uses, just fed the URL's target `:id` instead of the caller's own session id — no new unscoped query exists for admin.
+
+**GET /api/admin/users** — → `200 { items: AdminUser[] }`. Each `AdminUser` is `{ id, email, role, createdAt, resumeCount, jobCount, applicationCount }` — `.parse()` strips unknown keys (e.g. a stray `passwordHash`), so the hash is never on the wire.
+
+**GET /api/admin/users/:id/resume** — → `200 Resume` | `404` (unknown/non-uuid id, or the target has no résumé yet).
+
+**GET /api/admin/users/:id/jobs** — same query params/response shape as `GET /api/jobs` §3, scoped to the target user. If the target has no profile yet (`ProfileMissingError`), returns `200` with an empty feed (`items: [], stats` all-zero) rather than an error — an admin peeking at a not-yet-onboarded account shouldn't 500.
+
+**GET /api/admin/users/:id/applications** — same query params/response shape as `GET /api/applications` §3, scoped to the target user.
+
+`PATCH /api/sources/:id` (§5) also requires `requireAdmin()` — sources are global reference data but only an admin may toggle a source's `enabled` flag. `GET /api/sources` requires only `requireUser()` (any logged-in caller may read the list; the sources rows themselves stay global/unscoped, not user-owned).
 
 ## 2. Core Zod schemas (`src/types`)
 
@@ -98,10 +116,12 @@ export const SourceRef = z.object({                  // Source entity, reference
 
 export const RelocationPref = z.enum(['stay', 'open']);
 
-// Operator profile — singleton (single-operator MVP). baseCountry is
-// ISO-3166-1 alpha-2 ('MY' at launch). The seed row IS the install step
-// (seed.ts precedent); a missing row is a 404, never a runtime default.
-// (2026-07-12-remote-local-eligibility-design.md §3.)
+// Profile — per-user (one row per user_id, UNIQUE profile_user_id_unique;
+// no longer the single-operator MVP's singleton). baseCountry is
+// ISO-3166-1 alpha-2 ('MY' at launch). GET 404s when the caller hasn't
+// onboarded yet; PUT upserts, which is the onboarding path itself.
+// (2026-07-12-remote-local-eligibility-design.md §3; per-user since the
+// multi-tenant migration.)
 export const Profile = z.object({
   baseCountry: z.string().length(2),
   relocation: RelocationPref,
@@ -214,12 +234,16 @@ export const TailoredResume = z.object({
 
 export const ErrorCode = z.enum(['VALIDATION_ERROR','NOT_FOUND','CONFLICT','RUN_NOT_READY',
   'PARSE_FAILED','EXTRACTION_FAILED','UPSTREAM_LLM_ERROR','PAYLOAD_TOO_LARGE',
-  'FETCH_BLOCKED','NOT_A_JOB_POSTING','INTERNAL']);   // +2, 2026-07-12 pasted-job-ingestion spec §5:
+  'FETCH_BLOCKED','NOT_A_JOB_POSTING','INTERNAL','UNAUTHORIZED','FORBIDDEN']);
+                                                       // +2, 2026-07-12 pasted-job-ingestion spec §5:
                                                        // FETCH_BLOCKED (paste ladder: web search found nothing, needsText)
                                                        // NOT_A_JOB_POSTING (terminal — the page isn't a posting, !needsText)
                                                        // INTERNAL predates this spec (generic-bug fallback in url-check's
                                                        // mapFailure and the boot-sweep markAllUnfinishedAsFailed) — carried
                                                        // over faithfully from src/types/index.ts, not part of the F7 ripple.
+                                                       // +2, auth core (§1a): UNAUTHORIZED (401, no/invalid session) and
+                                                       // FORBIDDEN (403, authenticated but not admin) — thrown by
+                                                       // requireUser()/requireAdmin() in the route handler.
 
 export const ErrorEnvelope = z.object({
   error: z.object({
@@ -228,17 +252,38 @@ export const ErrorEnvelope = z.object({
     details: z.unknown().optional(),                 // e.g. ZodIssue[] for VALIDATION_ERROR
   }),
 });
+
+// Auth (§1a). `.parse()` strips unknown keys by default — AuthUser/AdminUser
+// never round-trip a passwordHash even if a query accidentally selected one.
+export const AuthUser = z.object({
+  id: z.string(), email: z.string().email(), role: z.enum(['user','admin']),
+});
+export const RegisterRequest = z.object({
+  email: z.string().email(), password: z.string().min(8).max(200),
+});
+export const LoginRequest = z.object({
+  email: z.string().email(), password: z.string().min(1).max(200),
+});
+export const SessionResponse = z.object({ user: AuthUser });
+
+// Admin (§1b). AdminUser is the GET /api/admin/users row shape.
+export const AdminUser = z.object({
+  id: z.string(), email: z.string().email(), role: z.enum(['user','admin']),
+  createdAt: z.string().datetime(),
+  resumeCount: z.number().int(), jobCount: z.number().int(), applicationCount: z.number().int(),
+});
+export const AdminUsersResponse = z.object({ items: z.array(AdminUser) });
 ```
 
 ## 3. Per-endpoint I/O
 
 Boundary rule everywhere: `Schema.parse(body)` at the route handler; `ZodError` → **422** `VALIDATION_ERROR` with `issues` in `details`. No defaults injected — a missing required field always fails loud (fintech rule).
 
-**POST /api/resume** — `multipart/form-data` (`file`: PDF/DOCX, ≤10 MB) **or** `application/json` `{ text: z.string().min(100) }`. → `200 Resume`. Errors: `413 PAYLOAD_TOO_LARGE`, `422` (bad mime/empty text), `502 PARSE_FAILED` (unpdf/LLM extraction failed — no partial résumé is ever persisted). Idempotent-by-replacement: v1 holds exactly one résumé; a new upload atomically supersedes it.
+**POST /api/resume** — `multipart/form-data` (`file`: PDF/DOCX, ≤10 MB) **or** `application/json` `{ text: z.string().min(100) }`. → `200 Resume`. Errors: `413 PAYLOAD_TOO_LARGE`, `422` (bad mime/empty text), `502 PARSE_FAILED` (unpdf/LLM extraction failed — no partial résumé is ever persisted). Idempotent-by-replacement, per user: each user holds exactly one active résumé (`resumes_user_id_active_unique`); a new upload atomically supersedes the caller's own active résumé, scoped to the session.
 
 **GET /api/resume** — → `200 Resume` | `404 NOT_FOUND`. No `{hasResume:false}` sentinel — absence is a 404 and the kit's `hasResume` flag is derived client-side.
 
-**GET /api/profile** — → `200 Profile` | `404 NOT_FOUND` (unseeded install — the seed is the install step; no runtime default). **PUT /api/profile** — `Profile.omit({ updatedAt })` full replace. → `200 Profile` | `404` | `422`.
+**GET /api/profile** — the caller's own profile (scoped by `requireUser()`'s session id). → `200 Profile` | `404 NOT_FOUND` (no row yet — the caller hasn't onboarded). **PUT /api/profile** — `Profile.omit({ updatedAt })`, upsert (create-or-replace) keyed on `user_id` — this is the onboarding path, not just an edit route: a fresh registrant's first `PUT` creates the row instead of 404ing. → `200 Profile` | `422`.
 
 **POST /api/search** — `{ persona: Persona, sources?: z.array(z.string()).min(1).optional() }` (omitted `sources` = persona's full configured set — an explicit empty array is a 422, not a silent all). → `202 SearchRun` (`status:'queued'`). `409 CONFLICT` if a run is already active for that persona (`details: { activeRunId }`). `409` also if no résumé exists (search scores against it).
 

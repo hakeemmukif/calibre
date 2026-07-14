@@ -21,7 +21,7 @@ UI (Storybook / app)
             ├─ apply-assistant F4 questions + answers    (lifts apply-form DOM walk)
             ├─ tailor        F6 tailored résumé          (OpenRouter → ResumeStore JSON)
             ├─ tracker       F5 applications             (4-stage status map)
-            └─ persistence   Drizzle (Postgres / SQLite dev)
+            └─ persistence   Drizzle (Postgres everywhere; tests on PGlite — §6.7 of system-architecture.md)
        lib/llm  → OpenRouter client + config/models.yml + versioned templates
 ```
 Contract flows one way: **Zod schemas in `src/types` → OpenAPI (`contract/openapi.json`) → Scalar docs at `/api/docs`**. UI, services, and routes all import the same `z.infer` types; there is no second type system.
@@ -31,6 +31,7 @@ Contract flows one way: **Zod schemas in `src/types` → OpenAPI (`contract/open
 - **[api-contract.md](./api-contract.md)** — endpoint table, core Zod schemas, per-endpoint I/O, SSE shape, OpenAPI/client generation.
 - **[component-inventory.md](./component-inventory.md)** — MVP compositions + pages, the F4 question-assistant UX, F6 diff-review, the Storybook story tree.
 - **[runbook.md](./runbook.md)** — prerequisites to run the real (non-mocked) app: env vars, migrate/seed, model ids, Playwright install.
+- **[../../DEPLOY.md](../../DEPLOY.md)** — Contabo VPS deploy runbook (Dockerfile/compose/Caddy), the exactly-one-app-process constraint, and the pre-public tripwires (open registration, no session TTL, global cost cap) to close before exposing the app to strangers.
 
 ## Reconciliations & spec corrections (grounded in reading the donor)
 These override the earlier spec where noted:
@@ -41,6 +42,7 @@ These override the earlier spec where noted:
 - **Eval "Stage 3 Deep" cut for MVP** — Stage 1 (JD facts) + Stage 2 (score + 5-tier legitimacy, with escalation) only.
 - **`applyUrl` added to `Job`** — required by F3, absent from the frozen §5 contract; freeze it now.
 - **Legitimacy 3→5 tiers** — donor's `High Confidence / Caution / Suspicious` maps to §11.8's `verified|clear|suspicious|ghost|scam` (liveness `expired` → `ghost`; `scam` is a new template output).
+- **Multi-tenant migration (post-MVP-freeze, 2026-07-14):** this doc set was written for a single-operator MVP — decision #4 in system-architecture.md §6 originally read "Auth: none in-app." That has since shipped: email+password sessions (`users`/`sessions` tables), `user_id` scoping on all 9 user-owned tables, per-user `profile` (no longer the `id='default'` singleton), an admin role with read-only cross-user content routes, and per-user résumé upload paths. The CURRENT-state sections of `system-architecture.md`/`api-contract.md`/`component-inventory.md` reflect this; the "single-operator MVP" framing elsewhere in this folder is historical context for how the spine was originally scoped, not a statement about what ships today. See `DEPLOY.md` for the pre-public tripwires this migration deliberately left open (no session TTL, global not per-user cost cap, open registration).
 - **F7 — Manual URL check, and `Persona` widened to include `'pasted'`** (2026-07-12 pasted-job-ingestion spec, supersedes `2026-07-11-manual-url-scan-design.md`): paste a URL → escalation ladder (fetch → sonar search → paste-text) acquires the JD → gate → persist (`sourceId:'manual'`, `persona:'pasted'`) → automatic ghost posting-history web check → full fit + legitimacy scoring → the job lives in a dedicated Pasted feed scope, deletable, tailorable. This **amends** the api-contract.md three-axes paragraph (`Job.persona` now spans `{remote-run, local-run, pasted}`) and locally supersedes the 2026-07-12 eligibility spec's "Persona untouched" lock on that one point — the eligibility spec itself is otherwise unchanged. Scan-only call sites keep the narrower `ScanPersona = z.enum(['remote','local'])` so widening `Persona` doesn't silently propagate into `POST /api/search`, `sourcesRepo`, or `searchRunsRepo`. No literal deferral note for the URL-eval route existed in `api-contract.md` to remove — that deferral lived only in the now-superseded 07-11 spec's own §5.
 
 ## Naming
