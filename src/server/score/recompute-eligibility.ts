@@ -6,26 +6,39 @@
 import { fileURLToPath } from "node:url";
 import { desc, eq } from "drizzle-orm";
 import { getDb } from "../persistence/db";
+import { jobsRepo } from "../persistence/repos/jobs";
 import { jobs, jobScores, sources } from "../persistence/schema";
-import { BOOTSTRAP_ADMIN_ID } from "../auth/ids";
-import { profileRepo } from "../persistence/repos/profile";
+import { profileRepo, ProfileMissingError, type ProfileRow } from "../persistence/repos/profile";
 import { parseSourceGeo } from "../search/geo";
 import { resolveEligibility } from "./eligibility";
 import type { JdFacts } from "./jdFacts";
 
 export async function recomputeEligibility() {
   const db = getDb();
-  // KNOWN-FOLLOWUP(multitenant): this CLI recomputes against ONE profile;
-  // multi-tenant needs per-job-owner profile resolution — tracked, not a
-  // request-path leak (this is an ops script, not a route handler).
-  const prof = await profileRepo.get(BOOTSTRAP_ADMIN_ID);
   const rows = await db
     .select({ job: jobs, source: sources })
     .from(jobs)
     .innerJoin(sources, eq(sources.id, jobs.sourceId));
 
+  const profileCache = new Map<string, ProfileRow>();
   let changed = 0;
+  let skipped = 0;
   for (const { job, source } of rows) {
+    let prof = profileCache.get(job.userId);
+    if (!prof) {
+      try {
+        prof = await profileRepo.get(job.userId);
+      } catch (err) {
+        if (err instanceof ProfileMissingError) {
+          console.warn(`recompute-eligibility: skipping job ${job.id} — owner ${job.userId} has no profile yet`);
+          skipped += 1;
+          continue;
+        }
+        throw err;
+      }
+      profileCache.set(job.userId, prof);
+    }
+
     const [latestScore] = await db
       .select({ jdFacts: jobScores.jdFacts })
       .from(jobScores)
@@ -41,17 +54,17 @@ export async function recomputeEligibility() {
       jdFacts,
     });
     if (tier !== job.eligibility || evidence !== job.eligibilityEvidence) {
-      await db.update(jobs).set({ eligibility: tier, eligibilityEvidence: evidence }).where(eq(jobs.id, job.id));
+      await jobsRepo.updateEligibility(job.id, job.userId, tier, evidence);
       changed += 1;
     }
   }
-  return { total: rows.length, changed };
+  return { total: rows.length, changed, skipped };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   recomputeEligibility()
-    .then(({ total, changed }) => {
-      console.log(`Recomputed eligibility for ${total} job(s); ${changed} changed.`);
+    .then(({ total, changed, skipped }) => {
+      console.log(`Recomputed eligibility for ${total} job(s); ${changed} changed, ${skipped} skipped (no profile).`);
       process.exit(0);
     })
     .catch((err) => {
