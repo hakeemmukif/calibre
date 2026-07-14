@@ -29,7 +29,28 @@ export interface LlmClient {
     messages: LlmMessage[];
     responseSchema: z.ZodType<T>;
     signal?: AbortSignal;
+    images?: string[];
   }): Promise<{ data: T; model: string; costUsd: number }>;
+}
+
+type ContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
+type OutgoingMessage = LlmMessage | { role: "user"; content: ContentPart[] };
+
+// Attaches `images` (data-URLs) to the LAST user message as OpenAI
+// content-parts, for vision tasks (resume-extract-vision). Absent/empty
+// `images` leaves `messages` untouched — the text path stays byte-identical.
+function withImages(messages: LlmMessage[], images: string[] | undefined): OutgoingMessage[] {
+  if (!images || images.length === 0) return messages;
+  const lastUserIndex = messages.map((m) => m.role).lastIndexOf("user");
+  if (lastUserIndex === -1) return messages;
+  const last = messages[lastUserIndex];
+  const parts: ContentPart[] = [
+    { type: "text", text: last.content },
+    ...images.map((url) => ({ type: "image_url" as const, image_url: { url } })),
+  ];
+  const out: OutgoingMessage[] = [...messages];
+  out[lastUserIndex] = { role: "user", content: parts };
+  return out;
 }
 
 // OpenAI strict mode requires additionalProperties:false on every object node.
@@ -48,7 +69,7 @@ function harden(node: unknown): void {
 function buildClient(transport: OpenAI): LlmClient {
   return {
     async complete(args) {
-      const { task, modelOverride, messages, responseSchema, signal } = args;
+      const { task, modelOverride, messages, responseSchema, signal, images } = args;
       const config = modelFor(task);
       const model = modelOverride ?? config.model;
 
@@ -69,7 +90,7 @@ function buildClient(transport: OpenAI): LlmClient {
       const completion = await transport.chat.completions.create(
         {
           model,
-          messages,
+          messages: withImages(messages, images),
           max_tokens: config.maxTokens,
           temperature: config.temperature,
           // gpt-oss-120b bills reasoning tokens against max_tokens; "low"

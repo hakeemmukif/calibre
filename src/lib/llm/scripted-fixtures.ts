@@ -36,6 +36,39 @@ export const RESUME_STORE = {
   sections: [],
 };
 
+// The mock "resume-extract-vision" task response — same EMIT shape as
+// RESUME_STORE above (ResumeStoreEmitSchema), for the image-only/near-
+// textless PDF routing path (server/resume/ingest.ts). Flows through
+// emitToStore(_, "vision") before it reaches any consumer.
+export const RESUME_STORE_VISION = {
+  storeVersion: 2,
+  name: "Jane Doe",
+  headline: null,
+  location: null,
+  summary: "Backend engineer with six years of experience building payments systems.",
+  contact: [
+    { label: "email", value: "jane@example.com" },
+    { label: "location", value: "Kuala Lumpur, Malaysia" },
+  ],
+  experience: [
+    {
+      company: "Acme Co",
+      title: "Senior Backend Engineer",
+      dates: "2022–Present",
+      start: "2022-01",
+      end: null,
+      location: null,
+      bullets: ["Led migration to Kubernetes"],
+    },
+  ],
+  education: [],
+  skills: [{ label: "Domain", items: ["Payments", "TypeScript"] }],
+  projects: [],
+  certifications: [],
+  languages: [],
+  sections: [],
+};
+
 export const JD_FACTS = {
   title: "Senior Backend Engineer, Payments",
   isJobPosting: true,
@@ -147,6 +180,7 @@ export const QUESTION_ANSWER = {
 // Keyed by TaskName so makeMockLlm(scriptedFixtures) answers every F1-F6 call.
 export const scriptedFixtures: Partial<Record<TaskName, unknown>> = {
   "resume-extract": RESUME_STORE,
+  "resume-extract-vision": RESUME_STORE_VISION,
   "jd-extract": JD_FACTS,
   "url-check-search": URL_SEARCH_RESULT,
   "ghost-web": GHOST_WEB_EVIDENCE,

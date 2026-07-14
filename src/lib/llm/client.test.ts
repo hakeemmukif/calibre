@@ -141,6 +141,54 @@ describe("getLlm", () => {
     expect(result.costUsd).toBeCloseTo(0.03 + 0.15, 10);
   });
 
+  it("with `images`, the last user message becomes a content-parts array with text + image_url entries", async () => {
+    process.env.OPENROUTER_API_KEY = "test-key";
+    mocks.create.mockResolvedValue(reply({ ok: true }));
+    const llm = getLlm();
+
+    await llm.complete({
+      task: "resume-extract-vision",
+      messages: [
+        { role: "system", content: "system prompt" },
+        { role: "user", content: "look at these images" },
+      ],
+      responseSchema: schema,
+      images: ["data:image/png;base64,AAA", "data:image/png;base64,BBB"],
+    });
+
+    const sentMessages = mocks.create.mock.calls[0][0].messages;
+    expect(sentMessages[0]).toEqual({ role: "system", content: "system prompt" });
+    expect(sentMessages[1]).toEqual({
+      role: "user",
+      content: [
+        { type: "text", text: "look at these images" },
+        { type: "image_url", image_url: { url: "data:image/png;base64,AAA" } },
+        { type: "image_url", image_url: { url: "data:image/png;base64,BBB" } },
+      ],
+    });
+  });
+
+  it("without `images`, messages are sent exactly as given (plain string content)", async () => {
+    process.env.OPENROUTER_API_KEY = "test-key";
+    mocks.create.mockResolvedValue(reply({ ok: true }));
+    const llm = getLlm();
+
+    await llm.complete({
+      task: "resume-extract",
+      messages: [
+        { role: "system", content: "system prompt" },
+        { role: "user", content: "plain text" },
+      ],
+      responseSchema: schema,
+    });
+
+    const sentMessages = mocks.create.mock.calls[0][0].messages;
+    expect(sentMessages).toEqual([
+      { role: "system", content: "system prompt" },
+      { role: "user", content: "plain text" },
+    ]);
+  });
+
   it("modelOverride overrides the task's base model in the outgoing request", async () => {
     process.env.OPENROUTER_API_KEY = "test-key";
     mocks.create.mockResolvedValue(reply({ ok: true }));

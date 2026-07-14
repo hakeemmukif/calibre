@@ -62,6 +62,25 @@ describe("renderTemplate", () => {
     expect(() => renderTemplate("jd-extract", {})).toThrow(/missing template variable/i);
   });
 
+  // Vision counterpart of resume-extract.md (task 5b-1): same v2 emit-schema
+  // extraction instructions, framed for page images instead of {{rawText}} —
+  // no vars needed, since the caller passes `images` on the LLM call instead.
+  it("resume-extract-vision.md instructs the same v2 concepts, framed for images, with no {{rawText}} var", () => {
+    const messages = renderTemplate("resume-extract-vision", {});
+    const joined = messages.map((m) => m.content).join("\n");
+    expect(joined).toMatch(/image/i);
+    expect(joined).toMatch(/headline/i);
+    expect(joined).toMatch(/YYYY-MM/);
+    expect(joined).toMatch(/certification/i);
+    expect(joined).toMatch(/language/i);
+    expect(joined).toMatch(/project/i);
+    expect(joined).toMatch(/sections/i);
+    expect(joined).toMatch(/column/i);
+    expect(joined).toMatch(/PMP/);
+    expect(joined).toMatch(/never.*summary|summary.*never/i);
+    expect(joined).toMatch(/return only json/i);
+  });
+
   // v2 upgrade (ResumeStoreEmitSchema now has 12 concepts, not 5): the
   // rendered prompt must actually instruct the model to look for all of
   // them and handle the failure modes live extraction surfaced — headline

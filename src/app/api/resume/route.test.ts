@@ -105,7 +105,10 @@ describe("/api/resume", () => {
   });
 
   beforeEach(() => {
-    state.llm = makeMockLlm({ "resume-extract": structuredFixture() });
+    // Both tasks scripted with the same fixture: tiny.pdf's real text layer
+    // (~153 chars) is under the vision-routing threshold, so PDF uploads in
+    // this file exercise the resume-extract-vision path, not resume-extract.
+    state.llm = makeMockLlm({ "resume-extract": structuredFixture(), "resume-extract-vision": structuredFixture() });
     state.llmError = undefined;
     requireUser.mockReset();
     requireUser.mockResolvedValue({ id: BOOTSTRAP_ADMIN_ID, email: "admin@example.com", role: "admin" });
