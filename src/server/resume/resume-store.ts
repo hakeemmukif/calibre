@@ -93,7 +93,7 @@ export const ResumeStoreEmitSchema = z.object({
 });
 export type ResumeStoreEmit = z.infer<typeof ResumeStoreEmitSchema>;
 
-const CURRENT_RE = /present|current|now|ongoing/i;
+const CURRENT_RE = /\b(present|current|now|ongoing)\b/i;
 const YYYY_MM_RE = /^\d{4}-\d{2}$/;
 
 // Coerce an LLM-emitted date atom to a strict "YYYY-MM" or undefined. NEVER

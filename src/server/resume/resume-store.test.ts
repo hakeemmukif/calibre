@@ -51,6 +51,30 @@ describe("emitToStore", () => {
     expect(store.experience[0].isCurrent).toBe(true);
   });
 
+  it("does not treat 'unknown' as current (CURRENT_RE word-boundary)", () => {
+    const store = emitToStore(
+      emit({
+        experience: [
+          { company: "X", title: "Eng", dates: "2019 – unknown", start: "2019-01", end: null, location: null, bullets: [] },
+        ],
+      }),
+      "text",
+    );
+    expect(store.experience[0].isCurrent).toBe(false);
+  });
+
+  it("still recognizes 'Present' as current (CURRENT_RE word-boundary)", () => {
+    const store = emitToStore(
+      emit({
+        experience: [
+          { company: "X", title: "Eng", dates: "Jan 2021 – Present", start: "2021-01", end: null, location: null, bullets: [] },
+        ],
+      }),
+      "text",
+    );
+    expect(store.experience[0].isCurrent).toBe(true);
+  });
+
   it("coerces a malformed date atom to null instead of throwing (availability > fail-loud for one atom)", () => {
     const store = emitToStore(
       emit({

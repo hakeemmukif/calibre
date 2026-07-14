@@ -47,8 +47,9 @@ describe("computeAtsScore", () => {
       languages: [],
       sections: [],
     };
-    // summary(20) + experience(2 entries * 10 = 20) + skills(2) + contact(3*3=9) = 51
-    expect(computeAtsScore(store)).toBe(51);
+    // summary(16, 99 chars >=80) + experience(2 entries * 7 = 14) + skills(2)
+    // + contact(3*3=9) + quantified(0, no digit/%/$ bullets) + certLang(0) = 41
+    expect(computeAtsScore(store)).toBe(41);
   });
 
   it("caps experience score at 4 entries with bullets", () => {
@@ -72,7 +73,7 @@ describe("computeAtsScore", () => {
       languages: [],
       sections: [],
     };
-    expect(computeAtsScore(store)).toBe(40);
+    expect(computeAtsScore(store)).toBe(28);
   });
 
   it("does not count experience entries with no bullets", () => {
@@ -93,7 +94,7 @@ describe("computeAtsScore", () => {
     expect(computeAtsScore(store)).toBe(0);
   });
 
-  it("caps skills score at 25 distinct items", () => {
+  it("caps skills score at 20 distinct items", () => {
     const store: ResumeStore = {
       storeVersion: 2,
       extractionPath: "text",
@@ -108,7 +109,64 @@ describe("computeAtsScore", () => {
       languages: [],
       sections: [],
     };
-    expect(computeAtsScore(store)).toBe(25);
+    expect(computeAtsScore(store)).toBe(20);
+  });
+
+  it("scores quantified bullets proportionally (digit/%/$ tokens)", () => {
+    const store: ResumeStore = {
+      storeVersion: 2,
+      extractionPath: "text",
+      name: "",
+      contact: [],
+      summary: "",
+      experience: [
+        { company: "Co", title: "Engineer", dates: "2020", isCurrent: false, bullets: ["Grew revenue 40%", "Led the team", "Saved $2M in costs"] },
+      ],
+      education: [],
+      skills: [],
+      projects: [],
+      certifications: [],
+      languages: [],
+      sections: [],
+    };
+    // experience(7, 1 entry with bullets) + quantified(round(2/3 * 16) = 11) = 18
+    expect(computeAtsScore(store)).toBe(18);
+  });
+
+  it("awards cert/language presence points independent of count", () => {
+    const store: ResumeStore = {
+      storeVersion: 2,
+      extractionPath: "text",
+      name: "",
+      contact: [],
+      summary: "",
+      experience: [],
+      education: [],
+      skills: [],
+      projects: [],
+      certifications: [{ name: "PMP" }],
+      languages: [{ language: "English" }],
+      sections: [],
+    };
+    expect(computeAtsScore(store)).toBe(8);
+  });
+
+  it("awards half the cert/language band when only one is present", () => {
+    const withCertOnly: ResumeStore = {
+      storeVersion: 2,
+      extractionPath: "text",
+      name: "",
+      contact: [],
+      summary: "",
+      experience: [],
+      education: [],
+      skills: [],
+      projects: [],
+      certifications: [{ name: "PMP" }],
+      languages: [],
+      sections: [],
+    };
+    expect(computeAtsScore(withCertOnly)).toBe(4);
   });
 
   it("stays within 0–100 bounds", () => {
