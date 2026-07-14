@@ -55,10 +55,12 @@ tasks:
     # 2026-07-12). ~12k output ≈ $0.0018 at this model's pricing.
     maxTokens: 12000
     temperature: 0.4
-    # strict:true deferred — TailorResultSchema embeds the STORE schema
-    # (full of .optional() fields); strict mode would drop those from
-    # `required` and 400 every live call. Enable once tailor emits the
-    # EMIT/nullable-safe schema (Wave 2 Task 7).
+    # NO strict:true for tailor — and do NOT add it. The `resume` field now
+    # uses the EMIT (nullable-safe) schema, but TailorResultSchema also carries
+    # `diff[]`, whose entries have `before?`/`after?` optionals (correct — an
+    # "add" has no `before`). Strict mode drops optionals from `required` and
+    # 400s the whole call, so tailor stays non-strict; the EMIT resume schema
+    # under strict:false + emitToStore already fixes the optional-drop bug.
   url-check-search:
     model: perplexity/sonar
     maxTokens: 4000
