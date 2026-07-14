@@ -2439,7 +2439,17 @@
                 }
               }
             },
-            "description": "The singleton profile"
+            "description": "The caller's profile"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
           },
           "404": {
             "content": {
@@ -2449,10 +2459,10 @@
                 }
               }
             },
-            "description": "Profile row missing (unseeded install)"
+            "description": "The caller has no profile row yet (PUT to onboard)"
           }
         },
-        "summary": "Operator profile — base country + relocation preference"
+        "summary": "The caller's profile — base country + relocation preference"
       },
       "put": {
         "requestBody": {
@@ -2487,9 +2497,9 @@
                 }
               }
             },
-            "description": "The updated profile"
+            "description": "The created/updated profile"
           },
-          "404": {
+          "401": {
             "content": {
               "application/json": {
                 "schema": {
@@ -2497,7 +2507,7 @@
                 }
               }
             },
-            "description": "Profile row missing"
+            "description": "No session"
           },
           "422": {
             "content": {
@@ -2510,7 +2520,7 @@
             "description": "Invalid body"
           }
         },
-        "summary": "Full-replace the operator profile"
+        "summary": "Create-or-replace the caller's profile (onboarding path)"
       }
     },
     "/api/resume": {

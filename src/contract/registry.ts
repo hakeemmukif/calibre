@@ -114,21 +114,22 @@ registry.registerPath({
 registry.registerPath({
   method: "get",
   path: "/api/profile",
-  summary: "Operator profile — base country + relocation preference",
+  summary: "The caller's profile — base country + relocation preference",
   responses: {
-    200: { description: "The singleton profile", content: { "application/json": { schema: Profile } } },
-    404: { description: "Profile row missing (unseeded install)", content: { "application/json": { schema: ErrorEnvelope } } },
+    200: { description: "The caller's profile", content: { "application/json": { schema: Profile } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    404: { description: "The caller has no profile row yet (PUT to onboard)", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
 
 registry.registerPath({
   method: "put",
   path: "/api/profile",
-  summary: "Full-replace the operator profile",
+  summary: "Create-or-replace the caller's profile (onboarding path)",
   request: { body: { content: { "application/json": { schema: Profile.omit({ updatedAt: true }) } } } },
   responses: {
-    200: { description: "The updated profile", content: { "application/json": { schema: Profile } } },
-    404: { description: "Profile row missing", content: { "application/json": { schema: ErrorEnvelope } } },
+    200: { description: "The created/updated profile", content: { "application/json": { schema: Profile } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
     422: { description: "Invalid body", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
