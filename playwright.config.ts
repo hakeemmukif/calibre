@@ -1,3 +1,5 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { defineConfig } from "@playwright/test";
 import { E2E_DB_URL } from "./e2e/globalSetup";
 
@@ -24,6 +26,11 @@ export default defineConfig({
     url: "http://localhost:3005/api/health",
     reuseExistingServer: false,
     timeout: 120_000,
-    env: { DATABASE_URL: E2E_DB_URL, CALIBER_TEST_DOUBLES: "1", OPENROUTER_API_KEY: "unused-in-doubles-mode" },
+    env: {
+      DATABASE_URL: E2E_DB_URL,
+      CALIBER_TEST_DOUBLES: "1",
+      OPENROUTER_API_KEY: "unused-in-doubles-mode",
+      CALIBER_UPLOADS_DIR: process.env.CALIBER_UPLOADS_DIR ?? join(tmpdir(), "caliber-e2e-uploads"),
+    },
   },
 });

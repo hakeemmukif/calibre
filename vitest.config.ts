@@ -7,6 +7,7 @@ export default defineConfig({
   resolve: { alias: { '@': resolve(__dirname, 'src') } },
   test: {
     environment: 'node',
+    setupFiles: ['./vitest.setup.ts'],
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     exclude: ['src/**/*.smoke.test.ts', 'node_modules/**'],
     coverage: {

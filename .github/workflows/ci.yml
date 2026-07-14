@@ -25,6 +25,7 @@ jobs:
     env:
       DATABASE_URL: postgresql://postgres:test@localhost:5433/caliber_e2e
       CALIBER_TEST_DOUBLES: '1'
+      CALIBER_UPLOADS_DIR: ${{ runner.temp }}/caliber-uploads
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
