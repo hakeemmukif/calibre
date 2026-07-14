@@ -56,6 +56,7 @@ export async function scoreMatch(
   llm: LlmClient,
   vars: { jdFacts: unknown; resume: unknown },
   modelOverride?: string,
+  signal?: AbortSignal,
 ): Promise<{ data: EvalScores; model: string; costUsd: number }> {
   return llm.complete({
     task: "match-score",
@@ -65,5 +66,6 @@ export async function scoreMatch(
       resume: JSON.stringify(vars.resume),
     }),
     responseSchema: EvalScoresSchema,
+    signal,
   });
 }

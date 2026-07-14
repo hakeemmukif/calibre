@@ -70,11 +70,13 @@ export function emitToFacts(emit: JdFactsEmit): JdFacts {
 export async function extractJdFacts(
   llm: LlmClient,
   description: string,
+  signal?: AbortSignal,
 ): Promise<{ data: JdFacts; model: string; costUsd: number }> {
   const raw = await llm.complete({
     task: "jd-extract",
     messages: renderTemplate("jd-extract", { jobDescription: description }),
     responseSchema: JdFactsEmitSchema,
+    signal,
   });
   return { ...raw, data: emitToFacts(raw.data) };
 }

@@ -198,102 +198,108 @@ async function runFanOut(
 
   const hardCapTimer = setTimeout(() => handle.abort("hard runtime cap exceeded"), hardRunTimeoutMs);
 
-  const targets = deriveRoleTargets(resumeRow, persona);
-  const limit = pLimit(concurrency);
-  const totalSources = sources.length;
+  try {
+    const targets = deriveRoleTargets(resumeRow, persona);
+    const limit = pLimit(concurrency);
+    const totalSources = sources.length;
 
-  const perSource = new Map<string, { found: number; errors: number }>(
-    sources.map((s) => [s.id, { found: 0, errors: 0 }]),
-  );
-  const matchedPostings: { posting: RawPosting; source: SourceRow }[] = [];
-  let scanned = 0;
-  let sourcesCompleted = 0;
+    const perSource = new Map<string, { found: number; errors: number }>(
+      sources.map((s) => [s.id, { found: 0, errors: 0 }]),
+    );
+    const matchedPostings: { posting: RawPosting; source: SourceRow }[] = [];
+    let scanned = 0;
+    let sourcesCompleted = 0;
 
-  handle.emit({
-    event: "progress",
-    data: { stage: "sources", current: 0, total: totalSources, label: `Scanning ${totalSources} source(s)…` },
-  });
+    handle.emit({
+      event: "progress",
+      data: { stage: "sources", current: 0, total: totalSources, label: `Scanning ${totalSources} source(s)…` },
+    });
 
-  const tasks = sources.map((source) =>
-    limit(async () => {
-      const connector = resolveConnector(source);
-      const timeoutController = new AbortController();
-      const timer = setTimeout(() => timeoutController.abort(), connectorTimeoutMs);
-      const signal = AbortSignal.any([handle.signal, timeoutController.signal]);
-      const stat = perSource.get(source.id)!;
+    const tasks = sources.map((source) =>
+      limit(async () => {
+        const connector = resolveConnector(source);
+        const timeoutController = new AbortController();
+        const timer = setTimeout(() => timeoutController.abort(), connectorTimeoutMs);
+        const signal = AbortSignal.any([handle.signal, timeoutController.signal]);
+        const stat = perSource.get(source.id)!;
 
-      try {
-        for await (const posting of connector.discover({
-          targets,
-          since: new Date(0),
-          signal,
-          onProgress: (e) =>
-            handle.emit({ event: "progress", data: { stage: e.stage, current: e.current, total: e.total, label: e.label } }),
-        })) {
-          scanned += 1;
-          stat.found += 1;
-          // Board sources (JobStreet et al) are already query-scoped upstream
-          // — the source's configured search query IS the role filter, so
-          // re-filtering through roleFuzzyMatch double-gates and (observed
-          // live) rejects nearly every all-baseline title ("Graduate Software
-          // Engineer"). ATS sources dump their ENTIRE board, so they still
-          // need the matcher. Mirrors the donor, where board results were
-          // query-scoped at fetch time and roleFuzzyMatch belonged to the
-          // per-user radar, not the scan gate.
-          if (source.kind === "board" || targets.some((t) => roleFuzzyMatch(t, posting))) {
-            matchedPostings.push({ posting, source });
+        try {
+          for await (const posting of connector.discover({
+            targets,
+            since: new Date(0),
+            signal,
+            onProgress: (e) =>
+              handle.emit({ event: "progress", data: { stage: e.stage, current: e.current, total: e.total, label: e.label } }),
+          })) {
+            scanned += 1;
+            stat.found += 1;
+            // Board sources (JobStreet et al) are already query-scoped upstream
+            // — the source's configured search query IS the role filter, so
+            // re-filtering through roleFuzzyMatch double-gates and (observed
+            // live) rejects nearly every all-baseline title ("Graduate Software
+            // Engineer"). ATS sources dump their ENTIRE board, so they still
+            // need the matcher. Mirrors the donor, where board results were
+            // query-scoped at fetch time and roleFuzzyMatch belonged to the
+            // per-user radar, not the scan gate.
+            if (source.kind === "board" || targets.some((t) => roleFuzzyMatch(t, posting))) {
+              matchedPostings.push({ posting, source });
+            }
           }
+        } catch (err) {
+          // Connector-level failure — TOLERATED (system-architecture.md §3
+          // "partial failure tolerated into stats.perSource"): recorded, the
+          // run continues and still completes. Not a swallowed error — it's
+          // surfaced on the run's `stats.perSource[].errors`.
+          stat.errors += 1;
+          console.error(`search run ${row.id}: connector "${source.id}" failed:`, err);
+        } finally {
+          clearTimeout(timer);
+          sourcesCompleted += 1;
+          handle.emit({
+            event: "progress",
+            data: { stage: "fetch", current: sourcesCompleted, total: totalSources, label: `${sourcesCompleted}/${totalSources} source(s) done` },
+          });
         }
-      } catch (err) {
-        // Connector-level failure — TOLERATED (system-architecture.md §3
-        // "partial failure tolerated into stats.perSource"): recorded, the
-        // run continues and still completes. Not a swallowed error — it's
-        // surfaced on the run's `stats.perSource[].errors`.
-        stat.errors += 1;
-        console.error(`search run ${row.id}: connector "${source.id}" failed:`, err);
-      } finally {
-        clearTimeout(timer);
-        sourcesCompleted += 1;
-        handle.emit({
-          event: "progress",
-          data: { stage: "fetch", current: sourcesCompleted, total: totalSources, label: `${sourcesCompleted}/${totalSources} source(s) done` },
-        });
-      }
-    }),
-  );
+      }),
+    );
 
-  await Promise.all(tasks);
-  clearTimeout(hardCapTimer);
+    await Promise.all(tasks);
 
-  const upsertedJobs = await upsertMatchedPostings(userId, matchedPostings, persona, profile);
-  const { scored, worth, ghosts, unscored, capStopped } = await scoreTopCandidates(
-    userId,
-    row,
-    upsertedJobs,
-    resumeRow,
-    persona,
-    profile,
-    handle,
-    deps,
-  );
+    const upsertedJobs = await upsertMatchedPostings(userId, matchedPostings, persona, profile);
+    const { scored, worth, ghosts, unscored, capStopped } = await scoreTopCandidates(
+      userId,
+      row,
+      upsertedJobs,
+      resumeRow,
+      persona,
+      profile,
+      handle,
+      deps,
+    );
 
-  const stats = {
-    scanned,
-    matched: matchedPostings.length,
-    scored,
-    worth,
-    ghosts,
-    perSource: [...perSource.entries()].map(([sourceId, s]) => ({ sourceId, found: s.found, errors: s.errors })),
-    unscored,
-    capStopped,
-  };
-  await searchRunsRepo.updateStats(row.id, stats);
-  const finished = await searchRunsRepo.updateStatus(row.id, "completed", { finishedAt: new Date() });
+    const stats = {
+      scanned,
+      matched: matchedPostings.length,
+      scored,
+      worth,
+      ghosts,
+      perSource: [...perSource.entries()].map(([sourceId, s]) => ({ sourceId, found: s.found, errors: s.errors })),
+      unscored,
+      capStopped,
+    };
+    await searchRunsRepo.updateStats(row.id, stats);
+    const finished = await searchRunsRepo.updateStatus(row.id, "completed", { finishedAt: new Date() });
 
-  release(row.id, userId, persona);
-  const finalRow = finished ?? (await searchRunsRepo.getById(row.id, userId));
-  if (!finalRow) throw new Error(`search_runs row ${row.id} vanished before completion could be recorded`);
-  handle.emit({ event: "done", data: toSearchRun(finalRow) });
+    release(row.id, userId, persona);
+    const finalRow = finished ?? (await searchRunsRepo.getById(row.id, userId));
+    if (!finalRow) throw new Error(`search_runs row ${row.id} vanished before completion could be recorded`);
+    handle.emit({ event: "done", data: toSearchRun(finalRow) });
+  } finally {
+    // The timer now spans discovery AND scoring; the finally clears it on
+    // every exit path (success, or a throw that propagates to startSearch's
+    // failRun net) so it never dangles to abort a run that already finished.
+    clearTimeout(hardCapTimer);
+  }
 }
 
 interface CanonicalGroup {
@@ -471,7 +477,7 @@ async function scoreTopCandidates(
             console.error(`search run ${row.id}: detail fetch for job ${job.id} failed:`, err);
             return job; // scoreJob will throw EmptyJobDescriptionError -> counted unscored
           });
-          const scoreRow = await scoreJob({ job: jobToScore, source, profile, resume, llm });
+          const scoreRow = await scoreJob({ job: jobToScore, source, profile, resume, llm, signal: handle.signal });
           spentToday += scoreRow.costUsd;
           scored += 1;
           if (scoreRow.verdict === "Apply" || scoreRow.verdict === "Consider") worth += 1;

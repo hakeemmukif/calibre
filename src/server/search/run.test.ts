@@ -94,6 +94,21 @@ const costingLlm: LlmClient = {
   },
 };
 
+// A match-score LlmClient that never settles on its own — it resolves ONLY
+// when its AbortSignal fires. Proves (a) the hard-cap timer stays armed
+// through the scoring phase and (b) handle.signal is threaded all the way to
+// the LLM call. Under the pre-M0 code (timer cleared after discovery, signal
+// not threaded) `args.signal` is undefined here, so this hangs until the
+// test's waitForTerminal deadline and the test fails.
+const hangingLlm: LlmClient = {
+  async complete(args) {
+    if (args.signal?.aborted) throw new Error("llm call aborted (hard runtime cap)");
+    return new Promise<never>((_resolve, reject) => {
+      args.signal?.addEventListener("abort", () => reject(new Error("llm call aborted (hard runtime cap)")));
+    });
+  },
+};
+
 async function findJobByDedupeKey(db: TestDb, dedupeKey: string) {
   const [row] = await db.select().from(jobs).where(eq(jobs.dedupeKey, dedupeKey)).limit(1);
   return row;
@@ -411,6 +426,35 @@ describe("startSearch", () => {
     const finalRow = await waitForTerminal(runsRepo, run.id);
     expect(finalRow.status).toBe("completed");
     expect(finalRow.stats.perSource).toEqual([{ sourceId: "src-hangs", found: 0, errors: 1 }]);
+  });
+
+  it("hard runtime cap covers scoring: a hung LLM call is aborted, the run still completes and releases its persona slot", async () => {
+    const runsRepo = createSearchRunsRepo(state.testDb);
+    await insertResume(state.testDb, { ...resumeFixture, isActive: true });
+    const good = await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
+
+    const posting: RawPosting = {
+      sourceId: good.id,
+      url: "https://example.com/jobs/hang",
+      title: "Data Engineer",
+      company: "Acme",
+      location: "Remote",
+      description: "Build data pipelines with SQL.",
+    };
+
+    // Discovery finishes instantly (array stub); scoring then hangs in the
+    // first LLM call (jd-extract). The 100ms hard cap must fire DURING scoring
+    // — impossible under the pre-M0 code, which cleared the timer after
+    // discovery — abort the LLM call, and let the run complete (0 scored).
+    const run = await startSearch(BOOTSTRAP_ADMIN_ID,
+      { persona: "remote" },
+      { llm: hangingLlm, hardRunTimeoutMs: 100, connectorForSource: (source) => stubConnector(source, [posting]) },
+    );
+
+    const finalRow = await waitForTerminal(runsRepo, run.id);
+    expect(finalRow.status).toBe("completed");
+    expect(finalRow.stats.scored).toBe(0);
+    expect(getActiveRunForPersona(BOOTSTRAP_ADMIN_ID, "remote")).toBeUndefined();
   });
 
   it("alias-merge preserves a previously-recorded cross-source alias across separate runs (regression)", async () => {

@@ -44,6 +44,9 @@ export async function scoreJob(args: {
   precomputedJdFacts?: JdFacts;
   livenessOverride?: LivenessResult;
   webEvidence?: WebEvidence | Promise<WebEvidence>;
+  // Run-scoped cancellation (server/search/run.ts hard cap). Forwarded to the
+  // jd-extract + match-score LLM calls so a fired cap actually cancels them.
+  signal?: AbortSignal;
 }): Promise<JobScoreRow> {
   const { job, source, profile, resume, llm } = args;
 
@@ -53,7 +56,7 @@ export async function scoreJob(args: {
 
   const jdFactsResult = args.precomputedJdFacts
     ? { data: args.precomputedJdFacts, model: "precomputed", costUsd: 0 }
-    : await extractJdFacts(llm, job.description);
+    : await extractJdFacts(llm, job.description, args.signal);
 
   // Layer C (spec §5): re-resolve with JD-stated facts — the authoritative
   // eligibility write. POST /api/jobs/:id/evaluate inherits this for free.
@@ -72,14 +75,14 @@ export async function scoreJob(args: {
   const tz = resolveTzBand({ statedTz: jdFactsResult.data.tzRequirement, location: job.location || undefined });
   await jobsRepo.updateRemoteFit(job.id, job.userId, tz?.band ?? null, jdFactsResult.data.hiringStructure ?? null);
 
-  const cheap = await scoreMatch(llm, { jdFacts: jdFactsResult.data, resume: resume.structured });
+  const cheap = await scoreMatch(llm, { jdFacts: jdFactsResult.data, resume: resume.structured }, undefined, args.signal);
 
   let final = cheap;
   let escalated = false;
   if (cheap.data.lowConfidence) {
     const escalateModel = escalateModelFor("match-score");
     if (escalateModel) {
-      const strong = await scoreMatch(llm, { jdFacts: jdFactsResult.data, resume: resume.structured }, escalateModel);
+      const strong = await scoreMatch(llm, { jdFacts: jdFactsResult.data, resume: resume.structured }, escalateModel, args.signal);
       final = strong;
       escalated = true;
     }
