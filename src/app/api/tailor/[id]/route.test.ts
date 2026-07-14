@@ -1,15 +1,22 @@
 import { NextRequest } from "next/server";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { readAllSseEvents } from "@/app/api/__test-utils__/sse";
 import { makeMockLlm } from "@/lib/llm/mock";
 import { insertJob, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
-import { jobs, resumes, sources, tailoredResumes } from "@/server/persistence/schema";
+import { jobs, resumes, sources, tailoredResumes, users } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import { ErrorEnvelope } from "@/types";
 import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
+import { UnauthorizedError } from "@/server/auth/errors";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
+
+const { requireUser } = vi.hoisted(() => ({ requireUser: vi.fn() }));
+vi.mock("@/server/auth/session", async (orig) => ({
+  ...(await orig<typeof import("@/server/auth/session")>()),
+  requireUser: () => requireUser(),
+}));
 
 const llm = vi.hoisted(() => ({ scripted: {} as Record<string, unknown> }));
 vi.mock("@/lib/llm/client", async (importOriginal) => {
@@ -55,6 +62,11 @@ describe("GET /api/tailor/:id", () => {
     state.testDb = await createTestDb();
   });
 
+  beforeEach(() => {
+    requireUser.mockReset();
+    requireUser.mockResolvedValue({ id: BOOTSTRAP_ADMIN_ID, email: "admin@example.com", role: "admin" });
+  });
+
   afterEach(async () => {
     llm.scripted = {};
     __resetForTests();
@@ -62,6 +74,14 @@ describe("GET /api/tailor/:id", () => {
     await state.testDb.delete(jobs);
     await state.testDb.delete(resumes);
     await state.testDb.delete(sources);
+  });
+
+  it("401s with UNAUTHORIZED when there is no session", async () => {
+    requireUser.mockRejectedValue(new UnauthorizedError());
+    const id = crypto.randomUUID();
+    const res = await GET(getRequest(id), { params: Promise.resolve({ id }) });
+    expect(res.status).toBe(401);
+    expect((await res.json()).error.code).toBe("UNAUTHORIZED");
   });
 
   it("returns 404 for an unknown run id", async () => {
@@ -97,7 +117,7 @@ describe("GET /api/tailor/:id", () => {
     const { tailoredResumesRepo } = await import("@/server/persistence/repos/tailoredResumes");
     const deadline = Date.now() + 2000;
     while (Date.now() < deadline) {
-      const row = await tailoredResumesRepo.getById(run.id);
+      const row = await tailoredResumesRepo.getById(run.id, BOOTSTRAP_ADMIN_ID);
       if (row && (row.status === "completed" || row.status === "failed")) break;
       await new Promise((r) => setTimeout(r, 5));
     }
@@ -152,7 +172,7 @@ describe("GET /api/tailor/:id", () => {
     const { tailoredResumesRepo } = await import("@/server/persistence/repos/tailoredResumes");
     const deadline = Date.now() + 2000;
     while (Date.now() < deadline) {
-      const row = await tailoredResumesRepo.getById(run.id);
+      const row = await tailoredResumesRepo.getById(run.id, BOOTSTRAP_ADMIN_ID);
       if (row?.status === "completed") break;
       await new Promise((r) => setTimeout(r, 5));
     }
@@ -210,5 +230,35 @@ describe("GET /api/tailor/:id", () => {
     expect(last.event).toBe("error");
     const parsed = ErrorEnvelope.parse(last.data);
     expect(parsed.error.code).toBe("INTERNAL");
+  });
+
+  it("SSE ownership (Fable design review): B cannot open A's tailor run stream — 404 before the run handle is ever touched", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id);
+    const resume = await insertResume(state.testDb, { isActive: true });
+    const { createTailoredResumesRepo } = await import("@/server/persistence/repos/tailoredResumes");
+    const repo = createTailoredResumesRepo(state.testDb);
+    const runA = await repo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
+      jobId: job.id,
+      baseResumeId: resume.id,
+      diff: [],
+      status: "running",
+      model: "test-model",
+    });
+    const [userB] = await state.testDb
+      .insert(users)
+      .values({ email: "user-b-tailor-sse@example.com", passwordHash: "h", role: "user" })
+      .returning();
+
+    requireUser.mockResolvedValue({ id: userB.id, email: userB.email, role: "user" });
+
+    const jsonRes = await GET(getRequest(runA.id), { params: Promise.resolve({ id: runA.id }) });
+    expect(jsonRes.status).toBe(404);
+    expect((await jsonRes.json()).error.code).toBe("NOT_FOUND");
+
+    const sseRes = await GET(getRequest(runA.id, { accept: "text/event-stream" }), { params: Promise.resolve({ id: runA.id }) });
+    expect(sseRes.status).toBe(404);
+    expect((await sseRes.json()).error.code).toBe("NOT_FOUND");
   });
 });

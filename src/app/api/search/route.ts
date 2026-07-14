@@ -3,6 +3,8 @@
 // (api-contract.md §3 "POST /api/search").
 import { NextRequest, NextResponse } from "next/server";
 import { z, ZodError } from "zod";
+import { UnauthorizedError } from "@/server/auth/errors";
+import { requireUser } from "@/server/auth/session";
 import { ActiveRunConflictError, NoActiveResumeError, UnknownSourceIdsError, startSearch } from "@/server/search/run";
 import { ScanPersona, type ErrorEnvelope } from "@/types";
 
@@ -25,10 +27,12 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    const session = await requireUser();
     const body = RequestBody.parse(json);
-    const run = await startSearch(body);
+    const run = await startSearch(session.id, body);
     return NextResponse.json(run, { status: 202 });
   } catch (err) {
+    if (err instanceof UnauthorizedError) return errorResponse(401, "UNAUTHORIZED", err.message);
     if (err instanceof ZodError) {
       return errorResponse(422, "VALIDATION_ERROR", "Invalid search request.", err.issues);
     }

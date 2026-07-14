@@ -1,12 +1,20 @@
 import { NextRequest } from "next/server";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeMockLlm } from "@/lib/llm/mock";
 import { insertJob, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
 import { jobs, resumes, sources, tailoredResumes } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
+import { UnauthorizedError } from "@/server/auth/errors";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
+
+const { requireUser } = vi.hoisted(() => ({ requireUser: vi.fn() }));
+vi.mock("@/server/auth/session", async (orig) => ({
+  ...(await orig<typeof import("@/server/auth/session")>()),
+  requireUser: () => requireUser(),
+}));
 
 const llm = vi.hoisted(() => ({ scripted: {} as Record<string, unknown> }));
 vi.mock("@/lib/llm/client", async (importOriginal) => {
@@ -21,7 +29,7 @@ async function waitForTerminal(id: string, timeoutMs = 2000): Promise<void> {
   const { tailoredResumesRepo } = await import("@/server/persistence/repos/tailoredResumes");
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const row = await tailoredResumesRepo.getById(id);
+    const row = await tailoredResumesRepo.getById(id, BOOTSTRAP_ADMIN_ID);
     if (row && (row.status === "completed" || row.status === "failed")) return;
     await new Promise((r) => setTimeout(r, 5));
   }
@@ -41,6 +49,11 @@ describe("POST /api/tailor", () => {
     state.testDb = await createTestDb();
   });
 
+  beforeEach(() => {
+    requireUser.mockReset();
+    requireUser.mockResolvedValue({ id: BOOTSTRAP_ADMIN_ID, email: "admin@example.com", role: "admin" });
+  });
+
   afterEach(async () => {
     llm.scripted = {};
     __resetForTests();
@@ -48,6 +61,13 @@ describe("POST /api/tailor", () => {
     await state.testDb.delete(jobs);
     await state.testDb.delete(resumes);
     await state.testDb.delete(sources);
+  });
+
+  it("401s with UNAUTHORIZED when there is no session", async () => {
+    requireUser.mockRejectedValue(new UnauthorizedError());
+    const res = await POST(jsonRequest({ jobId: crypto.randomUUID() }));
+    expect(res.status).toBe(401);
+    expect((await res.json()).error.code).toBe("UNAUTHORIZED");
   });
 
   it("unknown jobId -> 404 NOT_FOUND", async () => {

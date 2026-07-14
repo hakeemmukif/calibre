@@ -4,15 +4,22 @@
 // by this test — "@/lib/pdf" is mocked wholesale, same technique the rest of
 // this codebase uses to keep "@/lib/llm/client" out of unit tests.
 import { NextRequest } from "next/server";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderCvHtml } from "@/lib/resume-render";
 import { insertJob, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
-import { jobs, resumes, sources, tailoredResumes } from "@/server/persistence/schema";
+import { jobs, resumes, sources, tailoredResumes, users } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
+import { UnauthorizedError } from "@/server/auth/errors";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
+
+const { requireUser } = vi.hoisted(() => ({ requireUser: vi.fn() }));
+vi.mock("@/server/auth/session", async (orig) => ({
+  ...(await orig<typeof import("@/server/auth/session")>()),
+  requireUser: () => requireUser(),
+}));
 
 const pdf = vi.hoisted(() => ({ htmlToPdf: vi.fn(async (_html: string) => Buffer.from("sentinel-pdf-bytes")) }));
 vi.mock("@/lib/pdf", () => ({ htmlToPdf: pdf.htmlToPdf }));
@@ -50,12 +57,25 @@ describe("GET /api/tailor/:id/pdf", () => {
     state.testDb = await createTestDb();
   });
 
+  beforeEach(() => {
+    requireUser.mockReset();
+    requireUser.mockResolvedValue({ id: BOOTSTRAP_ADMIN_ID, email: "admin@example.com", role: "admin" });
+  });
+
   afterEach(async () => {
     pdf.htmlToPdf.mockClear();
     await state.testDb.delete(tailoredResumes);
     await state.testDb.delete(jobs);
     await state.testDb.delete(resumes);
     await state.testDb.delete(sources);
+  });
+
+  it("401s with UNAUTHORIZED when there is no session", async () => {
+    requireUser.mockRejectedValue(new UnauthorizedError());
+    const id = crypto.randomUUID();
+    const res = await GET(getPdfRequest(id), { params: Promise.resolve({ id }) });
+    expect(res.status).toBe(401);
+    expect((await res.json()).error.code).toBe("UNAUTHORIZED");
   });
 
   it("unknown id -> 404 NOT_FOUND", async () => {
@@ -199,5 +219,46 @@ describe("GET /api/tailor/:id/pdf", () => {
     expect(renderedHtml).toBe(expectedHtml);
     expect(renderedHtml).toContain("Speaks English and Malay");
     expect(renderedHtml).not.toContain(TAILORED_STORE.summary);
+  });
+
+  it("ownership (Fable design review): B cannot fetch A's finalized PDF — 404", async () => {
+    const { tailoredResumesRepo } = await import("@/server/persistence/repos/tailoredResumes");
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id);
+    const resume = await insertResume(state.testDb, { isActive: true, structured: BASE_STORE });
+    const draft = await tailoredResumesRepo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
+      jobId: job.id,
+      baseResumeId: resume.id,
+      diff: DIFF,
+      status: "queued",
+      model: "openai/gpt-4.1",
+    });
+    await tailoredResumesRepo.complete(draft.id, {
+      structured: TAILORED_STORE,
+      diff: DIFF,
+      model: "mock",
+      costUsd: 0.01,
+      completedAt: new Date(),
+    });
+    await postFinalize(
+      new NextRequest(`http://localhost/api/tailor/${draft.id}/finalize`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ acceptedIndices: [0] }),
+      }),
+      { params: Promise.resolve({ id: draft.id }) },
+    );
+
+    const [userB] = await state.testDb
+      .insert(users)
+      .values({ email: "user-b-tailor-pdf@example.com", passwordHash: "h", role: "user" })
+      .returning();
+    requireUser.mockResolvedValue({ id: userB.id, email: userB.email, role: "user" });
+
+    const res = await GET(getPdfRequest(draft.id), { params: Promise.resolve({ id: draft.id }) });
+    expect(res.status).toBe(404);
+    expect((await res.json()).error.code).toBe("NOT_FOUND");
+    expect(pdf.htmlToPdf).not.toHaveBeenCalled();
   });
 });

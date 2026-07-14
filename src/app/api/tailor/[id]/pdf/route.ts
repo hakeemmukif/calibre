@@ -4,6 +4,8 @@
 // they mock "@/lib/pdf" (see src/lib/pdf.ts's deferred base-image gate note).
 import { NextRequest, NextResponse } from "next/server";
 import { isUuid } from "@/server/http/params";
+import { UnauthorizedError } from "@/server/auth/errors";
+import { requireUser } from "@/server/auth/session";
 import { RunNotReadyError, UnknownTailorIdError, renderTailorPdf } from "@/server/tailor";
 import type { ErrorEnvelope } from "@/types";
 
@@ -19,12 +21,14 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   }
 
   try {
-    const pdf = await renderTailorPdf(id);
+    const session = await requireUser();
+    const pdf = await renderTailorPdf(id, session.id);
     return new NextResponse(new Uint8Array(pdf), {
       status: 200,
       headers: { "Content-Type": "application/pdf" },
     });
   } catch (err) {
+    if (err instanceof UnauthorizedError) return errorResponse(401, "UNAUTHORIZED", err.message);
     if (err instanceof UnknownTailorIdError) {
       return errorResponse(404, "NOT_FOUND", err.message);
     }

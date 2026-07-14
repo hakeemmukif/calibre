@@ -5,6 +5,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isUuid } from "@/server/http/params";
 import { get as getRunHandle } from "@/server/runs/registry";
+import { UnauthorizedError } from "@/server/auth/errors";
+import { requireUser } from "@/server/auth/session";
 import { tailoredResumesRepo } from "@/server/persistence/repos/tailoredResumes";
 import { toTailoredResume } from "@/server/tailor/assemble";
 import type { ErrorEnvelope } from "@/types";
@@ -23,7 +25,19 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (!isUuid(id)) {
     return errorResponse(404, "NOT_FOUND", `No tailor run with id "${id}".`);
   }
-  const row = await tailoredResumesRepo.getById(id);
+
+  let session;
+  try {
+    session = await requireUser();
+  } catch (err) {
+    if (err instanceof UnauthorizedError) return errorResponse(401, "UNAUTHORIZED", err.message);
+    throw err;
+  }
+
+  // SSE ownership (Fable design review) — same treatment as
+  // src/app/api/search/[id]/route.ts: scoped getById gates BEFORE the
+  // in-memory run handle is ever touched.
+  const row = await tailoredResumesRepo.getById(id, session.id);
   if (!row) {
     return errorResponse(404, "NOT_FOUND", `No tailor run with id "${id}".`);
   }

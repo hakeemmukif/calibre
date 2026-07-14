@@ -1,14 +1,22 @@
+import { eq } from "drizzle-orm";
 import { NextRequest } from "next/server";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { insertProfile, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
-import { createSearchRunsRepo } from "@/server/persistence/repos/searchRuns";
 import type { SourceRow } from "@/server/persistence/repos/sources";
-import { jobs, resumes, searchRuns, sources } from "@/server/persistence/schema";
+import { jobs, resumes, searchRuns, sources, users } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import type { RawPosting, SourceConnector } from "@/server/search/connector";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
+import { UnauthorizedError } from "@/server/auth/errors";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb, hang: false }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
+
+const { requireUser } = vi.hoisted(() => ({ requireUser: vi.fn() }));
+vi.mock("@/server/auth/session", async (orig) => ({
+  ...(await orig<typeof import("@/server/auth/session")>()),
+  requireUser: () => requireUser(),
+}));
 
 function stubConnector(source: SourceRow): SourceConnector {
   return {
@@ -35,10 +43,9 @@ const { POST } = await import("./route");
 const { __resetForTests, get: getRunHandle } = await import("@/server/runs/registry");
 
 async function waitForTerminal(id: string, timeoutMs = 2000): Promise<void> {
-  const repo = createSearchRunsRepo(state.testDb);
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const row = await repo.getById(id);
+    const [row] = await state.testDb.select().from(searchRuns).where(eq(searchRuns.id, id)).limit(1);
     if (row && (row.status === "completed" || row.status === "failed")) return;
     await new Promise((r) => setTimeout(r, 5));
   }
@@ -59,6 +66,11 @@ describe("POST /api/search", () => {
     await insertProfile(state.testDb); // startSearch requires the operator profile (spec §4)
   });
 
+  beforeEach(() => {
+    requireUser.mockReset();
+    requireUser.mockResolvedValue({ id: BOOTSTRAP_ADMIN_ID, email: "admin@example.com", role: "admin" });
+  });
+
   afterEach(async () => {
     state.hang = false;
     __resetForTests();
@@ -66,6 +78,13 @@ describe("POST /api/search", () => {
     await state.testDb.delete(searchRuns);
     await state.testDb.delete(sources);
     await state.testDb.delete(resumes);
+  });
+
+  it("401s with UNAUTHORIZED when there is no session", async () => {
+    requireUser.mockRejectedValue(new UnauthorizedError());
+    const res = await POST(jsonRequest({ persona: "remote" }));
+    expect(res.status).toBe(401);
+    expect((await res.json()).error.code).toBe("UNAUTHORIZED");
   });
 
   it("empty sources[] returns 422 VALIDATION_ERROR (not a silent 'use all')", async () => {
@@ -124,6 +143,34 @@ describe("POST /api/search", () => {
     // afterEach truncates the tables out from under it.
     getRunHandle(firstRun.id)?.abort("test cleanup");
     await waitForTerminal(firstRun.id);
+  });
+
+  it("the 409 active-run mutex is per-user — A's active run for a persona does NOT block B (Fable design review)", async () => {
+    await insertResume(state.testDb, { isActive: true });
+    await insertSource(state.testDb, { id: "greenhouse", kind: "ats", persona: "remote" });
+    state.hang = true;
+
+    const [userB] = await state.testDb
+      .insert(users)
+      .values({ email: "user-b-search-mutex-route@example.com", passwordHash: "h", role: "user" })
+      .returning();
+    await insertProfile(state.testDb, { id: "profile-b-route", userId: userB.id });
+    await insertResume(state.testDb, { userId: userB.id, isActive: true });
+
+    const first = await POST(jsonRequest({ persona: "remote" }));
+    expect(first.status).toBe(202);
+    const firstRun = await first.json();
+
+    requireUser.mockResolvedValue({ id: userB.id, email: userB.email, role: "user" });
+    const second = await POST(jsonRequest({ persona: "remote" }));
+    expect(second.status).toBe(202);
+    const secondRun = await second.json();
+    expect(secondRun.id).not.toBe(firstRun.id);
+
+    getRunHandle(firstRun.id)?.abort("test cleanup");
+    getRunHandle(secondRun.id)?.abort("test cleanup");
+    await waitForTerminal(firstRun.id);
+    await waitForTerminal(secondRun.id);
   });
 
   it("invalid JSON body returns 422 VALIDATION_ERROR", async () => {
