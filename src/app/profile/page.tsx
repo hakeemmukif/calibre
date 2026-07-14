@@ -8,7 +8,7 @@ import { ProfileTargets } from "@/caliber-ui/compositions/Profile/ProfileTargets
 import { Button } from "@/caliber-ui/components/Button";
 import { Icon } from "@/caliber-ui/components/Icon";
 import { getProfile, updateProfile } from "@/features/profile/client";
-import type { Profile, RelocationPref } from "@/types";
+import type { EmploymentPref, Profile, RelocationPref, ScheduleFlex } from "@/types";
 
 export default function ProfilePage() {
   const [profile, setProfile] = React.useState<Profile | null>(null);
@@ -28,24 +28,36 @@ export default function ProfilePage() {
     void load();
   }, [load]);
 
-  async function handleRelocationChange(relocation: RelocationPref) {
-    if (!profile || relocation === profile.relocation) return;
+  async function saveDials(next: Pick<Profile, "relocation" | "scheduleFlex" | "employmentPref">) {
+    if (!profile) return;
     setBusy(true);
     setError(undefined);
     try {
-      setProfile(
-        await updateProfile({
-          baseCountry: profile.baseCountry,
-          relocation,
-          scheduleFlex: profile.scheduleFlex,
-          employmentPref: profile.employmentPref,
-        }),
-      );
+      setProfile(await updateProfile({ baseCountry: profile.baseCountry, ...next }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't update the profile.");
     } finally {
       setBusy(false);
     }
+  }
+
+  function handleRelocationChange(relocation: RelocationPref) {
+    if (!profile || relocation === profile.relocation) return;
+    void saveDials({ relocation, scheduleFlex: profile.scheduleFlex, employmentPref: profile.employmentPref });
+  }
+
+  function handleScheduleChange(scheduleFlex: ScheduleFlex) {
+    if (!profile || scheduleFlex === profile.scheduleFlex) return;
+    void saveDials({ relocation: profile.relocation, scheduleFlex, employmentPref: profile.employmentPref });
+  }
+
+  function handleEmploymentChange(employmentPref: EmploymentPref) {
+    if (!profile || employmentPref === profile.employmentPref) return;
+    void saveDials({ relocation: profile.relocation, scheduleFlex: profile.scheduleFlex, employmentPref });
+  }
+
+  function handlePresetSelect(dials: Pick<Profile, "relocation" | "scheduleFlex" | "employmentPref">) {
+    void saveDials(dials);
   }
 
   return (
@@ -80,7 +92,16 @@ export default function ProfilePage() {
             </Button>
           </div>
         )}
-        {profile && <ProfileTargets profile={profile} busy={busy} onRelocationChange={handleRelocationChange} />}
+        {profile && (
+          <ProfileTargets
+            profile={profile}
+            busy={busy}
+            onRelocationChange={handleRelocationChange}
+            onScheduleChange={handleScheduleChange}
+            onEmploymentChange={handleEmploymentChange}
+            onPresetSelect={handlePresetSelect}
+          />
+        )}
       </div>
     </div>
   );
