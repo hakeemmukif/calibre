@@ -311,6 +311,7 @@ registry.registerPath({
       content: { "application/json": { schema: UrlCheck } },
     },
     202: { description: "Pipeline queued", content: { "application/json": { schema: UrlCheck } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
     409: { description: "No active résumé to score against", content: { "application/json": { schema: ErrorEnvelope } } },
     422: {
       description: "Invalid body/URL, or pasted text exceeds the 40k-character cap",
@@ -331,6 +332,7 @@ registry.registerPath({
   },
   responses: {
     200: { description: "The requested url_checks, plus worker pause state", content: { "application/json": { schema: UrlChecksSnapshot } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
     422: { description: "Neither ?active=1 nor ?ids= was provided", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
@@ -342,7 +344,8 @@ registry.registerPath({
   request: { params: z.object({ id: z.string() }) },
   responses: {
     200: { description: "The UrlCheck row", content: { "application/json": { schema: UrlCheck } } },
-    404: { description: "Unknown check id", content: { "application/json": { schema: ErrorEnvelope } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    404: { description: "Unknown or foreign-owned check id", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
 

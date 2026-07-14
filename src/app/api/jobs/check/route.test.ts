@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeMockLlm } from "@/lib/llm/mock";
+import { UnauthorizedError } from "@/server/auth/errors";
 import {
   insertJob,
   insertJobScore,
@@ -8,13 +9,19 @@ import {
   insertResume,
   insertSource,
 } from "@/server/persistence/repos/__fixtures__/helpers";
-import { jobs, jobScores, resumes, sources, urlChecks } from "@/server/persistence/schema";
+import { jobs, jobScores, resumes, sources, urlChecks, users } from "@/server/persistence/schema";
 import { dedupeKeyFor } from "@/server/search/dedupe";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
+
+const { requireUser } = vi.hoisted(() => ({ requireUser: vi.fn() }));
+vi.mock("@/server/auth/session", async (orig) => ({
+  ...(await orig<typeof import("@/server/auth/session")>()),
+  requireUser: () => requireUser(),
+}));
 
 const llm = vi.hoisted(() => ({ scripted: {} as Record<string, unknown> }));
 vi.mock("@/lib/llm/client", async (importOriginal) => {
@@ -64,6 +71,11 @@ describe("POST /api/jobs/check", () => {
     state.testDb = await createTestDb();
   });
 
+  beforeEach(() => {
+    requireUser.mockReset();
+    requireUser.mockResolvedValue({ id: BOOTSTRAP_ADMIN_ID, email: "admin@example.com", role: "admin" });
+  });
+
   afterEach(async () => {
     llm.scripted = {};
     await state.testDb.delete(urlChecks);
@@ -71,6 +83,13 @@ describe("POST /api/jobs/check", () => {
     await state.testDb.delete(jobs);
     await state.testDb.delete(sources);
     await state.testDb.delete(resumes);
+  });
+
+  it("401s with UNAUTHORIZED when there is no session", async () => {
+    requireUser.mockRejectedValue(new UnauthorizedError());
+    const res = await POST(jsonRequest({ url: "https://example.com/job/1" }));
+    expect(res.status).toBe(401);
+    expect((await res.json()).error.code).toBe("UNAUTHORIZED");
   });
 
   it("no résumé returns 409 CONFLICT before any LLM call", async () => {
@@ -141,8 +160,20 @@ describe("GET /api/jobs/check", () => {
     state.testDb = await createTestDb();
   });
 
+  beforeEach(() => {
+    requireUser.mockReset();
+    requireUser.mockResolvedValue({ id: BOOTSTRAP_ADMIN_ID, email: "admin@example.com", role: "admin" });
+  });
+
   afterEach(async () => {
     await state.testDb.delete(urlChecks);
+  });
+
+  it("401s with UNAUTHORIZED when there is no session", async () => {
+    requireUser.mockRejectedValue(new UnauthorizedError());
+    const res = await GET(new NextRequest("http://localhost/api/jobs/check?active=1"));
+    expect(res.status).toBe(401);
+    expect((await res.json()).error.code).toBe("UNAUTHORIZED");
   });
 
   it("?active=1 returns queued and running rows only", async () => {
@@ -156,6 +187,25 @@ describe("GET /api/jobs/check", () => {
     const body = await res.json();
     expect(body.paused).toBe(false);
     expect(body.checks.map((c: { id: string }) => c.id).sort()).toEqual([queued.id, running.id].sort());
+  });
+
+  it("?active=1 returns only the caller's own checks (cross-tenant isolation)", async () => {
+    const [userB] = await state.testDb
+      .insert(users)
+      .values({ email: `user-b-jobs-check-route-${crypto.randomUUID()}@example.com`, passwordHash: "h", role: "user" })
+      .returning();
+    const [checkA] = await state.testDb.insert(urlChecks).values(newUrlCheckRow({ status: "queued" })).returning();
+    const [checkB] = await state.testDb
+      .insert(urlChecks)
+      .values(newUrlCheckRow({ status: "queued", userId: userB.id }))
+      .returning();
+
+    requireUser.mockResolvedValue({ id: userB.id, email: userB.email, role: "user" });
+    const res = await GET(new NextRequest("http://localhost/api/jobs/check?active=1"));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.checks.map((c: { id: string }) => c.id)).toEqual([checkB.id]);
+    expect(body.checks.map((c: { id: string }) => c.id)).not.toContain(checkA.id);
   });
 
   it("?ids=a,b returns exactly those rows", async () => {

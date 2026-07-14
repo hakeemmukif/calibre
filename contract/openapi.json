@@ -2261,6 +2261,16 @@
             },
             "description": "The requested url_checks, plus worker pause state"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -2304,6 +2314,16 @@
               }
             },
             "description": "Pipeline queued"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
           },
           "409": {
             "content": {
@@ -2352,6 +2372,16 @@
             },
             "description": "The UrlCheck row"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -2360,7 +2390,7 @@
                 }
               }
             },
-            "description": "Unknown check id"
+            "description": "Unknown or foreign-owned check id"
           }
         },
         "summary": "URL-check status — poll — F7"
