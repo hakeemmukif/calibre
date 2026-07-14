@@ -6,6 +6,7 @@
 import type { LlmClient } from "@/lib/llm/client";
 import { escalateModelFor } from "@/lib/llm/models";
 import { policyVersion } from "@/lib/llm/templates";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 import { jobScoresRepo, type JobScoreRow, type NewJobScore } from "@/server/persistence/repos/jobScores";
 import { jobsRepo, type JobRow } from "@/server/persistence/repos/jobs";
 import type { ProfileRow } from "@/server/persistence/repos/profile";
@@ -88,6 +89,7 @@ export async function scoreJob(args: {
   });
 
   const row: NewJobScore = {
+    userId: BOOTSTRAP_ADMIN_ID,
     jobId: job.id,
     resumeId: resume.id,
     score: final.data.score,

@@ -3,6 +3,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { insertJob, insertJobScore, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
 import { applications, jobs, jobScores, resumes, searchRuns, sources, tailoredResumes } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
@@ -89,6 +90,7 @@ describe("DELETE /api/jobs/:id", () => {
     const job = await insertJob(state.testDb, source.id, { persona: "pasted" });
     await insertJobScore(state.testDb, job.id, resume.id);
     await state.testDb.insert(applications).values({
+      userId: BOOTSTRAP_ADMIN_ID,
       jobId: job.id,
       resumeId: resume.id,
       stage: 0,

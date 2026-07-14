@@ -4,6 +4,7 @@ import { jobs } from "../schema";
 import { createTestDb } from "../test-db";
 import { insertJobScore, insertResume, insertSource } from "./__fixtures__/helpers";
 import { createJobsRepo } from "./jobs";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 // Explicit, same-millisecond-different-microsecond firstSeenAt values —
 // deterministic collision regardless of host/loop speed (JS Date can't
@@ -21,6 +22,7 @@ describe("jobsRepo", () => {
     const source = await insertSource(db);
 
     const inserted = await repo.upsertByDedupeKey({
+      userId: BOOTSTRAP_ADMIN_ID,
       dedupeKey: "dk-1",
       url: "https://example.com/1",
       sourceId: source.id,
@@ -44,6 +46,7 @@ describe("jobsRepo", () => {
     const source = await insertSource(db);
 
     const first = await repo.upsertByDedupeKey({
+      userId: BOOTSTRAP_ADMIN_ID,
       dedupeKey: "dk-2",
       url: "https://example.com/2",
       sourceId: source.id,
@@ -60,6 +63,7 @@ describe("jobsRepo", () => {
     await new Promise((r) => setTimeout(r, 5));
 
     const second = await repo.upsertByDedupeKey({
+      userId: BOOTSTRAP_ADMIN_ID,
       dedupeKey: "dk-2",
       url: "https://example.com/2",
       sourceId: source.id,
@@ -85,6 +89,7 @@ describe("jobsRepo", () => {
     const source = await insertSource(db);
 
     await repo.upsertByDedupeKey({
+      userId: BOOTSTRAP_ADMIN_ID,
       dedupeKey: "dk-getbykey",
       url: "https://example.com/getbykey",
       sourceId: source.id,
@@ -112,6 +117,7 @@ describe("jobsRepo", () => {
     const resume = await insertResume(db);
 
     const job = await repo.upsertByDedupeKey({
+      userId: BOOTSTRAP_ADMIN_ID,
       dedupeKey: "dk-hasanyscore",
       url: "https://example.com/hasanyscore",
       sourceId: source.id,
@@ -138,6 +144,7 @@ describe("jobsRepo", () => {
     const source = await insertSource(db);
 
     const first = await repo.upsertByDedupeKey({
+      userId: BOOTSTRAP_ADMIN_ID,
       dedupeKey: "dk-alias-merge",
       url: "https://example.com/3",
       sourceId: source.id,
@@ -155,6 +162,7 @@ describe("jobsRepo", () => {
     // Re-sighting from a run that only found a different alias this time —
     // the jobstreet alias from the first sighting must be preserved, not wiped.
     const second = await repo.upsertByDedupeKey({
+      userId: BOOTSTRAP_ADMIN_ID,
       dedupeKey: "dk-alias-merge",
       url: "https://example.com/3",
       sourceId: source.id,
@@ -177,6 +185,7 @@ describe("jobsRepo", () => {
 
     // Re-sighting the exact same alias again does not duplicate it.
     const third = await repo.upsertByDedupeKey({
+      userId: BOOTSTRAP_ADMIN_ID,
       dedupeKey: "dk-alias-merge",
       url: "https://example.com/3",
       sourceId: source.id,
@@ -201,6 +210,7 @@ describe("jobsRepo", () => {
     const rows: { jobId: string }[] = [];
     for (let i = 0; i < 3; i += 1) {
       const job = await repo.upsertByDedupeKey({
+        userId: BOOTSTRAP_ADMIN_ID,
         dedupeKey: `dk-tier-${i}`,
         url: `https://example.com/tier-${i}`,
         sourceId: source.id,
@@ -242,6 +252,7 @@ describe("jobsRepo", () => {
       const [job] = await db
         .insert(jobs)
         .values({
+          userId: BOOTSTRAP_ADMIN_ID,
           dedupeKey: `dk-cursor-${i}`,
           url: `https://example.com/cursor-${i}`,
           sourceId: source.id,
@@ -282,6 +293,7 @@ describe("jobsRepo", () => {
     const resume = await insertResume(db);
 
     const job = await repo.upsertByDedupeKey({
+      userId: BOOTSTRAP_ADMIN_ID,
       dedupeKey: "dk-multi-score",
       url: "https://example.com/multi-score",
       sourceId: source.id,
@@ -319,6 +331,7 @@ describe("jobsRepo", () => {
 
     for (let i = 0; i < 10; i += 1) {
       const job = await repo.upsertByDedupeKey({
+        userId: BOOTSTRAP_ADMIN_ID,
         dedupeKey: `dk-stats-${i}`,
         url: `https://example.com/stats-${i}`,
         sourceId: source.id,
@@ -359,6 +372,7 @@ describe("jobsRepo", () => {
     const resume = await insertResume(db);
 
     const older = await repo.upsertByDedupeKey({
+      userId: BOOTSTRAP_ADMIN_ID,
       dedupeKey: "dk-older",
       url: "https://example.com/older",
       sourceId: source.id,
@@ -375,6 +389,7 @@ describe("jobsRepo", () => {
     await insertJobScore(db, older.id, resume.id);
 
     const newer = await repo.upsertByDedupeKey({
+      userId: BOOTSTRAP_ADMIN_ID,
       dedupeKey: "dk-newer",
       url: "https://example.com/newer",
       sourceId: source.id,
@@ -403,6 +418,7 @@ describe("jobsRepo", () => {
     const source = await insertSource(db);
     const resume = await insertResume(db);
     const job = await repo.upsertByDedupeKey({
+      userId: BOOTSTRAP_ADMIN_ID,
       dedupeKey: "dk-single",
       url: "https://example.com/single",
       sourceId: source.id,
@@ -427,6 +443,7 @@ describe("jobsRepo", () => {
     const repo = createJobsRepo(db);
     const source = await insertSource(db);
     const job = await repo.upsertByDedupeKey({
+      userId: BOOTSTRAP_ADMIN_ID,
       dedupeKey: "dk-update-description",
       url: "https://example.com/update-description",
       sourceId: source.id,
@@ -457,6 +474,7 @@ describe("jobsRepo", () => {
     const repo = createJobsRepo(db);
     const source = await insertSource(db);
     const job = await repo.upsertByDedupeKey({
+      userId: BOOTSTRAP_ADMIN_ID,
       dedupeKey: "dk-unscored",
       url: "https://example.com/unscored",
       sourceId: source.id,
@@ -480,6 +498,7 @@ describe("jobsRepo", () => {
     const repo = createJobsRepo(db);
     const source = await insertSource(db);
     const job = await repo.upsertByDedupeKey({
+      userId: BOOTSTRAP_ADMIN_ID,
       dedupeKey: "dk-with-source",
       url: "https://example.com/with-source",
       sourceId: source.id,
@@ -505,6 +524,7 @@ describe("jobsRepo", () => {
     const repo = createJobsRepo(db);
     const source = await insertSource(db);
     const job = await repo.upsertByDedupeKey({
+      userId: BOOTSTRAP_ADMIN_ID,
       dedupeKey: "dk-eligibility",
       url: "https://example.com/eligibility",
       sourceId: source.id,
@@ -533,6 +553,7 @@ describe("jobsRepo", () => {
     const resume = await insertResume(db);
     const mk = async (eligibility: "anywhere" | "abroad" | "unknown") => {
       const job = await repo.upsertByDedupeKey({
+        userId: BOOTSTRAP_ADMIN_ID,
         dedupeKey: `dk-elig-${eligibility}`,
         url: `https://example.com/elig-${eligibility}`,
         sourceId: source.id,
@@ -566,6 +587,7 @@ describe("jobsRepo", () => {
       opts: { key: string; persona?: "remote" | "local"; scored?: boolean },
     ) => {
       const job = await repo.upsertByDedupeKey({
+        userId: BOOTSTRAP_ADMIN_ID,
         dedupeKey: `dk-hidden-${opts.key}`,
         url: `https://example.com/hidden-${opts.key}`,
         sourceId: source.id,

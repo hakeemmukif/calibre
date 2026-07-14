@@ -4,6 +4,7 @@ import { urlChecks } from "../schema";
 import { createTestDb } from "../test-db";
 import { insertJob, insertSource } from "./__fixtures__/helpers";
 import { createUrlChecksRepo } from "./urlChecks";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 describe("urlChecksRepo", () => {
   it("round-trips insert/getById", async () => {
@@ -11,6 +12,7 @@ describe("urlChecksRepo", () => {
     const repo = createUrlChecksRepo(db);
 
     const inserted = await repo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
       url: "https://boards.greenhouse.io/example/jobs/123",
       dedupeKey: "greenhouse.io/example/jobs/123",
       status: "queued",
@@ -32,6 +34,7 @@ describe("urlChecksRepo", () => {
     const db = await createTestDb();
     const repo = createUrlChecksRepo(db);
     const inserted = await repo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
       url: "https://x.example/job", dedupeKey: "x.example/job", status: "running",
       alreadyKnown: false, needsText: false, costUsd: 0, raw: {},
     });
@@ -47,6 +50,7 @@ describe("urlChecksRepo", () => {
     const source = await insertSource(db);
     const job = await insertJob(db, source.id);
     const inserted = await repo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
       url: "https://x.example/job", dedupeKey: "x.example/job", status: "running",
       alreadyKnown: false, needsText: false, costUsd: 0, raw: {},
     });
@@ -62,6 +66,7 @@ describe("urlChecksRepo", () => {
     const db = await createTestDb();
     const repo = createUrlChecksRepo(db);
     const inserted = await repo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
       url: "https://x.example/job", dedupeKey: "x.example/job", status: "running",
       alreadyKnown: false, needsText: false, costUsd: 0, raw: {},
     });
@@ -79,6 +84,7 @@ describe("urlChecksRepo", () => {
     const db = await createTestDb();
     const repo = createUrlChecksRepo(db);
     const inserted = await repo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
       url: "https://x.example/job", dedupeKey: "x.example/job", status: "running",
       alreadyKnown: false, needsText: false, costUsd: 0, raw: {},
     });
@@ -92,6 +98,7 @@ describe("urlChecksRepo", () => {
 function queuedRow(overrides: Record<string, unknown> = {}) {
   return {
     id: crypto.randomUUID(),
+    userId: BOOTSTRAP_ADMIN_ID,
     url: "https://example.com/job",
     dedupeKey: "example.com/job",
     status: "queued" as const,

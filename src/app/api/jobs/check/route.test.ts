@@ -11,6 +11,7 @@ import {
 import { jobs, jobScores, resumes, sources, urlChecks } from "@/server/persistence/schema";
 import { dedupeKeyFor } from "@/server/search/dedupe";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
@@ -43,6 +44,7 @@ function newUrlCheckRow(overrides: Partial<typeof urlChecks.$inferInsert> = {}) 
   const url = overrides.url ?? `https://example.com/job/${crypto.randomUUID()}`;
   return {
     id: crypto.randomUUID(),
+    userId: BOOTSTRAP_ADMIN_ID,
     url,
     dedupeKey: url,
     status: "queued" as const,

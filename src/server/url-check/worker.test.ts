@@ -3,6 +3,7 @@ import { insertProfile, insertResume, insertSource } from "@/server/persistence/
 import { createUrlChecksRepo } from "@/server/persistence/repos/urlChecks";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import type { UrlCheckRequest } from "@/types";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
@@ -11,7 +12,7 @@ const { createUrlCheckWorker } = await import("./worker");
 
 function queued(db: TestDb, url: string, text: string | null) {
   return createUrlChecksRepo(db).insert({
-    id: crypto.randomUUID(), url, dedupeKey: url, status: "queued", stage: null,
+    id: crypto.randomUUID(), userId: BOOTSTRAP_ADMIN_ID, url, dedupeKey: url, status: "queued", stage: null,
     jobId: null, alreadyKnown: false, needsText: false, error: null, costUsd: 0, raw: { text },
   });
 }

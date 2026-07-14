@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createTestDb } from "../test-db";
 import { insertJob, insertResume, insertSource } from "./__fixtures__/helpers";
 import { createJobScoresRepo } from "./jobScores";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 describe("jobScoresRepo", () => {
   it("round-trips upsertByJobResumePolicy", async () => {
@@ -12,6 +13,7 @@ describe("jobScoresRepo", () => {
     const job = await insertJob(db, source.id);
 
     const row = await repo.upsertByJobResumePolicy({
+      userId: BOOTSTRAP_ADMIN_ID,
       jobId: job.id,
       resumeId: resume.id,
       score: 4,
@@ -43,6 +45,7 @@ describe("jobScoresRepo", () => {
     const job = await insertJob(db, source.id);
 
     const base = {
+      userId: BOOTSTRAP_ADMIN_ID,
       jobId: job.id,
       resumeId: resume.id,
       verdict: "Apply" as const,
@@ -77,6 +80,7 @@ describe("jobScoresRepo", () => {
     const jobB = await insertJob(db, source.id, { dedupeKey: "dk-cost-b", url: "https://example.com/cost-b" });
 
     const base = {
+      userId: BOOTSTRAP_ADMIN_ID,
       resumeId: resume.id,
       verdict: "Apply" as const,
       why: "x",
@@ -113,6 +117,7 @@ describe("jobScoresRepo", () => {
     expect(await repo.getLatestByJobId(job.id)).toBeNull();
 
     const base = {
+      userId: BOOTSTRAP_ADMIN_ID,
       jobId: job.id,
       resumeId: resume.id,
       verdict: "Apply" as const,
@@ -155,6 +160,7 @@ describe("jobScoresRepo", () => {
     const job = await insertJob(db, source.id);
 
     const base = {
+      userId: BOOTSTRAP_ADMIN_ID,
       jobId: job.id,
       resumeId: resume.id,
       verdict: "Apply" as const,

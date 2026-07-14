@@ -12,6 +12,7 @@ import { createUrlChecksRepo } from "@/server/persistence/repos/urlChecks";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import { dedupeKeyFor } from "@/server/search/dedupe";
 import { scoreJob } from "@/server/score";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
@@ -41,6 +42,7 @@ const { NoActiveResumeError } = await import("@/server/search/run");
 async function insertRunningCheck(db: TestDb, req: { url: string; text?: string }): Promise<string> {
   const repo = createUrlChecksRepo(db);
   const row = await repo.insert({
+    userId: BOOTSTRAP_ADMIN_ID,
     id: crypto.randomUUID(),
     url: req.url,
     dedupeKey: dedupeKeyFor(req.url),
@@ -63,6 +65,7 @@ describe("assemble", () => {
     state.testDb = db;
     const repo = createUrlChecksRepo(db);
     const row = await repo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
       id: crypto.randomUUID(),
       url: "https://example.com/job",
       dedupeKey: "example.com/job",
@@ -346,6 +349,7 @@ describe("runPipeline — persisting edge cases", () => {
     // Simulate the race directly: pre-seed the SAME dedupe key under the
     // scanned source before the pipeline's own upsert runs.
     const raced = await jobsRepo.upsertByDedupeKey({
+      userId: BOOTSTRAP_ADMIN_ID,
       dedupeKey: "example.com/race",
       url: "https://example.com/race",
       sourceId: scanSource.id,

@@ -3,6 +3,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { urlChecksRepo } from "@/server/persistence/repos/urlChecks";
 import { urlChecks } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
@@ -24,6 +25,7 @@ describe("GET /api/jobs/check/:id", () => {
 
   it("returns the UrlCheck row for a known id", async () => {
     const row = await urlChecksRepo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
       url: "https://example.com/job/1",
       dedupeKey: "example.com/job/1",
       status: "queued",

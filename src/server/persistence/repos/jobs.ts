@@ -89,7 +89,7 @@ function mergeAliases(existing: JobAlias[], incoming: JobAlias[]): JobAlias[] {
 
 export function createJobsRepo(db: Db) {
   return {
-    // ON CONFLICT (dedupeKey): refresh lastSeenAt/aliases (merged, not
+    // ON CONFLICT (userId, dedupeKey): refresh lastSeenAt/aliases (merged, not
     // replaced), keep firstSeenAt (untouched — Postgres retains the existing
     // value for any column absent from the update `set`).
     async upsertByDedupeKey(row: NewJob): Promise<JobRow> {
@@ -104,7 +104,7 @@ export function createJobsRepo(db: Db) {
         .insert(jobs)
         .values({ ...row, aliases })
         .onConflictDoUpdate({
-          target: jobs.dedupeKey,
+          target: [jobs.userId, jobs.dedupeKey],
           set: { lastSeenAt: sql`now()`, aliases },
         })
         .returning();

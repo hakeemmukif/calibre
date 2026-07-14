@@ -5,6 +5,7 @@
 // fire-and-forget split, but there's no fan-out and no in-memory registry:
 // one job, one `url_checks` row, polled via getUrlCheck instead of SSE.
 import type { LlmClient } from "@/lib/llm/client";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 import { jobsRepo } from "@/server/persistence/repos/jobs";
 import type { ProfileRow } from "@/server/persistence/repos/profile";
 import { resumesRepo, type ResumeRow } from "@/server/persistence/repos/resumes";
@@ -236,6 +237,7 @@ export async function runPipeline(
     });
 
     const job = await jobsRepo.upsertByDedupeKey({
+      userId: BOOTSTRAP_ADMIN_ID,
       dedupeKey: dedupeKeyFor(req.url),
       url: req.url,
       applyUrl: req.url,
@@ -320,6 +322,7 @@ export async function startUrlCheck(req: UrlCheckRequest): Promise<{ check: UrlC
   // dedupe key and updates the row, then scoring completes it.
   if (existingJob && (await jobsRepo.hasAnyScore(existingJob.id))) {
     const row = await urlChecksRepo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
       id: crypto.randomUUID(),
       url: req.url,
       dedupeKey,
@@ -337,6 +340,7 @@ export async function startUrlCheck(req: UrlCheckRequest): Promise<{ check: UrlC
   }
 
   const row = await urlChecksRepo.insert({
+    userId: BOOTSTRAP_ADMIN_ID,
     id: crypto.randomUUID(),
     url: req.url,
     dedupeKey,

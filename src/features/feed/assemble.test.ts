@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { JobJoinScore } from "@/server/persistence/repos/jobs";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 import { assembleJob } from "./assemble";
 
 function baseJoined(overrides: Partial<JobJoinScore["job"]> = {}): JobJoinScore {
   const job: JobJoinScore["job"] = {
     id: "job-1",
+    userId: BOOTSTRAP_ADMIN_ID,
     dedupeKey: "dk-1",
     url: "https://example.com/jobs/1",
     applyUrl: null,
@@ -28,6 +30,7 @@ function baseJoined(overrides: Partial<JobJoinScore["job"]> = {}): JobJoinScore 
 
   const score: JobJoinScore["score"] = {
     id: "score-1",
+    userId: BOOTSTRAP_ADMIN_ID,
     jobId: job.id,
     resumeId: "resume-1",
     score: 4.2,
