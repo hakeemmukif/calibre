@@ -1,6 +1,39 @@
 import { describe, expect, it } from "vitest";
-import { policyVersion } from "@/lib/llm/templates";
-import { JdFactsGateSchema, JdFactsSchema } from "./jdFacts";
+import { z } from "zod";
+import { policyVersion, scoringPolicyVersion } from "@/lib/llm/templates";
+import { JdFactsEmissionSchema, JdFactsSchema, normalizeEmission, type JdFacts, type JdFactsEmission } from "./jdFacts";
+
+function emissionFixture(): JdFactsEmission {
+  return {
+    title: "Senior Backend Engineer",
+    isJobPosting: true,
+    company: "Acme",
+    seniority: "senior",
+    employmentType: "full-time",
+    location: "Remote",
+    remotePolicy: "remote-first",
+    hiringScope: "restricted",
+    hiringCountries: ["United States"],
+    tzRequirement: "4h overlap with PST",
+    hiringStructure: "eor",
+    workCalendar: "US public holidays",
+    mustHaves: ["TypeScript"],
+    niceToHaves: ["Kafka"],
+    salaryRange: "$120k-$150k",
+    responsibilities: ["Own the payments ledger"],
+    redFlags: [],
+  };
+}
+
+function jdFixture(): JdFacts {
+  return {
+    title: "Senior Backend Engineer",
+    mustHaves: ["TypeScript"],
+    niceToHaves: [],
+    responsibilities: [],
+    redFlags: [],
+  };
+}
 
 describe("JdFactsSchema hiring-scope fields", () => {
   it("accepts hiringScope + hiringCountries when stated", () => {
@@ -80,30 +113,54 @@ describe("JdFactsSchema isJobPosting field", () => {
   });
 });
 
-describe("JdFactsGateSchema (url-check gate only — JdFactsSchema itself stays optional)", () => {
-  const base = { title: "Engineer", mustHaves: [], niceToHaves: [], responsibilities: [], redFlags: [] };
-
+describe("JdFactsEmissionSchema (used by BOTH jd-extract callers — JdFactsSchema itself stays optional)", () => {
   it("rejects when isJobPosting is omitted (required, unlike JdFactsSchema)", () => {
-    expect(() => JdFactsGateSchema.parse({ ...base, company: "Acme" })).toThrow();
+    const { isJobPosting: _isJobPosting, ...rest } = emissionFixture();
+    expect(() => JdFactsEmissionSchema.parse(rest)).toThrow();
   });
 
   it("rejects when company is omitted (required, unlike JdFactsSchema)", () => {
-    expect(() => JdFactsGateSchema.parse({ ...base, isJobPosting: true })).toThrow();
+    const { company: _company, ...rest } = emissionFixture();
+    expect(() => JdFactsEmissionSchema.parse(rest)).toThrow();
   });
 
   it("accepts company: null (explicit no-company, distinct from omission)", () => {
-    const parsed = JdFactsGateSchema.parse({ ...base, isJobPosting: true, company: null });
+    const parsed = JdFactsEmissionSchema.parse({ ...emissionFixture(), company: null });
     expect(parsed.company).toBeNull();
   });
 
   it("accepts isJobPosting: false + company: null", () => {
-    const parsed = JdFactsGateSchema.parse({ ...base, isJobPosting: false, company: null });
+    const parsed = JdFactsEmissionSchema.parse({ ...emissionFixture(), isJobPosting: false, company: null });
     expect(parsed.isJobPosting).toBe(false);
   });
 
   it("accepts isJobPosting: true + a real company string", () => {
-    const parsed = JdFactsGateSchema.parse({ ...base, isJobPosting: true, company: "Acme" });
+    const parsed = JdFactsEmissionSchema.parse({ ...emissionFixture(), isJobPosting: true, company: "Acme" });
     expect(parsed.company).toBe("Acme");
+  });
+});
+
+describe("jd-extract emission schema (Layer-C liveness fix, spec 2026-07-14 §4)", () => {
+  it("emission schema marks every eligibility+schedule fact as REQUIRED (nullable)", () => {
+    const json = z.toJSONSchema(JdFactsEmissionSchema) as { required?: string[] };
+    for (const f of ["hiringScope", "hiringCountries", "location", "remotePolicy", "tzRequirement", "hiringStructure", "workCalendar"]) {
+      expect(json.required).toContain(f);
+    }
+  });
+  it("isJobPosting stays a required non-null boolean (the gate decision)", () => {
+    expect(() => JdFactsEmissionSchema.parse({ ...emissionFixture(), isJobPosting: null })).toThrow();
+  });
+  it("normalizeEmission turns nulls into undefined for the tolerant JdFacts", () => {
+    const norm = normalizeEmission({ ...emissionFixture(), tzRequirement: null, hiringStructure: null });
+    expect(norm.tzRequirement).toBeUndefined();
+    expect(norm.hiringStructure).toBeUndefined();
+    expect(JdFactsSchema.parse(norm)).toBeTruthy();
+  });
+  it("parse-side JdFactsSchema accepts a stated contractor structure", () => {
+    expect(JdFactsSchema.parse({ ...jdFixture(), hiringStructure: "contractor" }).hiringStructure).toBe("contractor");
+  });
+  it("scoringPolicyVersion changes when jd-extract.md changes (verdict cache invalidates)", () => {
+    expect(scoringPolicyVersion()).toMatch(/^[0-9a-f]{12}$/);
   });
 });
 

@@ -5,7 +5,7 @@
 // (jobId,resumeId,policyVersion)). Stage 3 Deep is CUT for MVP.
 import type { LlmClient } from "@/lib/llm/client";
 import { escalateModelFor } from "@/lib/llm/models";
-import { policyVersion } from "@/lib/llm/templates";
+import { scoringPolicyVersion } from "@/lib/llm/templates";
 import { jobScoresRepo, type JobScoreRow, type NewJobScore } from "@/server/persistence/repos/jobScores";
 import { jobsRepo, type JobRow } from "@/server/persistence/repos/jobs";
 import type { ProfileRow } from "@/server/persistence/repos/profile";
@@ -110,7 +110,7 @@ export async function scoreJob(args: {
     model: final.model,
     escalated,
     costUsd: jdFactsResult.costUsd + cheap.costUsd + (escalated ? final.costUsd : 0),
-    policyVersion: policyVersion("match-score"),
+    policyVersion: scoringPolicyVersion(),
   };
 
   return jobScoresRepo.upsertByJobResumePolicy(row);

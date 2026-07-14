@@ -8,7 +8,7 @@ import { jobs, jobScores, resumes, sources } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import type { WebEvidence } from "@/types";
 import type { EvalScores } from "./evalScores";
-import type { JdFacts } from "./jdFacts";
+import type { JdFacts, JdFactsEmission } from "./jdFacts";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
@@ -21,6 +21,29 @@ const jdFacts: JdFacts = {
   title: "Backend Engineer",
   mustHaves: ["TypeScript"],
   niceToHaves: [],
+  responsibilities: ["Ship features"],
+  redFlags: [],
+};
+
+// JdFactsEmissionSchema (jdFacts.ts) requires every scalar (nullable) and array field —
+// this is the canned "jd-extract" LLM response fed through that schema; `jdFacts` above
+// stays the tolerant parse-side shape for the precomputedJdFacts bypass test below.
+const jdFactsEmission: JdFactsEmission = {
+  title: "Backend Engineer",
+  isJobPosting: true,
+  company: "Acme",
+  seniority: null,
+  employmentType: null,
+  location: null,
+  remotePolicy: null,
+  hiringScope: null,
+  hiringCountries: [],
+  tzRequirement: null,
+  hiringStructure: null,
+  workCalendar: null,
+  mustHaves: ["TypeScript"],
+  niceToHaves: [],
+  salaryRange: null,
   responsibilities: ["Ship features"],
   redFlags: [],
 };
@@ -57,7 +80,7 @@ describe("scoreJob", () => {
     const source = await insertSource(state.testDb);
     const job = await insertJob(state.testDb, source.id, { description: "Backend role at Acme." });
     const resume = await insertResume(state.testDb);
-    const llm = makeMockLlm({ "jd-extract": jdFacts, "match-score": cheapEval });
+    const llm = makeMockLlm({ "jd-extract": jdFactsEmission, "match-score": cheapEval });
 
     const row = await scoreJob({ job, source, profile, resume, llm });
 
@@ -82,7 +105,7 @@ describe("scoreJob", () => {
     const source = await insertSource(state.testDb);
     const job = await insertJob(state.testDb, source.id, { description: "Backend role." });
     const resume = await insertResume(state.testDb);
-    const llm = makeMockLlm({ "jd-extract": jdFacts, "match-score": cheapEval });
+    const llm = makeMockLlm({ "jd-extract": jdFactsEmission, "match-score": cheapEval });
 
     const row = await scoreJob({ job, source, profile, resume, llm });
     expect(row.legitimacy.tier).toBe("ghost");
@@ -97,7 +120,7 @@ describe("scoreJob", () => {
     const llm: LlmClient = {
       async complete(args) {
         if (args.task === "jd-extract") {
-          return { data: args.responseSchema.parse(jdFacts), model: "cheap-jd-model", costUsd: 0.001 };
+          return { data: args.responseSchema.parse(jdFactsEmission), model: "cheap-jd-model", costUsd: 0.001 };
         }
         expect(args.modelOverride).toBeUndefined();
         return {
@@ -119,12 +142,12 @@ describe("scoreJob", () => {
     const source = await insertSource(state.testDb);
     const job = await insertJob(state.testDb, source.id, { description: "Backend role." });
     const resume = await insertResume(state.testDb);
-    const llm = makeMockLlm({ "jd-extract": jdFacts, "match-score": cheapEval });
+    const llm = makeMockLlm({ "jd-extract": jdFactsEmission, "match-score": cheapEval });
 
     const first = await scoreJob({ job, source, profile, resume, llm });
 
     const updatedEval: EvalScores = { ...cheapEval, score: 2.1, verdict: "Skip" };
-    const llm2 = makeMockLlm({ "jd-extract": jdFacts, "match-score": updatedEval });
+    const llm2 = makeMockLlm({ "jd-extract": jdFactsEmission, "match-score": updatedEval });
     const second = await scoreJob({ job, source, profile, resume, llm: llm2 });
 
     expect(second.id).toBe(first.id);
@@ -139,7 +162,7 @@ describe("scoreJob", () => {
     const source = await insertSource(state.testDb); // default prior: restricted
     const job = await insertJob(state.testDb, source.id, { description: "Backend role.", location: "Remote" });
     const resume = await insertResume(state.testDb);
-    const usOnly: JdFacts = { ...jdFacts, hiringScope: "restricted", hiringCountries: ["United States"] };
+    const usOnly: JdFactsEmission = { ...jdFactsEmission, hiringScope: "restricted", hiringCountries: ["United States"] };
     const llm = makeMockLlm({ "jd-extract": usOnly, "match-score": cheapEval });
 
     expect(job.eligibility).toBe("unknown"); // fixture's ingest-time stamp
@@ -194,7 +217,7 @@ describe("scoreJob", () => {
     const source = await insertSource(state.testDb);
     const job = await insertJob(state.testDb, source.id, { description: "Pasted JD text." });
     const resume = await insertResume(state.testDb);
-    const llm = makeMockLlm({ "jd-extract": jdFacts, "match-score": cheapEval });
+    const llm = makeMockLlm({ "jd-extract": jdFactsEmission, "match-score": cheapEval });
 
     const row = await scoreJob({ job, source, profile, resume, llm, livenessOverride: "uncertain" });
 
@@ -210,7 +233,7 @@ describe("scoreJob", () => {
       ...cheapEval,
       legitimacy: { tier: "verified", summary: "Careers page confirms opening.", signals: [], corroborated: true },
     };
-    const llm = makeMockLlm({ "jd-extract": jdFacts, "match-score": verifiedEval });
+    const llm = makeMockLlm({ "jd-extract": jdFactsEmission, "match-score": verifiedEval });
     const webEvidence: WebEvidence = {
       status: "ok",
       sightings: [{ url: "https://www.linkedin.com/jobs/view/123", source: "LinkedIn" }],

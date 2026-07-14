@@ -173,7 +173,25 @@ async function setUpForPipeline(db: TestDb) {
   return { resumeRow, profile };
 }
 
-const jdExtractLlm = (data: Record<string, unknown>) => makeMockLlm({ "jd-extract": data });
+// JdFactsEmissionSchema (jdFacts.ts) requires every scalar (nullable) and array field —
+// these defaults fill the ones no test case below varies, so each call site only states
+// the fields it actually cares about (isJobPosting/company for the gate, plus arrays).
+const jdExtractLlm = (data: Record<string, unknown>) =>
+  makeMockLlm({
+    "jd-extract": {
+      seniority: null,
+      employmentType: null,
+      location: null,
+      remotePolicy: null,
+      hiringScope: null,
+      hiringCountries: [],
+      tzRequirement: null,
+      hiringStructure: null,
+      workCalendar: null,
+      salaryRange: null,
+      ...data,
+    },
+  });
 
 describe("runPipeline — needsText truth table", () => {
   it("tier-1 fetch ok + gate ok -> completed, no tier-2 search call", async () => {
@@ -303,7 +321,7 @@ describe("runPipeline — needsText truth table", () => {
     await runPipeline(checkId, { url: "https://example.com/pasted-omitted-field", text: "Company: Front\n\nSenior Engineer..." }, {
       // No isJobPosting key at all — under JdFactsSchema (optional) this
       // used to parse fine and silently produce "incomplete"; under
-      // JdFactsGateSchema (required) makeMockLlm's own responseSchema.parse
+      // JdFactsEmissionSchema (required) makeMockLlm's own responseSchema.parse
       // throws, which runGate's paste-mode caller maps to
       // ExtractionIncompleteError just like a real upstream failure.
       llm: jdExtractLlm({ title: "Senior Engineer", company: "Front", mustHaves: [], niceToHaves: [], responsibilities: [], redFlags: [] }),

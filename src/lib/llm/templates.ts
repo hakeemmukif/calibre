@@ -79,3 +79,13 @@ export function renderTemplate(task: TaskName, vars: Record<string, string>): Ll
 export function policyVersion(task: TaskName): string {
   return createHash("sha256").update(readTemplateFile(task), "utf-8").digest("hex").slice(0, 12);
 }
+
+// The verdict-cache key version for job_scores. Hashes match-score AND jd-extract so a
+// change to either template invalidates cached scores (spec 2026-07-14 §4). policyVersion(task)
+// stays per-task and unaffected (jdFacts.test.ts guard holds).
+export function scoringPolicyVersion(): string {
+  return createHash("sha256")
+    .update(readTemplateFile("match-score") + readTemplateFile("jd-extract"), "utf-8")
+    .digest("hex")
+    .slice(0, 12);
+}

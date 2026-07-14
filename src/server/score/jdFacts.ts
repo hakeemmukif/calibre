@@ -6,6 +6,7 @@
 import { z } from "zod";
 import type { LlmClient } from "@/lib/llm/client";
 import { renderTemplate } from "@/lib/llm/templates";
+import { HiringStructure } from "@/types";
 
 export const JdFactsSchema = z.object({
   title: z.string(),
@@ -22,6 +23,10 @@ export const JdFactsSchema = z.object({
   // Spec 2026-07-12 §5 Layer C: STATED hiring geography only — never guessed.
   hiringScope: z.enum(["anywhere", "restricted"]).optional(),
   hiringCountries: z.array(z.string()).optional(), // countries/regions verbatim as the JD states them
+  // Spec 2026-07-14 §4: schedule + structure facts (STATED only, never guessed).
+  tzRequirement: z.string().optional(), // verbatim stated overlap requirement, e.g. "4h overlap with PST"
+  hiringStructure: HiringStructure.optional(), // "via Deel/EOR" | "B2B contract" | explicit contract-term role
+  workCalendar: z.string().optional(), // stated calendar expectations — display only, no dial
   mustHaves: z.array(z.string()),
   niceToHaves: z.array(z.string()),
   salaryRange: z.string().optional(),
@@ -30,39 +35,74 @@ export const JdFactsSchema = z.object({
 });
 export type JdFacts = z.infer<typeof JdFactsSchema>;
 
+// The RESPONSE schema for EVERY jd-extract LLM call (spec 2026-07-14 §4). gpt-oss-120b
+// drops `.optional()` fields under `strict:false`; making each field REQUIRED (nullable
+// for scalars) forces emission. isJobPosting stays required non-null — it is the gate
+// decision. Arrays stay required (model emits []). Parse-side JdFacts is unchanged; nulls
+// normalize away at the boundary (normalizeEmission).
+export const JdFactsEmissionSchema = z.object({
+  title: z.string(),
+  isJobPosting: z.boolean(),
+  company: z.string().nullable(),
+  seniority: z.string().nullable(),
+  employmentType: z.string().nullable(),
+  location: z.string().nullable(),
+  remotePolicy: z.string().nullable(),
+  hiringScope: z.enum(["anywhere", "restricted"]).nullable(),
+  hiringCountries: z.array(z.string()),
+  tzRequirement: z.string().nullable(),
+  hiringStructure: HiringStructure.nullable(),
+  workCalendar: z.string().nullable(),
+  mustHaves: z.array(z.string()),
+  niceToHaves: z.array(z.string()),
+  salaryRange: z.string().nullable(),
+  responsibilities: z.array(z.string()),
+  redFlags: z.array(z.string()),
+});
+export type JdFactsEmission = z.infer<typeof JdFactsEmissionSchema>;
+
+// null → undefined, so downstream (resolveEligibility, resolveTzBand, runGate) sees the
+// tolerant optional shape it already expects.
+export function normalizeEmission(raw: JdFactsEmission): JdFacts {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(raw)) if (v !== null) out[k] = v;
+  return JdFactsSchema.parse(out);
+}
+
+// Gate return type: isJobPosting non-null boolean + company nullable (unchanged contract).
+// Omit<JdFacts, "company"> rather than a plain intersection — JdFacts.company is
+// `string | undefined`, and intersecting that with `string | null` collapses to plain
+// `string` (the only overlap), silently dropping the null branch runGate depends on.
+export type JdFactsGate = Omit<JdFacts, "company"> & { isJobPosting: boolean; company: string | null };
+
 export async function extractJdFacts(
   llm: LlmClient,
   description: string,
 ): Promise<{ data: JdFacts; model: string; costUsd: number }> {
-  return llm.complete({
+  const res = await llm.complete({
     task: "jd-extract",
     messages: renderTemplate("jd-extract", { jobDescription: description }),
-    responseSchema: JdFactsSchema,
+    responseSchema: JdFactsEmissionSchema,
   });
+  return { ...res, data: normalizeEmission(res.data) };
 }
 
-// Gate-only variant (url-check's runGate, run.ts) — NOT used by the scanned
-// path above. Live testing (2026-07-13) found gpt-oss-120b reliably omits
-// `.optional()` fields from json_schema structured output regardless of
-// prompt wording, because client.ts's response_format derives `required`
-// from the Zod schema and runs with `strict: false`. Making isJobPosting
-// required and company required-but-nullable forces the model to emit both
-// explicitly (verified 3/3 live calls); JdFactsSchema itself stays optional
-// so the scanned path (scoreTopCandidates) never fails to parse a cheap
-// model's omission.
-export const JdFactsGateSchema = JdFactsSchema.extend({
-  isJobPosting: z.boolean(),
-  company: z.string().nullable(),
-});
-export type JdFactsGate = z.infer<typeof JdFactsGateSchema>;
-
+// Gate variant (url-check's runGate, run.ts) — sends the SAME emission schema as the
+// scanned path above; isJobPosting/company are read straight off the raw response since
+// the emission schema already guarantees the required shapes runGate depends on. Live
+// testing (2026-07-13) found gpt-oss-120b reliably omits `.optional()` fields from
+// json_schema structured output regardless of prompt wording, because client.ts's
+// response_format derives `required` from the Zod schema and runs with `strict: false`.
 export async function extractJdFactsForGate(
   llm: LlmClient,
   description: string,
 ): Promise<{ data: JdFactsGate; model: string; costUsd: number }> {
-  return llm.complete({
+  const res = await llm.complete({
     task: "jd-extract",
     messages: renderTemplate("jd-extract", { jobDescription: description }),
-    responseSchema: JdFactsGateSchema,
+    responseSchema: JdFactsEmissionSchema,
   });
+  // isJobPosting is a real boolean (emission-required); company stays string|null.
+  const data: JdFactsGate = { ...normalizeEmission(res.data), isJobPosting: res.data.isJobPosting, company: res.data.company };
+  return { ...res, data };
 }
