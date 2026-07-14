@@ -2,6 +2,61 @@
   "components": {
     "parameters": {},
     "schemas": {
+      "AdminUser": {
+        "properties": {
+          "applicationCount": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "email": {
+            "format": "email",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "jobCount": {
+            "type": "integer"
+          },
+          "resumeCount": {
+            "type": "integer"
+          },
+          "role": {
+            "enum": [
+              "user",
+              "admin"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "role",
+          "createdAt",
+          "resumeCount",
+          "jobCount",
+          "applicationCount"
+        ],
+        "type": "object"
+      },
+      "AdminUsersResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminUser"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
       "Application": {
         "properties": {
           "answersId": {
@@ -1340,6 +1395,43 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/admin/users": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUsersResponse"
+                }
+              }
+            },
+            "description": "All users with counts"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Caller is not an admin"
+          }
+        },
+        "summary": "Admin: every account with per-user résumé/job/application counts"
+      }
+    },
     "/api/applications": {
       "get": {
         "parameters": [
@@ -2998,6 +3090,16 @@
               }
             },
             "description": "No session"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Caller is not an admin"
           },
           "404": {
             "content": {

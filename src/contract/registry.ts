@@ -54,6 +54,8 @@ import {
   RegisterRequest,
   LoginRequest,
   SessionResponse,
+  AdminUser,
+  AdminUsersResponse,
 } from "@/types";
 
 const entitySchemas: Record<string, z.ZodType> = {
@@ -87,6 +89,8 @@ const entitySchemas: Record<string, z.ZodType> = {
   RegisterRequest,
   LoginRequest,
   SessionResponse,
+  AdminUser,
+  AdminUsersResponse,
 };
 
 for (const [name, schema] of Object.entries(entitySchemas)) {
@@ -627,8 +631,20 @@ registry.registerPath({
   responses: {
     200: { description: "The updated Source", content: { "application/json": { schema: Source } } },
     401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    403: { description: "Caller is not an admin", content: { "application/json": { schema: ErrorEnvelope } } },
     404: { description: "Unknown source id", content: { "application/json": { schema: ErrorEnvelope } } },
     422: { description: "Invalid body (enabled must be a boolean)", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/admin/users",
+  summary: "Admin: every account with per-user résumé/job/application counts",
+  responses: {
+    200: { description: "All users with counts", content: { "application/json": { schema: AdminUsersResponse } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    403: { description: "Caller is not an admin", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
 

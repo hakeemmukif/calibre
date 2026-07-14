@@ -7,8 +7,8 @@
 // input, and an unknown one 404s via the repo returning `undefined`.
 import { NextRequest, NextResponse } from "next/server";
 import { z, ZodError } from "zod";
-import { UnauthorizedError } from "@/server/auth/errors";
-import { requireUser } from "@/server/auth/session";
+import { ForbiddenError, UnauthorizedError } from "@/server/auth/errors";
+import { requireAdmin } from "@/server/auth/session";
 import { sourcesRepo } from "@/server/persistence/repos/sources";
 import type { ErrorEnvelope } from "@/types";
 import { Source } from "@/types";
@@ -24,7 +24,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const { id } = await params;
 
   try {
-    await requireUser();
+    await requireAdmin();
 
     let json: unknown;
     try {
@@ -34,8 +34,6 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
 
     const body = RequestBody.parse(json);
-    // TODO(step 6/7): PATCH /api/sources/:id should be requireAdmin() once
-    // admin lands — today any logged-in user can toggle a source.
     const row = await sourcesRepo.setEnabled(id, body.enabled);
     if (!row) {
       return errorResponse(404, "NOT_FOUND", `No source with id "${id}".`);
@@ -43,6 +41,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     return NextResponse.json(Source.parse(row), { status: 200 });
   } catch (err) {
     if (err instanceof UnauthorizedError) return errorResponse(401, "UNAUTHORIZED", err.message);
+    if (err instanceof ForbiddenError) return errorResponse(403, "FORBIDDEN", err.message);
     if (err instanceof ZodError) {
       return errorResponse(422, "VALIDATION_ERROR", "Invalid source patch.", err.issues);
     }

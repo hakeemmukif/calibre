@@ -1,10 +1,20 @@
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { getDb } from "../db";
-import { users } from "../schema";
+import { applications, jobs, resumes, users } from "../schema";
 import type { Db } from "./db";
 import { EmailTakenError } from "@/server/auth/errors";
 
 export type UserRow = typeof users.$inferSelect;
+
+export type AdminUserRow = {
+  id: string;
+  email: string;
+  role: "user" | "admin";
+  createdAt: Date;
+  resumeCount: number;
+  jobCount: number;
+  applicationCount: number;
+};
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
@@ -56,6 +66,37 @@ export function createUserRepo(db: Db) {
     async list(): Promise<UserRow[]> {
       return db.select().from(users).orderBy(asc(users.createdAt));
     },
+    // GLOBAL-BY-DECISION: admin lists every account with counts (not
+    // tenant-scoped) — this is the `/api/admin/users` read behind
+    // requireAdmin(), a deliberate cross-user dump for the admin surface
+    // (plan 2026-07-14-multitenant-admin.md Task 1), not a per-tenant leak.
+    async listWithCounts(): Promise<AdminUserRow[]> {
+      const allUsers = await db
+        .select({ id: users.id, email: users.email, role: users.role, createdAt: users.createdAt })
+        .from(users)
+        .orderBy(asc(users.createdAt));
+
+      const [resumeRows, jobRows, applicationRows] = await Promise.all([
+        db.select({ userId: resumes.userId, count: sql<string>`count(*)` }).from(resumes).groupBy(resumes.userId),
+        db.select({ userId: jobs.userId, count: sql<string>`count(*)` }).from(jobs).groupBy(jobs.userId),
+        db
+          .select({ userId: applications.userId, count: sql<string>`count(*)` })
+          .from(applications)
+          .groupBy(applications.userId),
+      ]);
+      const toCountMap = (rows: { userId: string; count: string }[]) =>
+        new Map(rows.map((r) => [r.userId, Number(r.count)]));
+      const resumeCounts = toCountMap(resumeRows);
+      const jobCounts = toCountMap(jobRows);
+      const applicationCounts = toCountMap(applicationRows);
+
+      return allUsers.map((u) => ({
+        ...u,
+        resumeCount: resumeCounts.get(u.id) ?? 0,
+        jobCount: jobCounts.get(u.id) ?? 0,
+        applicationCount: applicationCounts.get(u.id) ?? 0,
+      }));
+    },
   };
 }
 
@@ -64,4 +105,5 @@ export const usersRepo: ReturnType<typeof createUserRepo> = {
   findByEmail: (e) => createUserRepo(getDb()).findByEmail(e),
   findById: (i) => createUserRepo(getDb()).findById(i),
   list: () => createUserRepo(getDb()).list(),
+  listWithCounts: () => createUserRepo(getDb()).listWithCounts(),
 };

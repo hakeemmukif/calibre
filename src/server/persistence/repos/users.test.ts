@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createTestDb } from "../test-db";
-import { users } from "../schema";
+import { applications, users } from "../schema";
 import { createUserRepo } from "./users";
+import { insertJob, insertResume, insertSource } from "./__fixtures__/helpers";
 import { EmailTakenError } from "@/server/auth/errors";
 import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
@@ -48,5 +49,44 @@ describe("usersRepo", () => {
     const list = await repo.list();
     expect(list.length).toBe(3);
     expect(list.map((u) => u.id).sort()).toEqual([BOOTSTRAP_ADMIN_ID, a.id, b.id].sort());
+  });
+
+  it("listWithCounts returns every user with correct, per-user resume/job/application counts and no passwordHash", async () => {
+    const db = await createTestDb();
+    const repo = createUserRepo(db);
+    const a = await repo.create({ email: "a@x.co", passwordHash: "h", role: "user" });
+    const b = await repo.create({ email: "b@x.co", passwordHash: "h", role: "user" });
+    const source = await insertSource(db);
+
+    // A: 2 résumés, 1 job, 1 application. B: 1 résumé, 2 jobs, 0 applications.
+    await insertResume(db, { userId: a.id, isActive: true });
+    await insertResume(db, { userId: a.id, isActive: false });
+    const aJob = await insertJob(db, source.id, { userId: a.id });
+    const aResume = await insertResume(db, { userId: a.id, isActive: false });
+    await db.insert(applications).values({
+      userId: a.id,
+      jobId: aJob.id,
+      resumeId: aResume.id,
+      stage: 0,
+      statusLabel: "Applied",
+      statusTone: "neutral",
+      note: "",
+    });
+
+    await insertResume(db, { userId: b.id, isActive: true });
+    await insertJob(db, source.id, { userId: b.id });
+    await insertJob(db, source.id, { userId: b.id });
+
+    const list = await repo.listWithCounts();
+    expect(list.length).toBe(3); // bootstrap admin + a + b
+
+    const byId = new Map(list.map((u) => [u.id, u]));
+    expect(byId.get(a.id)).toMatchObject({ resumeCount: 3, jobCount: 1, applicationCount: 1 });
+    expect(byId.get(b.id)).toMatchObject({ resumeCount: 1, jobCount: 2, applicationCount: 0 });
+    expect(byId.get(BOOTSTRAP_ADMIN_ID)).toMatchObject({ resumeCount: 0, jobCount: 0, applicationCount: 0 });
+
+    for (const u of list) {
+      expect(u).not.toHaveProperty("passwordHash");
+    }
   });
 });
