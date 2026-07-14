@@ -58,8 +58,25 @@ describe("toResumeView", () => {
         },
       ],
       skills: ["TypeScript", "Go", "AWS"],
+      projects: [],
+      certifications: [],
+      languages: [],
       rawText: "raw résumé text",
     });
+  });
+
+  it("passes projects/certifications/languages through unchanged from the store", () => {
+    const store = baseStore({
+      projects: [{ name: "Caliber", url: "https://github.com/example/caliber", bullets: ["Built the résumé pipeline."] }],
+      certifications: [{ name: "PMP", issuer: "PMI", year: "2023" }],
+      languages: [{ language: "English", proficiency: "Fluent" }],
+    });
+    const resume = toResumeView(store, opts);
+    expect(resume.projects).toEqual([
+      { name: "Caliber", url: "https://github.com/example/caliber", bullets: ["Built the résumé pipeline."] },
+    ]);
+    expect(resume.certifications).toEqual([{ name: "PMP", issuer: "PMI", year: "2023" }]);
+    expect(resume.languages).toEqual([{ language: "English", proficiency: "Fluent" }]);
   });
 
   it("flattens and dedupes skills across groups preserving first-seen order", () => {

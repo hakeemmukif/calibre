@@ -146,6 +146,9 @@ export const Resume = z.object({ // §5; `hasResume` is NOT a field — absence 
     z.object({ title: z.string(), company: z.string(), dates: z.string(), bullets: z.array(z.string()) }),
   ),
   skills: z.array(z.string()),
+  projects: z.array(z.object({ name: z.string(), url: z.string().optional(), bullets: z.array(z.string()) })),
+  certifications: z.array(z.object({ name: z.string(), issuer: z.string().optional(), year: z.string().optional() })),
+  languages: z.array(z.object({ language: z.string(), proficiency: z.string().optional() })),
   rawText: z.string(), // parse provenance, grounds F4/F6
 });
 export type Resume = z.infer<typeof Resume>;

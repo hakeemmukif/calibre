@@ -80,6 +80,9 @@ export function toResumeView(
       bullets: e.bullets,
     })),
     skills: dedupePreserveOrder(store.skills.flatMap((g) => g.items)),
+    projects: store.projects,
+    certifications: store.certifications,
+    languages: store.languages,
     rawText: opts.rawText,
   });
 }
