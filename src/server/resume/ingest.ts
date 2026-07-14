@@ -12,6 +12,7 @@ import type { Resume } from "@/types";
 import { assertResumeViewDerivable, ParseFailedError, toResumeView } from "./derive-view";
 import { computeAtsScore } from "./atsScore";
 import { extractText } from "./extract-text";
+import { assertEnglish } from "./language";
 import { resolveUpload, resumeKey } from "./uploads";
 import { ResumeStoreEmitSchema, emitToStore, type ResumeStore } from "./resume-store";
 
@@ -45,6 +46,11 @@ export async function ingestResume(
   deps: IngestResumeDeps = {},
 ): Promise<Resume> {
   const rawText = await extractText(input);
+
+  // English-first MVP: reject non-English résumés loudly, before the LLM
+  // call, rather than mis-structuring text the extraction model (and pdf.js
+  // CJK handling) was never validated against.
+  assertEnglish(rawText);
 
   // getLlm() is inside the try so a client-construction failure (e.g. a
   // missing OPENROUTER_API_KEY) is mapped to ParseFailedError → 502 like any

@@ -232,6 +232,22 @@ describe("/api/resume", () => {
     expect((await GET()).status).toBe(404);
   });
 
+  it("POST {text} in Bahasa Malaysia (non-English) returns 422 VALIDATION_ERROR before hitting the LLM", async () => {
+    const create = vi.fn();
+    state.llm = { complete: create } as unknown as LlmClient;
+
+    const bahasaMalaysia =
+      "Saya bekerja sebagai jurutera perisian di sebuah syarikat teknologi selama lima tahun. " +
+      "Saya mempunyai kemahiran dalam pengekodan, reka bentuk sistem, serta kerja berpasukan. " +
+      "Saya juga pernah mengetuai projek pembangunan aplikasi mudah alih untuk pelanggan korporat.";
+    const res = await POST(jsonRequest({ text: bahasaMalaysia }));
+
+    expect(res.status).toBe(422);
+    expect((await res.json()).error.code).toBe("VALIDATION_ERROR");
+    expect(create).not.toHaveBeenCalled();
+    expect((await GET()).status).toBe(404);
+  });
+
   it("POST multipart file over 10MB returns 413 PAYLOAD_TOO_LARGE", async () => {
     const bytes = new Uint8Array(10 * 1024 * 1024 + 1);
     const res = await POST(fileRequest(bytes, "application/pdf", "resume.pdf"));
