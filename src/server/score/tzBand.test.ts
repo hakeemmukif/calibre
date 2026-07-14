@@ -29,6 +29,17 @@ describe("resolveTzBand token table (spec 2026-07-14 §5)", () => {
     expect(resolveTzBand({})).toBeNull();
     expect(warn).not.toHaveBeenCalled();
   });
+  it("PT/ET are not banded — dropped to avoid ISO country-code collisions", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    // location fallback: a Portugal/Ethiopia location must NOT mis-band to americas
+    expect(resolveTzBand({ location: "Lisbon, PT" })).toBeNull();
+    expect(resolveTzBand({ location: "Addis Ababa, ET" })).toBeNull();
+    // even stated, the bare tokens no longer band (removed entirely)
+    expect(resolveTzBand({ tzRequirement: "PT" })).toBeNull();
+    // a real, unambiguous zone abbreviation still bands from a location string
+    expect(resolveTzBand({ location: "Remote (PST)" })?.band).toBe("americas");
+    warn.mockRestore();
+  });
 });
 
 describe("tzBandForToken (Task 9 legacy hiringCountries migration scan)", () => {

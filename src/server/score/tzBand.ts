@@ -7,7 +7,10 @@ import type { EmploymentPref, HiringStructure, ScheduleFlex, TzBand } from "@/ty
 
 // Curated token → band. Coarse by design (overlap-hour arithmetic deliberately dropped, §5).
 const BAND_TOKENS: { band: TzBand; tokens: string[] }[] = [
-  { band: "americas", tokens: ["PST", "PDT", "MST", "EST", "EDT", "ET", "PT", "US HOURS", "NORTH AMERICA", "LATAM"] },
+  // "ET" (Ethiopia) and "PT" (Portugal) are dropped: as bare tokens they collide with
+  // ISO-3166 country codes and would mis-band a location like "Lisbon, PT". americas is
+  // still covered by the unambiguous zone abbreviations below.
+  { band: "americas", tokens: ["PST", "PDT", "MST", "EST", "EDT", "US HOURS", "NORTH AMERICA", "LATAM"] },
   { band: "emea", tokens: ["CET", "CEST", "GMT", "BST", "UTC", "EU", "EUROPEAN", "EMEA"] },
   { band: "apac", tokens: ["SGT", "MYT", "AEST", "JST", "APAC HOURS", "APAC"] },
 ];
