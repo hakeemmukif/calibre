@@ -957,10 +957,34 @@
           },
           "stats": {
             "properties": {
+              "capStopped": {
+                "type": "boolean"
+              },
+              "costUsd": {
+                "type": "number"
+              },
+              "discoverMs": {
+                "type": "integer"
+              },
               "ghosts": {
                 "type": "integer"
               },
+              "matched": {
+                "type": "integer"
+              },
+              "policyVersion": {
+                "type": "string"
+              },
               "scanned": {
+                "type": "integer"
+              },
+              "scoreMs": {
+                "type": "integer"
+              },
+              "scored": {
+                "type": "integer"
+              },
+              "unscored": {
                 "type": "integer"
               },
               "worth": {
@@ -969,8 +993,16 @@
             },
             "required": [
               "scanned",
+              "matched",
+              "scored",
               "worth",
-              "ghosts"
+              "ghosts",
+              "unscored",
+              "capStopped",
+              "discoverMs",
+              "scoreMs",
+              "costUsd",
+              "policyVersion"
             ],
             "type": "object"
           },
