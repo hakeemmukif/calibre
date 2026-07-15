@@ -6,15 +6,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LlmClient } from "@/lib/llm/client";
 import { RESUME_STORE, RESUME_STORE_VISION } from "@/lib/llm/scripted-fixtures";
 import type { ResumeRow } from "@/server/persistence/repos/resumes";
+import { ParseFailedError } from "./derive-view";
 import { ingestResume } from "./ingest";
 import { NonEnglishResumeError } from "./language";
 
 const FIXTURES = join(__dirname, "__fixtures__");
 
-const state = vi.hoisted(() => ({ insertReplacingActive: vi.fn() }));
+const state = vi.hoisted(() => ({ insertReplacingActive: vi.fn(), rasterizePdfPages: vi.fn() }));
 vi.mock("@/server/persistence/repos/resumes", () => ({
   resumesRepo: { insertReplacingActive: state.insertReplacingActive },
 }));
+vi.mock("@/lib/rasterize", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/rasterize")>("@/lib/rasterize");
+  state.rasterizePdfPages.mockImplementation(actual.rasterizePdfPages);
+  return { ...actual, rasterizePdfPages: state.rasterizePdfPages };
+});
 
 function fakeRow(structured: unknown): ResumeRow {
   return {
@@ -112,5 +118,17 @@ describe("ingestResume — vision routing for image-only/near-textless PDFs", ()
     expect(state.insertReplacingActive).toHaveBeenCalledTimes(1);
     const persisted = state.insertReplacingActive.mock.calls[0][0] as { structured: { extractionPath: string } };
     expect(persisted.structured.extractionPath).toBe("text");
+  });
+
+  it("maps a rasterization failure to ParseFailedError instead of the raw error", async () => {
+    const complete = vi.fn();
+    const llm = { complete } as unknown as LlmClient;
+    state.rasterizePdfPages.mockRejectedValueOnce(new Error("@napi-rs/canvas is not available"));
+
+    const bytes = readFileSync(join(FIXTURES, "tiny.pdf"));
+    await expect(
+      ingestResume("user-1", { file: { bytes, mime: "application/pdf" } }, { llm }),
+    ).rejects.toThrow(ParseFailedError);
+    expect(complete).not.toHaveBeenCalled();
   });
 });

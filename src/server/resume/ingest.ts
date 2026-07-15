@@ -94,15 +94,15 @@ export async function ingestResume(
 
   let structured: ResumeStore;
   if (isVisionCandidate) {
-    const images = await rasterizePdfPages(input.file!.bytes, VISION_MAX_PAGES);
-    const result = await completeOrThrow(deps.llm, (llm) =>
-      llm.complete({
+    const result = await completeOrThrow(deps.llm, async (llm) => {
+      const images = await rasterizePdfPages(input.file!.bytes, VISION_MAX_PAGES);
+      return llm.complete({
         task: "resume-extract-vision",
         messages: renderTemplate("resume-extract-vision", {}),
         responseSchema: ResumeStoreEmitSchema,
         images,
-      }),
-    );
+      });
+    });
     structured = emitToStore(result.data, "vision");
     // English-first MVP: reject non-English résumés loudly. The vision path
     // has no usable rawText to check, so this runs on the structured result
