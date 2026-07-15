@@ -44,6 +44,7 @@ import {
   ApplicationAnswer,
   ApplicationAnswers,
   TailoredResume,
+  CorrelationReport,
   ErrorEnvelope,
   SummaryStripStats,
   SseEvent,
@@ -79,6 +80,7 @@ const entitySchemas: Record<string, z.ZodType> = {
   ApplicationAnswer,
   ApplicationAnswers,
   TailoredResume,
+  CorrelationReport,
   ErrorEnvelope,
   SummaryStripStats,
   SseEvent,
@@ -448,6 +450,46 @@ registry.registerPath({
     },
     401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
     404: { description: "Unknown tailor run id (incl. a foreign-owned one — no existence leak)", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/tailor/correlate",
+  summary: "Start correlating the résumé against the job's requirements — F6 (B8)",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({ jobId: z.string() }),
+        },
+      },
+    },
+  },
+  responses: {
+    202: { description: "Correlation run queued", content: { "application/json": { schema: CorrelationReport } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    404: { description: "Unknown job id", content: { "application/json": { schema: ErrorEnvelope } } },
+    409: { description: "No résumé exists to correlate", content: { "application/json": { schema: ErrorEnvelope } } },
+    422: { description: "Invalid body", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/tailor/correlate/{id}",
+  summary: "Correlation status + result — JSON snapshot by default; SSE via Accept: text/event-stream — F6 (B8)",
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: "JSON snapshot, or an SSE stream of progress/done/error (stages analyze -> render -> done)",
+      content: {
+        "application/json": { schema: CorrelationReport },
+        "text/event-stream": { schema: SseEvent },
+      },
+    },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    404: { description: "Unknown correlation run id (incl. a foreign-owned one — no existence leak)", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
 

@@ -302,6 +302,173 @@
         ],
         "type": "object"
       },
+      "CorrelationReport": {
+        "properties": {
+          "ats": {
+            "properties": {
+              "missing": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "present": {
+                "type": "integer"
+              },
+              "total": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "present",
+              "total",
+              "missing"
+            ],
+            "type": "object"
+          },
+          "completedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "costUsd": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "jobId": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "progress": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Progress"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
+          },
+          "resumeId": {
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "properties": {
+                "atsPresent": {
+                  "type": "boolean"
+                },
+                "evidence": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "kind": {
+                  "enum": [
+                    "must",
+                    "nice",
+                    "responsibility"
+                  ],
+                  "type": "string"
+                },
+                "note": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "requirement": {
+                  "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "met",
+                    "buried",
+                    "gap"
+                  ],
+                  "type": "string"
+                },
+                "term": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "requirement",
+                "term",
+                "kind",
+                "status",
+                "evidence",
+                "atsPresent",
+                "reason",
+                "note"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "semantic": {
+            "properties": {
+              "buried": {
+                "type": "integer"
+              },
+              "gap": {
+                "type": "integer"
+              },
+              "met": {
+                "type": "integer"
+              },
+              "total": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "met",
+              "buried",
+              "gap",
+              "total"
+            ],
+            "type": "object"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RunStatus"
+          }
+        },
+        "required": [
+          "id",
+          "jobId",
+          "resumeId",
+          "status",
+          "progress",
+          "rows",
+          "semantic",
+          "ats",
+          "model",
+          "costUsd",
+          "createdAt",
+          "completedAt"
+        ],
+        "type": "object"
+      },
       "Eligibility": {
         "properties": {
           "summary": {
@@ -1248,14 +1415,40 @@
                 "reason": {
                   "type": "string"
                 },
+                "requirement": {
+                  "type": "string"
+                },
                 "section": {
                   "type": "string"
+                },
+                "target": {
+                  "properties": {
+                    "bulletIndex": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "index": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "index",
+                    "bulletIndex"
+                  ],
+                  "type": "object"
                 }
               },
               "required": [
                 "section",
                 "op",
-                "reason"
+                "reason",
+                "requirement",
+                "target"
               ],
               "type": "object"
             },
@@ -1281,6 +1474,12 @@
                   "null"
                 ]
               }
+            ]
+          },
+          "reportId": {
+            "type": [
+              "string",
+              "null"
             ]
           },
           "resume": {
@@ -1436,6 +1635,7 @@
           "resumeId",
           "status",
           "progress",
+          "reportId",
           "resume",
           "diff",
           "model",
@@ -3741,6 +3941,132 @@
           }
         },
         "summary": "Start tailoring the résumé to a job — F6 (B8)"
+      }
+    },
+    "/api/tailor/correlate": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "jobId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "jobId"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorrelationReport"
+                }
+              }
+            },
+            "description": "Correlation run queued"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unknown job id"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No résumé exists to correlate"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Invalid body"
+          }
+        },
+        "summary": "Start correlating the résumé against the job's requirements — F6 (B8)"
+      }
+    },
+    "/api/tailor/correlate/{id}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorrelationReport"
+                }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/SseEvent"
+                }
+              }
+            },
+            "description": "JSON snapshot, or an SSE stream of progress/done/error (stages analyze -> render -> done)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unknown correlation run id (incl. a foreign-owned one — no existence leak)"
+          }
+        },
+        "summary": "Correlation status + result — JSON snapshot by default; SSE via Accept: text/event-stream — F6 (B8)"
       }
     },
     "/api/tailor/{id}": {
