@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import {
   Persona,
   ScanPersona,
@@ -16,7 +17,41 @@ import {
   ScheduleFlex,
   EmploymentPref,
   Profile,
+  Resume,
 } from "./index";
+
+function baseResume(overrides: Partial<z.infer<typeof Resume>> = {}) {
+  return {
+    id: "r1",
+    atsScore: 80,
+    updatedAt: "2026-07-11T00:00:00.000Z",
+    headline: "Senior Backend Engineer",
+    location: "Kuala Lumpur, Malaysia",
+    experience: [],
+    skills: [],
+    projects: [],
+    certifications: [],
+    languages: [],
+    rawText: "raw résumé text",
+    ...overrides,
+  };
+}
+
+describe("Resume.extractionPath", () => {
+  it("is optional — a résumé with no extractionPath still parses", () => {
+    const resume = Resume.parse(baseResume());
+    expect(resume.extractionPath).toBeUndefined();
+  });
+
+  it("accepts 'text' and 'vision'", () => {
+    expect(Resume.parse(baseResume({ extractionPath: "text" })).extractionPath).toBe("text");
+    expect(Resume.parse(baseResume({ extractionPath: "vision" })).extractionPath).toBe("vision");
+  });
+
+  it("rejects an unknown extractionPath value", () => {
+    expect(() => Resume.parse(baseResume({ extractionPath: "ocr" as "text" }))).toThrow();
+  });
+});
 
 describe("Persona / ScanPersona", () => {
   it("Persona accepts pasted, remote, local", () => {

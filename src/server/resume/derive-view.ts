@@ -84,5 +84,6 @@ export function toResumeView(
     certifications: store.certifications,
     languages: store.languages,
     rawText: opts.rawText,
+    extractionPath: store.extractionPath,
   });
 }

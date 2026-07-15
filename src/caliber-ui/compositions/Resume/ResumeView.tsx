@@ -5,6 +5,7 @@ import { Button } from "../../components/Button";
 import { Tag } from "../../components/Tag";
 import { Tabs } from "../../components/Tabs";
 import { ScoreBadge } from "../../components/ScoreBadge";
+import { Icon } from "../../components/Icon";
 import { agoLabel } from "../../lib/format";
 import type { Resume } from "../../../types";
 
@@ -39,6 +40,25 @@ export function ResumeView({ resume, onTailor, onReupload }: ResumeViewProps) {
           <Button variant="secondary" iconLeft="upload" onClick={onReupload}>Re-upload</Button>
         </div>
       </div>
+
+      {resume.extractionPath === "vision" && (
+        <div
+          style={{
+            marginTop: 14,
+            padding: "10px 14px",
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            background: "var(--fit-mid-soft)",
+            borderRadius: "var(--radius-sm)",
+          }}
+        >
+          <Icon name="circle-help" size={18} style={{ color: "var(--fit-mid)", flex: "none" }} />
+          <span style={{ font: "var(--type-caption)", color: "var(--text-strong)" }}>
+            We read this résumé from an image — please double-check the details.
+          </span>
+        </div>
+      )}
 
       <Tabs
         style={{ marginTop: 18 }}

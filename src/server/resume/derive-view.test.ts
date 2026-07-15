@@ -62,7 +62,13 @@ describe("toResumeView", () => {
       certifications: [],
       languages: [],
       rawText: "raw résumé text",
+      extractionPath: "text",
     });
+  });
+
+  it("maps extractionPath from the store onto the wire view", () => {
+    const resume = toResumeView(baseStore({ extractionPath: "vision" }), opts);
+    expect(resume.extractionPath).toBe("vision");
   });
 
   it("passes projects/certifications/languages through unchanged from the store", () => {

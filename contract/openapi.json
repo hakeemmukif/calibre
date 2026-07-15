@@ -813,6 +813,13 @@
             },
             "type": "array"
           },
+          "extractionPath": {
+            "enum": [
+              "text",
+              "vision"
+            ],
+            "type": "string"
+          },
           "headline": {
             "type": "string"
           },
@@ -1299,6 +1306,13 @@
                   "type": "object"
                 },
                 "type": "array"
+              },
+              "extractionPath": {
+                "enum": [
+                  "text",
+                  "vision"
+                ],
+                "type": "string"
               },
               "headline": {
                 "type": "string"
