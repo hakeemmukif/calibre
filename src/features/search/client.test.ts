@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { SearchRun, SseEvent } from "@/types";
+import type { ScanDetail, SearchRun, SearchRunSummary, SseEvent } from "@/types";
 
 const requestJsonMock = vi.fn();
 vi.mock("@/features/http", () => ({
   requestJson: (...args: unknown[]) => requestJsonMock(...args),
 }));
 
-import { subscribeSearch } from "./client";
+import { getScanDetail, listScans, subscribeSearch } from "./client";
 
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
@@ -113,5 +113,66 @@ describe("subscribeSearch", () => {
 
     source.emit("progress", { stage: "score", current: 1, total: 10, label: "1/10" });
     expect(onEvent).not.toHaveBeenCalled();
+  });
+});
+
+function scanSummary(overrides: Partial<SearchRunSummary> = {}): SearchRunSummary {
+  return {
+    id: "run-1",
+    status: "completed",
+    persona: "remote",
+    resumeName: "jane_v2.pdf",
+    startedAt: "2026-07-11T00:00:00.000Z",
+    finishedAt: "2026-07-11T00:05:00.000Z",
+    stats: {
+      scanned: 40, matched: 30, scored: 28, worth: 6, ghosts: 2, unscored: 1,
+      capStopped: false, discoverMs: 4200, scoreMs: 58000, costUsd: 0.42, policyVersion: "p3",
+    },
+    ...overrides,
+  };
+}
+
+describe("listScans", () => {
+  it("GETs /api/search with no query params and returns the parsed items + nextCursor", async () => {
+    const summary = scanSummary();
+    requestJsonMock.mockImplementation((_url: string, _init: unknown, schema: { parse: (v: unknown) => unknown }) =>
+      Promise.resolve(schema.parse({ items: [summary], nextCursor: null })),
+    );
+
+    const result = await listScans();
+
+    expect(requestJsonMock).toHaveBeenCalledWith("/api/search", undefined, expect.anything());
+    expect(result).toEqual({ items: [summary], nextCursor: null });
+  });
+
+  it("builds the query string from limit/cursor and rejects a malformed item", async () => {
+    requestJsonMock.mockImplementation((_url: string, _init: unknown, schema: { parse: (v: unknown) => unknown }) =>
+      Promise.resolve(schema.parse({ items: [{ id: "run-1" }], nextCursor: "c2" })),
+    );
+
+    await expect(listScans({ limit: 10, cursor: "c1" })).rejects.toThrow();
+    expect(requestJsonMock).toHaveBeenCalledWith("/api/search?limit=10&cursor=c1", undefined, expect.anything());
+  });
+});
+
+describe("getScanDetail", () => {
+  it("GETs /api/search/:id and returns the parsed ScanDetail", async () => {
+    const detail: ScanDetail = { ...scanSummary(), error: null, results: [] };
+    requestJsonMock.mockImplementation((_url: string, _init: unknown, schema: { parse: (v: unknown) => unknown }) =>
+      Promise.resolve(schema.parse(detail)),
+    );
+
+    const result = await getScanDetail("run-1");
+
+    expect(requestJsonMock).toHaveBeenCalledWith("/api/search/run-1", undefined, expect.anything());
+    expect(result).toEqual(detail);
+  });
+
+  it("throws when the response is missing results[] (SearchRunSummary shape, not ScanDetail)", async () => {
+    requestJsonMock.mockImplementation((_url: string, _init: unknown, schema: { parse: (v: unknown) => unknown }) =>
+      Promise.resolve(schema.parse(scanSummary())),
+    );
+
+    await expect(getScanDetail("run-1")).rejects.toThrow();
   });
 });

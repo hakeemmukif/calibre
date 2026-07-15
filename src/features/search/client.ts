@@ -1,7 +1,8 @@
 // F2 typed client — kicks off + polls/streams a search run (api-contract.md
 // §3 "POST /api/search", "GET /api/search/:id", §4 SSE). Never imports
 // server/* or lib/llm.
-import { Persona, SearchRun, SseEvent } from "@/types";
+import { z } from "zod";
+import { Persona, ScanDetail, SearchRun, SearchRunSummary, SseEvent } from "@/types";
 import { requestJson } from "@/features/http";
 
 export interface StartSearchInput {
@@ -19,6 +20,21 @@ export async function startSearch(input: StartSearchInput): Promise<SearchRun> {
 
 export async function getSearchRun(id: string): Promise<SearchRun> {
   return requestJson(`/api/search/${id}`, undefined, SearchRun);
+}
+
+const ListScansResponse = z.object({ items: SearchRunSummary.array(), nextCursor: z.string().nullable() });
+export type ListScansResponse = z.infer<typeof ListScansResponse>;
+
+export async function listScans(opts?: { limit?: number; cursor?: string }): Promise<ListScansResponse> {
+  const params = new URLSearchParams();
+  if (opts?.limit !== undefined) params.set("limit", String(opts.limit));
+  if (opts?.cursor !== undefined) params.set("cursor", opts.cursor);
+  const qs = params.toString();
+  return requestJson(`/api/search${qs ? `?${qs}` : ""}`, undefined, ListScansResponse);
+}
+
+export async function getScanDetail(id: string): Promise<ScanDetail> {
+  return requestJson(`/api/search/${id}`, undefined, ScanDetail);
 }
 
 // `EventSource` sends `Accept: text/event-stream` automatically (browser
