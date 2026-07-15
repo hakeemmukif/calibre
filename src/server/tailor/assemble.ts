@@ -38,7 +38,7 @@ export async function toTailoredResume(row: TailoredResumeRow): Promise<Tailored
     if (!baseResumeRow) {
       throw new Error(`tailored_resumes ${row.id}: base résumé ${row.baseResumeId} no longer exists`);
     }
-    resumeStore = applyAcceptedDiff(baseResumeRow.structured, row.structured, row.diff, row.acceptedIndices);
+    resumeStore = applyAcceptedDiff(baseResumeRow.structured, row.diff, row.acceptedIndices);
   }
 
   return TailoredResume.parse({
@@ -47,6 +47,7 @@ export async function toTailoredResume(row: TailoredResumeRow): Promise<Tailored
     resumeId: row.baseResumeId,
     status: row.status,
     progress: null,
+    reportId: row.reportId,
     resume: resumeStore ? toResumeSummaryView(resumeStore, row.finalizedAt ?? row.completedAt ?? row.createdAt) : null,
     diff: row.diff,
     model: row.model,

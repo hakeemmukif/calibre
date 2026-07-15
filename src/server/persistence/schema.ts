@@ -71,6 +71,8 @@ type TailoredResumeDiffEntry = {
   before?: string;
   after?: string;
   reason: string;
+  requirement: string; // the CorrelationRow.requirement this edit serves
+  target: { index: number | null; bulletIndex: number | null };
 };
 
 type CorrelationReportRowJson = {

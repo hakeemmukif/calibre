@@ -1,9 +1,8 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { makeMockLlm } from "@/lib/llm/mock";
 import { insertJob, insertJobScore, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
-import { jobs, jobScores, resumes, sources, tailoredResumes, users } from "@/server/persistence/schema";
+import { correlationReports, jobs, jobScores, resumes, sources, tailoredResumes, users } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
-import { emitToStore } from "@/server/resume/resume-store";
 import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
@@ -11,43 +10,128 @@ vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
 
 const { startTailor, UnknownJobError, NoActiveResumeError } = await import("./index");
 const { tailoredResumesRepo } = await import("@/server/persistence/repos/tailoredResumes");
+const { applyEdits } = await import("./merge");
 const { get: getRunHandle, __resetForTests } = await import("@/server/runs/registry");
 
-// EMIT-shaped mock LLM output (TailorResultSchema.resume is
-// ResumeStoreEmitSchema — every field required, scalars nullable). The
-// persisted row's `structured` is the STORE shape runTailorJob normalizes it
-// into via emitToStore(), asserted below with the same helper.
-const TAILORED_RESUME_EMIT = {
+// Résumé fixture with two bullets on one role: one bullet ("Led distributed
+// payments platform") is real evidence a correlation report can cite as
+// `buried`; the second bullet lets "two edits in the same section" tests
+// target a distinct bulletIndex without inventing content.
+const BASE_STRUCTURED = {
   storeVersion: 2 as const,
+  extractionPath: "text" as const,
   name: "Jane Doe",
-  headline: null,
-  location: null,
-  summary: "Backend engineer, now framed around payments infra.",
   contact: [
     { label: "email", value: "jane@example.com" },
     { label: "location", value: "Kuala Lumpur, Malaysia" },
   ],
+  summary: "Backend engineer.",
   experience: [
     {
       company: "Acme Corp",
       title: "Senior Backend Engineer",
       dates: "2020–Present",
-      start: null,
-      end: null,
-      location: null,
-      bullets: ["Led the payments API rewrite"],
+      isCurrent: true,
+      bullets: ["Led distributed payments platform", "Mentored junior engineers"],
     },
   ],
   education: [],
-  skills: [{ label: "Languages", items: ["TypeScript", "Go"] }],
+  skills: [],
   projects: [],
   certifications: [],
   languages: [],
   sections: [],
 };
 
+type ReportRow = {
+  requirement: string;
+  term: string;
+  kind: "must" | "nice" | "responsibility";
+  status: "met" | "buried" | "gap";
+  evidence: string | null;
+  atsPresent: boolean;
+  reason: string;
+  note: string | null;
+};
+
+const REPORT_ROWS: ReportRow[] = [
+  {
+    requirement: "distributed systems experience",
+    term: "distributed",
+    kind: "must",
+    status: "buried",
+    evidence: "Led distributed payments platform",
+    atsPresent: true,
+    reason: "mentioned once, not emphasized",
+    note: null,
+  },
+  {
+    requirement: "Kubernetes",
+    term: "kubernetes",
+    kind: "nice",
+    status: "gap",
+    evidence: null,
+    atsPresent: false,
+    reason: "no evidence in résumé",
+    note: null,
+  },
+];
+
 const TAILOR_DIFF = [
-  { section: "summary", op: "modify" as const, before: "Backend engineer.", after: TAILORED_RESUME_EMIT.summary, reason: "emphasize payments overlap" },
+  {
+    section: "experience",
+    op: "modify" as const,
+    before: "Led distributed payments platform",
+    after: "Led distributed payments platform spanning a distributed systems architecture",
+    reason: "surface distributed systems experience",
+    requirement: "distributed systems experience",
+    target: { index: 0, bulletIndex: 0 },
+  },
+];
+
+const FABRICATED_DIFF = [
+  {
+    section: "experience",
+    op: "modify" as const,
+    before: "Led distributed payments platform",
+    after: "Led distributed payments platform, reducing latency by 40%",
+    reason: "quantify impact",
+    requirement: "distributed systems experience",
+    target: { index: 0, bulletIndex: 0 },
+  },
+];
+
+const GAP_DIFF = [
+  {
+    section: "experience",
+    op: "modify" as const,
+    before: "Led distributed payments platform",
+    after: "Led distributed payments platform using Kubernetes for orchestration",
+    reason: "claim Kubernetes",
+    requirement: "Kubernetes",
+    target: { index: 0, bulletIndex: 0 },
+  },
+];
+
+const TWO_EDIT_DIFF = [
+  {
+    section: "experience",
+    op: "modify" as const,
+    before: "Led distributed payments platform",
+    after: "Led distributed payments platform spanning a distributed systems architecture",
+    reason: "surface distributed systems experience",
+    requirement: "distributed systems experience",
+    target: { index: 0, bulletIndex: 0 },
+  },
+  {
+    section: "experience",
+    op: "modify" as const,
+    before: "Mentored junior engineers",
+    after: "Mentored junior engineers on distributed systems best practices",
+    reason: "surface distributed systems experience elsewhere too",
+    requirement: "distributed systems experience",
+    target: { index: 0, bulletIndex: 1 },
+  },
 ];
 
 async function waitForTerminal(id: string, timeoutMs = 2000): Promise<void> {
@@ -60,6 +144,38 @@ async function waitForTerminal(id: string, timeoutMs = 2000): Promise<void> {
   throw new Error(`tailor run ${id} did not reach a terminal state within the test timeout`);
 }
 
+async function insertCompletedReport(
+  jobId: string,
+  resumeId: string,
+  rows: ReportRow[] = REPORT_ROWS,
+) {
+  const [row] = await state.testDb
+    .insert(correlationReports)
+    .values({
+      userId: BOOTSTRAP_ADMIN_ID,
+      jobId,
+      resumeId,
+      rows,
+      semantic: {
+        met: rows.filter((r) => r.status === "met").length,
+        buried: rows.filter((r) => r.status === "buried").length,
+        gap: rows.filter((r) => r.status === "gap").length,
+        total: rows.length,
+      },
+      ats: {
+        present: rows.filter((r) => r.atsPresent).length,
+        total: rows.length,
+        missing: rows.filter((r) => !r.atsPresent).map((r) => r.term),
+      },
+      status: "completed",
+      model: "test-model",
+      costUsd: 0.01,
+      completedAt: new Date(),
+    })
+    .returning();
+  return row;
+}
+
 describe("startTailor", () => {
   beforeAll(async () => {
     state.testDb = await createTestDb();
@@ -68,6 +184,7 @@ describe("startTailor", () => {
   afterEach(async () => {
     __resetForTests();
     await state.testDb.delete(tailoredResumes);
+    await state.testDb.delete(correlationReports);
     await state.testDb.delete(jobScores);
     await state.testDb.delete(jobs);
     await state.testDb.delete(resumes);
@@ -95,18 +212,15 @@ describe("startTailor", () => {
     await expect(startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id })).rejects.toBeInstanceOf(NoActiveResumeError);
   });
 
-  it("returns a queued draft immediately, then completes async with structured + diff", async () => {
+  it("returns a queued draft immediately, then completes async with a report-driven diff[] carrying requirement+target, structured derived via applyEdits", async () => {
     const source = await insertSource(state.testDb);
     const job = await insertJob(state.testDb, source.id);
-    const resume = await insertResume(state.testDb, { isActive: true });
-    await insertJobScore(state.testDb, job.id, resume.id, {
-      jdFacts: { title: "Backend Engineer", mustHaves: ["payments"], niceToHaves: [], responsibilities: [], redFlags: [] },
-      gaps: [{ tone: "warn", k: "payments", v: "No direct payments experience listed" }],
-    });
+    const resume = await insertResume(state.testDb, { isActive: true, structured: BASE_STRUCTURED });
+    const report = await insertCompletedReport(job.id, resume.id);
 
-    const llm = makeMockLlm({ tailor: { resume: TAILORED_RESUME_EMIT, diff: TAILOR_DIFF } });
+    const llm = makeMockLlm({ tailor: { diff: TAILOR_DIFF } });
 
-    const draft = await startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id }, { llm });
+    const draft = await startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id, reportId: report.id }, { llm });
     expect(draft.status).toBe("queued");
     expect(draft.resume).toBeNull();
     expect(draft.diff).toEqual([]);
@@ -116,57 +230,153 @@ describe("startTailor", () => {
 
     const row = await tailoredResumesRepo.getById(draft.id, BOOTSTRAP_ADMIN_ID);
     expect(row?.status).toBe("completed");
-    expect(row?.structured).toEqual(emitToStore(TAILORED_RESUME_EMIT, "text"));
+    expect(row?.reportId).toBe(report.id);
     expect(row?.diff).toEqual(TAILOR_DIFF);
+    expect(row?.diff[0].requirement).toBe("distributed systems experience");
+    expect(row?.diff[0].target).toEqual({ index: 0, bulletIndex: 0 });
+    expect(row?.structured).toEqual(applyEdits(BASE_STRUCTURED, TAILOR_DIFF));
     expect(row?.model).toBe("mock");
     expect(row?.completedAt).not.toBeNull();
   });
 
-  it("carries forward the base résumé's extractionPath (vision) into the persisted tailored store", async () => {
+  it("carries forward the base résumé's extractionPath (vision) into the derived structured store", async () => {
+    const visionResumeStructured = { ...BASE_STRUCTURED, extractionPath: "vision" as const };
     const source = await insertSource(state.testDb);
     const job = await insertJob(state.testDb, source.id);
-    const resume = await insertResume(state.testDb, {
-      isActive: true,
-      structured: {
-        storeVersion: 2,
-        extractionPath: "vision",
-        name: "Jane Doe",
-        contact: [{ label: "email", value: "jane@example.com" }],
-        summary: "Backend engineer.",
-        experience: [],
-        education: [],
-        skills: [],
-        projects: [],
-        certifications: [],
-        languages: [],
-        sections: [],
-      },
-    });
+    const resume = await insertResume(state.testDb, { isActive: true, structured: visionResumeStructured });
+    const report = await insertCompletedReport(job.id, resume.id);
+
+    const llm = makeMockLlm({ tailor: { diff: TAILOR_DIFF } });
+
+    const draft = await startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id, reportId: report.id }, { llm });
+    await waitForTerminal(draft.id);
+
+    const row = await tailoredResumesRepo.getById(draft.id, BOOTSTRAP_ADMIN_ID);
+    expect(row?.status).toBe("completed");
+    expect(row?.structured?.extractionPath).toBe("vision");
+    expect(row?.structured).toEqual(applyEdits(visionResumeStructured, TAILOR_DIFF));
+  });
+
+  it("computes its own correlation when no reportId is given (kills the staleness bug) and persists the resolved reportId", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id);
+    const resume = await insertResume(state.testDb, { isActive: true, structured: BASE_STRUCTURED });
     await insertJobScore(state.testDb, job.id, resume.id, {
-      jdFacts: { title: "Backend Engineer", mustHaves: ["payments"], niceToHaves: [], responsibilities: [], redFlags: [] },
-      gaps: [{ tone: "warn", k: "payments", v: "No direct payments experience listed" }],
+      jdFacts: { title: "Backend Engineer", mustHaves: ["distributed systems experience"], niceToHaves: [], responsibilities: [], redFlags: [] },
     });
 
-    const llm = makeMockLlm({ tailor: { resume: TAILORED_RESUME_EMIT, diff: TAILOR_DIFF } });
+    const llm = makeMockLlm({
+      correlate: {
+        rows: [{ id: 0, term: "distributed", status: "buried", evidence: "Led distributed payments platform", reason: "r", note: null }],
+      },
+      tailor: { diff: TAILOR_DIFF },
+    });
 
     const draft = await startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id }, { llm });
     await waitForTerminal(draft.id);
 
     const row = await tailoredResumesRepo.getById(draft.id, BOOTSTRAP_ADMIN_ID);
     expect(row?.status).toBe("completed");
-    expect(row?.structured).toEqual(emitToStore(TAILORED_RESUME_EMIT, "vision"));
-    expect(row?.structured?.extractionPath).toBe("vision");
+    expect(row?.reportId).not.toBeNull();
+    expect(row?.diff).toEqual(TAILOR_DIFF);
+    expect(row?.structured).toEqual(applyEdits(BASE_STRUCTURED, TAILOR_DIFF));
   });
 
-  it("emits SSE progress stages in order analyze -> rewrite -> render -> done", async () => {
+  it("fails the run loudly (fabrication guard) when an edit's `after` introduces a metric absent from the base résumé", async () => {
     const source = await insertSource(state.testDb);
     const job = await insertJob(state.testDb, source.id);
-    await insertResume(state.testDb, { isActive: true });
+    const resume = await insertResume(state.testDb, { isActive: true, structured: BASE_STRUCTURED });
+    const report = await insertCompletedReport(job.id, resume.id);
 
-    const llm = makeMockLlm({ tailor: { resume: TAILORED_RESUME_EMIT, diff: TAILOR_DIFF } });
+    const llm = makeMockLlm({ tailor: { diff: FABRICATED_DIFF } });
+
+    const draft = await startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id, reportId: report.id }, { llm });
+    await waitForTerminal(draft.id);
+
+    const row = await tailoredResumesRepo.getById(draft.id, BOOTSTRAP_ADMIN_ID);
+    expect(row?.status).toBe("failed");
+  });
+
+  it("fails the run loudly (gap guard) when an edit's requirement is a `gap` row from the report", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id);
+    const resume = await insertResume(state.testDb, { isActive: true, structured: BASE_STRUCTURED });
+    const report = await insertCompletedReport(job.id, resume.id);
+
+    const llm = makeMockLlm({ tailor: { diff: GAP_DIFF } });
+
+    const draft = await startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id, reportId: report.id }, { llm });
+    await waitForTerminal(draft.id);
+
+    const row = await tailoredResumesRepo.getById(draft.id, BOOTSTRAP_ADMIN_ID);
+    expect(row?.status).toBe("failed");
+  });
+
+  it("fails the run loudly when reportId belongs to a different user (UnknownReportError, no existence leak)", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id);
+    const resume = await insertResume(state.testDb, { isActive: true, structured: BASE_STRUCTURED });
+    const [userB] = await state.testDb
+      .insert(users)
+      .values({ email: "user-b-unknownreport@example.com", passwordHash: "h", role: "user" })
+      .returning();
+    const [foreignReport] = await state.testDb
+      .insert(correlationReports)
+      .values({
+        userId: userB.id,
+        jobId: job.id,
+        resumeId: resume.id,
+        rows: [],
+        status: "completed",
+        model: "test-model",
+        completedAt: new Date(),
+      })
+      .returning();
+
+    const llm = makeMockLlm({ tailor: { diff: TAILOR_DIFF } });
+
+    const draft = await startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id, reportId: foreignReport.id }, { llm });
+    await waitForTerminal(draft.id);
+
+    const row = await tailoredResumesRepo.getById(draft.id, BOOTSTRAP_ADMIN_ID);
+    expect(row?.status).toBe("failed");
+  });
+
+  it("fails the run loudly when reportId points to a report that has not completed yet", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id);
+    const resume = await insertResume(state.testDb, { isActive: true, structured: BASE_STRUCTURED });
+    const [queuedReport] = await state.testDb
+      .insert(correlationReports)
+      .values({
+        userId: BOOTSTRAP_ADMIN_ID,
+        jobId: job.id,
+        resumeId: resume.id,
+        rows: [],
+        status: "queued",
+        model: "test-model",
+      })
+      .returning();
+
+    const llm = makeMockLlm({ tailor: { diff: TAILOR_DIFF } });
+
+    const draft = await startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id, reportId: queuedReport.id }, { llm });
+    await waitForTerminal(draft.id);
+
+    const row = await tailoredResumesRepo.getById(draft.id, BOOTSTRAP_ADMIN_ID);
+    expect(row?.status).toBe("failed");
+  });
+
+  it("emits SSE progress stages in order correlate -> rewrite -> render -> done", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id);
+    const resume = await insertResume(state.testDb, { isActive: true, structured: BASE_STRUCTURED });
+    const report = await insertCompletedReport(job.id, resume.id);
+
+    const llm = makeMockLlm({ tailor: { diff: TAILOR_DIFF } });
 
     const events: { event: string; stage?: string }[] = [];
-    const draft = await startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id }, { llm });
+    const draft = await startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id, reportId: report.id }, { llm });
     const handle = getRunHandle(draft.id);
     expect(handle).toBeDefined();
 
@@ -178,30 +388,27 @@ describe("startTailor", () => {
     });
 
     const progressStages = events.filter((e) => e.event === "progress").map((e) => e.stage);
-    expect(progressStages).toEqual(["analyze", "rewrite", "render"]);
+    expect(progressStages).toEqual(["correlate", "rewrite", "render"]);
     expect(events[events.length - 1].event).toBe("done");
   });
 
-  // task-B8 review pass, Finding 1: two diff entries naming the same section
-  // must be rejected (fail loud) — otherwise finalizeTailor's
-  // `merged[section] = tailored[section]` would leak whichever entry was
-  // REJECTED into the merge, since it can't tell which entry's content is
-  // "the" tailored section.
-  it("fails the run loudly (not a silent merge) when the model emits two diff entries for the same section", async () => {
+  // Task 1/9 retired the one-entry-per-section constraint: each diff entry
+  // now addresses a distinct target.index/bulletIndex, so two edits naming
+  // the same section are valid as long as they target distinct bullets.
+  it("allows two edits in the same section when they target distinct bullets", async () => {
     const source = await insertSource(state.testDb);
     const job = await insertJob(state.testDb, source.id);
-    await insertResume(state.testDb, { isActive: true });
+    const resume = await insertResume(state.testDb, { isActive: true, structured: BASE_STRUCTURED });
+    const report = await insertCompletedReport(job.id, resume.id);
 
-    const duplicateSectionDiff = [
-      { section: "experience", op: "modify" as const, before: "old bullet A", after: "new bullet A", reason: "surface relevant work" },
-      { section: "experience", op: "modify" as const, before: "old bullet B", after: "new bullet B", reason: "surface more relevant work" },
-    ];
-    const llm = makeMockLlm({ tailor: { resume: TAILORED_RESUME_EMIT, diff: duplicateSectionDiff } });
+    const llm = makeMockLlm({ tailor: { diff: TWO_EDIT_DIFF } });
 
-    const draft = await startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id }, { llm });
+    const draft = await startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id, reportId: report.id }, { llm });
     await waitForTerminal(draft.id);
 
     const row = await tailoredResumesRepo.getById(draft.id, BOOTSTRAP_ADMIN_ID);
-    expect(row?.status).toBe("failed");
+    expect(row?.status).toBe("completed");
+    expect(row?.diff).toEqual(TWO_EDIT_DIFF);
+    expect(row?.structured).toEqual(applyEdits(BASE_STRUCTURED, TWO_EDIT_DIFF));
   });
 });

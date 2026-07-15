@@ -49,18 +49,18 @@ tasks:
     temperature: 0.3
   tailor:
     model: openai/gpt-oss-120b
-    # 12k, not 4k: the tailor task emits a FULL ResumeStore JSON + diff, and
-    # gpt-oss-120b spends part of the max_tokens budget on reasoning tokens —
-    # a live run at 4k truncated mid-JSON ("Unparseable JSON in completion",
-    # 2026-07-12). ~12k output ≈ $0.0018 at this model's pricing.
+    # 12k, not 4k: report-driven edits-only (design §6) still asks the model
+    # to reason over every candidate requirement row before emitting diff[],
+    # and gpt-oss-120b spends part of the max_tokens budget on reasoning
+    # tokens — a live run at 4k truncated mid-JSON ("Unparseable JSON in
+    # completion", 2026-07-12). ~12k output ≈ $0.0018 at this model's pricing.
     maxTokens: 12000
     temperature: 0.4
-    # NO strict:true for tailor — and do NOT add it. The `resume` field now
-    # uses the EMIT (nullable-safe) schema, but TailorResultSchema also carries
-    # `diff[]`, whose entries have `before?`/`after?` optionals (correct — an
-    # "add" has no `before`). Strict mode drops optionals from `required` and
-    # 400s the whole call, so tailor stays non-strict; the EMIT resume schema
-    # under strict:false + emitToStore already fixes the optional-drop bug.
+    # NO strict:true for tailor — and do NOT add it. TailorResultSchema's
+    # `diff[]` entries have `before?`/`after?` optionals (correct — an "add"
+    # has no `before`, a "remove" has no `after`). Strict mode drops
+    # optionals from `required` and 400s the whole call, so tailor stays
+    # non-strict.
   correlate:
     # Requirement-vs-résumé classification: cheap tier. Emits one row per JD
     # requirement (term/status/evidence/reason/note); no strict — evidence/note

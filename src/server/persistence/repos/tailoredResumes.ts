@@ -31,6 +31,10 @@ export function createTailoredResumesRepo(db: Db) {
     // B8 startTailor's async completion: persists the LLM's tailored
     // ResumeStore + diff[] + the model/cost that actually produced it, and
     // flips status -> 'completed'. `finalizedAt` is untouched (still null).
+    // `reportId` is optional: a row started WITH a reportId already carries
+    // it from insert(); a row started without one gets it filled in here
+    // once startTailor's report resolution (index.ts) has run `correlate`
+    // and knows which report drove the rewrite.
     // GLOBAL-BY-DECISION: same as updateStatus above — internal job-engine
     // write keyed on a row this process already owns.
     async complete(
@@ -41,6 +45,7 @@ export function createTailoredResumesRepo(db: Db) {
         model: string;
         costUsd: number;
         completedAt: Date;
+        reportId?: TailoredResumeRow["reportId"];
       },
     ): Promise<TailoredResumeRow | null> {
       const [updated] = await db

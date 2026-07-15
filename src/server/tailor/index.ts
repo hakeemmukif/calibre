@@ -2,26 +2,33 @@
 // row, §4 "F6 Tailor"). Same run/SSE pattern as B5/B6 search
 // (server/runs/registry.ts): `startTailor` returns the queued draft
 // immediately and completes the LLM call asynchronously, emitting
-// `analyze -> rewrite -> render -> done` progress. LaTeX is DROPPED — the
-// model returns a tailored `ResumeStore` JSON + a `diff[]`, never HTML.
+// `correlate -> rewrite -> render -> done` progress. The rewrite is now
+// report-driven (tailor-correlation-engine design §6): it is constrained to
+// a CorrelationReport (`correlate.ts`) rather than the raw jdFacts/gaps of
+// the latest job_scores row — this also fixes the résumé-staleness bug
+// (design §7), since the report was computed against the SAME résumé this
+// run tailors. The model returns EDITS ONLY (`diff[]`, addressable at
+// bullet granularity); the tailored `structured` is always DERIVED
+// server-side via `applyEdits`, never emitted by the model directly.
 import { z } from "zod";
 import { getLlm, type LlmClient } from "@/lib/llm/client";
 import { modelFor } from "@/lib/llm/models";
 import { renderTemplate } from "@/lib/llm/templates";
 import { htmlToPdf } from "@/lib/pdf";
 import { renderCvHtml } from "@/lib/resume-render";
-import { jobScoresRepo } from "@/server/persistence/repos/jobScores";
 import { jobsRepo } from "@/server/persistence/repos/jobs";
 import { resumesRepo, type ResumeRow } from "@/server/persistence/repos/resumes";
 import { tailoredResumesRepo, type TailoredResumeRow } from "@/server/persistence/repos/tailoredResumes";
+import { correlationReportsRepo, type CorrelationReportRow } from "@/server/persistence/repos/correlationReports";
 import { create, type RunHandle } from "@/server/runs/registry";
-import { emitToStore, ResumeStoreEmitSchema } from "@/server/resume/resume-store";
 import { TailoredResume } from "@/types";
 import { toTailoredResume } from "./assemble";
-import { NoActiveResumeError, UnknownJobError } from "./errors";
-import { applyAcceptedDiff, DiffEntrySchema } from "./merge";
+import { correlate, type CorrelateDeps } from "./correlate";
+import { fabricationViolations } from "./correlate-metrics";
+import { NoActiveResumeError, UnknownJobError, UnknownReportError } from "./errors";
+import { applyAcceptedDiff, applyEdits, DiffEntrySchema } from "./merge";
 
-export { NoActiveResumeError, UnknownJobError } from "./errors";
+export { NoActiveResumeError, UnknownJobError, UnknownReportError } from "./errors";
 
 export class UnknownTailorIdError extends Error {
   constructor(id: string) {
@@ -43,47 +50,23 @@ export class RunNotReadyError extends Error {
 // can keep importing these from "@/server/tailor" (this module's barrel).
 export { InvalidDiffIndexError, UnknownDiffSectionError } from "./merge";
 
-// The `tailor` template's response_format schema — a tailored ResumeStore +
-// the changes list. Escalate (don't invent op values) if this can't express
-// what the template actually returns.
-//
-// `resume` is the EMIT schema (every field required, scalars nullable) —
-// the same jdFacts.ts/resume-extract fix for gpt-oss-120b dropping
-// `.optional()` fields under strict:false. runTailorJob normalizes the
-// parsed result via emitToStore() before persisting; strict:true stays OFF
-// for this task (config/models.yml) because diff[]'s before?/after?
-// optionals are semantically absent-on-add/remove, not a model-drop bug —
-// they'd 400 under strict.
-//
-// task-B8 review pass, Finding 1: a model response with two diff entries
-// naming the SAME section is rejected here (fail loud) rather than merged —
-// applyAcceptedDiff's `merged[section] = tailored[section]` copies the
-// WHOLE tailored section for an accepted index, so two same-section entries
-// (accept one, reject the other) would leak the rejected entry's content
-// into the merge. config/templates/tailor.md instructs the model to emit
-// exactly one entry per section.
-export const TailorResultSchema = z
-  .object({
-    resume: ResumeStoreEmitSchema,
-    diff: z.array(DiffEntrySchema),
-  })
-  .superRefine((value, ctx) => {
-    const seen = new Set<string>();
-    for (const entry of value.diff) {
-      if (seen.has(entry.section)) {
-        ctx.addIssue({
-          code: "custom",
-          message: `diff[] has more than one entry for section "${entry.section}" — exactly one entry per section is required (config/templates/tailor.md).`,
-          path: ["diff"],
-        });
-      }
-      seen.add(entry.section);
-    }
-  });
+// The `tailor` template's response_format schema — EDITS ONLY (design §6):
+// the model never emits a full tailored ResumeStore; the tailored
+// `structured` is always derived server-side by applying `diff[]` to the
+// base résumé (`applyEdits`), so the model cannot rewrite un-targeted
+// content and every change is an addressable, reviewable edit. Multiple
+// edits per section are valid — each targets a distinct `target.index`/
+// `target.bulletIndex`, so the one-entry-per-section constraint (a
+// `merge.ts` same-section merge hazard that no longer exists post-Task-9)
+// is retired.
+export const TailorResultSchema = z.object({
+  diff: z.array(DiffEntrySchema),
+});
 export type TailorResult = z.infer<typeof TailorResultSchema>;
 
 export interface StartTailorInput {
   jobId: string;
+  reportId?: string;
 }
 
 export interface StartTailorDeps {
@@ -104,6 +87,7 @@ export async function startTailor(
     userId,
     jobId: input.jobId,
     baseResumeId: resumeRow.id,
+    reportId: input.reportId ?? null,
     diff: [],
     status: "queued",
     model: modelFor("tailor").model,
@@ -129,6 +113,54 @@ async function failRun(id: string, handle: RunHandle, err: unknown): Promise<voi
   handle.emit({ event: "error", data: { error: { code: "INTERNAL", message } } });
 }
 
+// A poll loop is a new pattern for this feature (correlate's own async job
+// engine has no analogue elsewhere in server/*) because tailor now needs to
+// wait on a DIFFERENT job's (correlate's) terminal state rather than just
+// its own — mirrors the wait-for-terminal-status idiom `correlate.test.ts`
+// uses from outside the process, but from inside runTailorJob instead.
+// Bounded (fail loud, not an infinite hang) at roughly the LLM SDK's own
+// per-call ceiling (src/lib/llm/client.ts's OpenAI default timeout is 10
+// minutes) — a shorter cap could abandon a correlate run that was always
+// going to finish.
+const CORRELATE_POLL_TIMEOUT_MS = 10 * 60 * 1000;
+const CORRELATE_POLL_INTERVAL_MS = 25;
+
+async function pollCorrelationUntilTerminal(id: string, userId: string): Promise<CorrelationReportRow> {
+  const deadline = Date.now() + CORRELATE_POLL_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const report = await correlationReportsRepo.getById(id, userId);
+    if (report?.status === "completed") return report;
+    if (report?.status === "failed") {
+      throw new Error(`correlation report ${id} failed — cannot tailor from a failed report.`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, CORRELATE_POLL_INTERVAL_MS));
+  }
+  throw new Error(`correlation report ${id} did not complete within ${CORRELATE_POLL_TIMEOUT_MS}ms.`);
+}
+
+// Report resolution (design §6 "resolve the report"): a caller-supplied
+// `reportId` must already be a COMPLETED report this user owns — rewriting
+// off a queued/running/failed report would constrain the model with partial
+// or absent rows. With no `reportId`, tailor computes its own correlation
+// fresh against the SAME résumé it is about to rewrite (design §7 — this is
+// what kills the staleness bug: no reuse of another résumé's stale
+// artifact) and waits for it to land before continuing.
+async function resolveReport(row: TailoredResumeRow, deps: CorrelateDeps): Promise<CorrelationReportRow> {
+  if (row.reportId) {
+    const report = await correlationReportsRepo.getById(row.reportId, row.userId);
+    if (!report) throw new UnknownReportError(row.reportId);
+    if (report.status !== "completed") {
+      throw new Error(
+        `correlation report ${row.reportId} is not completed (status: ${report.status}) — cannot tailor from an incomplete report.`,
+      );
+    }
+    return report;
+  }
+
+  const started = await correlate(row.userId, { jobId: row.jobId }, deps);
+  return pollCorrelationUntilTerminal(started.id, row.userId);
+}
+
 async function runTailorJob(
   row: TailoredResumeRow,
   resumeRow: ResumeRow,
@@ -139,32 +171,54 @@ async function runTailorJob(
 
   handle.emit({
     event: "progress",
-    data: { stage: "analyze", current: 0, total: 3, label: "Analyzing job requirements…" },
+    data: { stage: "correlate", current: 0, total: 3, label: "Correlating résumé to job requirements…" },
   });
 
-  const scoreRow = await jobScoresRepo.getLatestByJobId(row.jobId);
-  const jdFactsText = scoreRow?.jdFacts
-    ? JSON.stringify(scoreRow.jdFacts)
-    : "Not available — this job has not been scored yet.";
-  const gapsText = scoreRow?.gaps
-    ? JSON.stringify(scoreRow.gaps)
-    : "Not available — this job has not been scored yet.";
+  const report = await resolveReport(row, deps);
 
   handle.emit({
     event: "progress",
     data: { stage: "rewrite", current: 1, total: 3, label: "Rewriting résumé…" },
   });
 
+  // Candidates = the report's rewrite targets (design §6: only `buried`/`met`
+  // rows are candidates); `gap` rows are surfaced separately as an explicit
+  // do-not-fabricate list — the template instructs the model never to write
+  // an edit for one, and the guard below fails loud if it does anyway.
+  const candidates = report.rows
+    .filter((r) => r.status !== "gap")
+    .map((r) => ({ requirement: r.requirement, term: r.term, status: r.status, evidence: r.evidence, reason: r.reason }));
+  const gaps = report.rows.filter((r) => r.status === "gap").map((r) => r.requirement);
+
   const llm = deps.llm ?? getLlm();
   const result = await llm.complete({
     task: "tailor",
     messages: renderTemplate("tailor", {
       resume: JSON.stringify(resumeRow.structured),
-      jdFacts: jdFactsText,
-      gaps: gapsText,
+      report: JSON.stringify({ candidates, gaps }),
     }),
     responseSchema: TailorResultSchema,
   });
+
+  // Fabrication guard (design §6, deterministic, fail-loud): an edit's
+  // `after` may not introduce a number/metric absent from the base résumé.
+  const fabrications = fabricationViolations(result.data.diff, resumeRow.structured);
+  if (fabrications.length > 0) {
+    throw new Error(`tailor: fabrication guard rejected the rewrite — ${fabrications.join("; ")}`);
+  }
+
+  // Gap guard: a `gap` requirement must never be written into content — the
+  // résumé genuinely cannot support it (verified by correlate.ts's
+  // verifyEvidence), so an edit citing one is itself a fabrication risk the
+  // numeric-atom check above cannot catch (e.g. an invented qualitative
+  // claim with no number in it).
+  const gapRequirements = new Set(gaps);
+  const gapEdits = result.data.diff.filter((e) => gapRequirements.has(e.requirement));
+  if (gapEdits.length > 0) {
+    throw new Error(
+      `tailor: rewrite wrote an edit for gap requirement(s) ${gapEdits.map((e) => `"${e.requirement}"`).join(", ")} — gaps must never be written into content.`,
+    );
+  }
 
   handle.emit({
     event: "progress",
@@ -173,11 +227,12 @@ async function runTailorJob(
 
   const completedAt = new Date();
   const completed = await tailoredResumesRepo.complete(row.id, {
-    structured: emitToStore(result.data.resume, resumeRow.structured.extractionPath),
+    structured: applyEdits(resumeRow.structured, result.data.diff),
     diff: result.data.diff,
     model: result.model,
     costUsd: result.costUsd,
     completedAt,
+    reportId: report.id,
   });
   if (!completed) throw new Error(`tailored_resumes row ${row.id} vanished before completion could be recorded`);
 
@@ -206,7 +261,7 @@ export async function finalizeTailor(id: string, userId: string, acceptedIndices
     throw new Error(`tailored_resumes ${id}: base résumé ${row.baseResumeId} no longer exists`);
   }
 
-  applyAcceptedDiff(baseResumeRow.structured, row.structured, row.diff, acceptedIndices);
+  applyAcceptedDiff(baseResumeRow.structured, row.diff, acceptedIndices);
 
   const updated = await tailoredResumesRepo.finalize(id, { acceptedIndices, finalizedAt: new Date() });
   if (!updated) throw new Error(`tailored_resumes ${id} vanished during finalize`);
@@ -228,7 +283,7 @@ export async function renderTailorPdf(id: string, userId: string): Promise<Buffe
     throw new Error(`tailored_resumes ${id}: base résumé ${row.baseResumeId} no longer exists`);
   }
 
-  const merged = applyAcceptedDiff(baseResumeRow.structured, row.structured, row.diff, row.acceptedIndices);
+  const merged = applyAcceptedDiff(baseResumeRow.structured, row.diff, row.acceptedIndices);
   const html = renderCvHtml(merged);
   return htmlToPdf(html);
 }

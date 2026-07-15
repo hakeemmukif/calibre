@@ -14,3 +14,13 @@ export class NoActiveResumeError extends Error {
     this.name = "NoActiveResumeError";
   }
 }
+
+// startTailor's report resolution (index.ts): a caller-supplied `reportId`
+// that doesn't resolve to a correlation_reports row this user owns (never
+// created, or another user's — no existence leak, mirrors UnknownJobError).
+export class UnknownReportError extends Error {
+  constructor(reportId: string) {
+    super(`No correlation report with id "${reportId}".`);
+    this.name = "UnknownReportError";
+  }
+}
