@@ -62,6 +62,16 @@ describe("fuzzyContains", () => {
     // alphabetic + length>=4 guard must keep digits on exact-membership only.
     expect(fuzzyContains("completed migration in 3 days", "completed migration in 5 days")).toBe(false);
   });
+
+  it("does not let a hallucinated skill pass as an interior substring of a real haystack token", () => {
+    // "Java" is a substring of "JavaScript" — the blob fallback must not let
+    // this pass as a faithful de-scramble repair.
+    expect(fuzzyContains("proficient in JavaScript", "Java")).toBe(false);
+  });
+
+  it("still matches a token that is present as its own whole haystack token", () => {
+    expect(fuzzyContains("Skilled in Java, JavaScript", "Java")).toBe(true);
+  });
 });
 
 describe("conceptRecall", () => {

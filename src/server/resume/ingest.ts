@@ -26,6 +26,12 @@ const PDF_MIME = "application/pdf";
 const VISION_TEXT_THRESHOLD = 400;
 const VISION_MAX_PAGES = 2;
 
+// Below this many extracted chars, the TEXT path (non-PDF, so not vision-
+// eligible — e.g. a DOCX that yielded almost nothing) has too little
+// material to structure; under strict:true the model is pushed to fabricate
+// a derivable skeleton from near-nothing rather than failing loud.
+const MIN_TEXT_LENGTH = 100;
+
 // Vision-path English gate runs on the STRUCTURED result, not `rawText`
 // (which is near-empty for an image-only PDF and carries no language
 // signal) — concatenates the store's own text fields for assertEnglish.
@@ -63,6 +69,7 @@ function buildExtractionTelemetry(store: ResumeStore) {
     dateMissCount: store.experience.filter(
       (e) => e.dates.trim().length > 0 && e.start === undefined && e.end === undefined,
     ).length,
+    emptyDatesCount: store.experience.filter((e) => e.dates.trim().length === 0).length,
   };
 }
 
@@ -91,6 +98,11 @@ export interface IngestResumeDeps {
 }
 
 function rowToResumeView(row: ResumeRow): Resume {
+  if (row.structured?.storeVersion !== 2) {
+    throw new Error(
+      `resumes row ${row.id} predates v2 (storeVersion=${row.structured?.storeVersion ?? "none"}) — run the reextract migration (DATABASE_URL=... npx tsx src/server/resume/reextract.ts) or re-upload the résumé`,
+    );
+  }
   const atsScore = row.atsScore;
   if (atsScore === null) {
     throw new Error("resumes.atsScore is null — every row inserted by ingestResume sets it explicitly");
@@ -130,6 +142,9 @@ export async function ingestResume(
     // instead — after the LLM call, not before.
     assertEnglish(concatStoreText(structured));
   } else {
+    if (rawText.trim().length < MIN_TEXT_LENGTH) {
+      throw new ParseFailedError("no readable text extracted — export as a PDF or paste the résumé text");
+    }
     // English-first MVP: reject non-English résumés loudly, before the LLM
     // call, rather than mis-structuring text the extraction model (and
     // pdf.js CJK handling) was never validated against.

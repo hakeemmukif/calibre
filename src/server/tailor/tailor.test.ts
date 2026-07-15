@@ -122,6 +122,42 @@ describe("startTailor", () => {
     expect(row?.completedAt).not.toBeNull();
   });
 
+  it("carries forward the base résumé's extractionPath (vision) into the persisted tailored store", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id);
+    const resume = await insertResume(state.testDb, {
+      isActive: true,
+      structured: {
+        storeVersion: 2,
+        extractionPath: "vision",
+        name: "Jane Doe",
+        contact: [{ label: "email", value: "jane@example.com" }],
+        summary: "Backend engineer.",
+        experience: [],
+        education: [],
+        skills: [],
+        projects: [],
+        certifications: [],
+        languages: [],
+        sections: [],
+      },
+    });
+    await insertJobScore(state.testDb, job.id, resume.id, {
+      jdFacts: { title: "Backend Engineer", mustHaves: ["payments"], niceToHaves: [], responsibilities: [], redFlags: [] },
+      gaps: [{ tone: "warn", k: "payments", v: "No direct payments experience listed" }],
+    });
+
+    const llm = makeMockLlm({ tailor: { resume: TAILORED_RESUME_EMIT, diff: TAILOR_DIFF } });
+
+    const draft = await startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id }, { llm });
+    await waitForTerminal(draft.id);
+
+    const row = await tailoredResumesRepo.getById(draft.id, BOOTSTRAP_ADMIN_ID);
+    expect(row?.status).toBe("completed");
+    expect(row?.structured).toEqual(emitToStore(TAILORED_RESUME_EMIT, "vision"));
+    expect(row?.structured?.extractionPath).toBe("vision");
+  });
+
   it("emits SSE progress stages in order analyze -> rewrite -> render -> done", async () => {
     const source = await insertSource(state.testDb);
     const job = await insertJob(state.testDb, source.id);

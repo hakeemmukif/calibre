@@ -184,7 +184,7 @@ async function runTailorJob(
 
   const completedAt = new Date();
   const completed = await tailoredResumesRepo.complete(row.id, {
-    structured: emitToStore(result.data.resume, "text"),
+    structured: emitToStore(result.data.resume, resumeRow.structured.extractionPath),
     diff: result.data.diff,
     model: result.model,
     costUsd: result.costUsd,

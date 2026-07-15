@@ -13,15 +13,15 @@ résumé section, the operation ("add" | "remove" | "modify"), the
 before/after text where applicable, and a one-line reason tied to the job
 facts or a gap.
 
-The tailored résumé must cover all 12 concepts, in this shape: name,
-headline, location, summary, contact[] (label/value), experience[]
-(company/title/dates/start/end/location/bullets), education[]
-(school/credential/dates/details), skills[] (label/items), projects[]
-(name/url/bullets), certifications[] (name/issuer/year), languages[]
-(language/proficiency), sections[] (heading/items). Use `null` for any
-scalar the résumé lacks — never omit a field. Never fabricate a value for a
-concept the résumé doesn't have; leave arrays empty and scalars null
-instead.
+The tailored résumé must include `storeVersion: 2` and cover all 12
+concepts, in this shape: name, headline, location, summary, contact[]
+(label/value), experience[] (company/title/dates/start/end/location/
+bullets), education[] (school/credential/dates/details), skills[]
+(label/items), projects[] (name/url/bullets), certifications[]
+(name/issuer/year), languages[] (language/proficiency), sections[]
+(heading/items). Use `null` for any scalar the résumé lacks — never omit a
+field. Never fabricate a value for a concept the résumé doesn't have; leave
+arrays empty and scalars null instead.
 
 Emit EXACTLY ONE change entry per résumé section — never two entries naming
 the same section. If you want to make several edits within one section

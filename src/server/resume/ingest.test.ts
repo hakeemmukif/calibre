@@ -7,14 +7,14 @@ import type { LlmClient } from "@/lib/llm/client";
 import { RESUME_STORE, RESUME_STORE_VISION } from "@/lib/llm/scripted-fixtures";
 import type { ResumeRow } from "@/server/persistence/repos/resumes";
 import { ParseFailedError } from "./derive-view";
-import { ingestResume } from "./ingest";
+import { getActiveResume, ingestResume } from "./ingest";
 import { NonEnglishResumeError } from "./language";
 
 const FIXTURES = join(__dirname, "__fixtures__");
 
-const state = vi.hoisted(() => ({ insertReplacingActive: vi.fn(), rasterizePdfPages: vi.fn() }));
+const state = vi.hoisted(() => ({ insertReplacingActive: vi.fn(), getActive: vi.fn(), rasterizePdfPages: vi.fn() }));
 vi.mock("@/server/persistence/repos/resumes", () => ({
-  resumesRepo: { insertReplacingActive: state.insertReplacingActive },
+  resumesRepo: { insertReplacingActive: state.insertReplacingActive, getActive: state.getActive },
 }));
 vi.mock("@/lib/rasterize", async () => {
   const actual = await vi.importActual<typeof import("@/lib/rasterize")>("@/lib/rasterize");
@@ -52,6 +52,32 @@ describe("ingestResume — English-first reject gate", () => {
     await expect(ingestResume("user-1", { text: BAHASA_MALAYSIA_RESUME }, { llm })).rejects.toThrow(
       NonEnglishResumeError,
     );
+    expect(complete).not.toHaveBeenCalled();
+  });
+});
+
+describe("rowToResumeView — v1-row read-boundary guard", () => {
+  beforeEach(() => {
+    state.getActive.mockReset();
+  });
+
+  it("throws an actionable reextract error for a stored row that predates v2 (storeVersion=1)", async () => {
+    state.getActive.mockResolvedValueOnce(fakeRow({ storeVersion: 1 }));
+    await expect(getActiveResume("user-1")).rejects.toThrow(/reextract/);
+  });
+
+  it("throws the same actionable error when storeVersion is absent entirely", async () => {
+    state.getActive.mockResolvedValueOnce(fakeRow({}));
+    await expect(getActiveResume("user-1")).rejects.toThrow(/reextract/);
+  });
+});
+
+describe("ingestResume — text-path minimum-text floor", () => {
+  it("throws ParseFailedError before any LLM call for near-empty extracted text", async () => {
+    const complete = vi.fn();
+    const llm = { complete } as unknown as LlmClient;
+
+    await expect(ingestResume("user-1", { text: "Too short" }, { llm })).rejects.toThrow(ParseFailedError);
     expect(complete).not.toHaveBeenCalled();
   });
 });
@@ -246,6 +272,32 @@ describe("ingestResume — extraction telemetry", () => {
     sections: [],
   };
 
+  const EMPTY_DATES_EMIT = {
+    storeVersion: 2,
+    name: "Jane Doe",
+    headline: "Senior Backend Engineer",
+    location: "Kuala Lumpur, Malaysia",
+    summary: "Backend engineer with experience in backend systems.",
+    contact: [{ label: "email", value: "jane@example.com" }],
+    experience: [
+      {
+        company: "Acme Co",
+        title: "Senior Backend Engineer",
+        dates: null,
+        start: null,
+        end: null,
+        location: null,
+        bullets: ["Led migration to Kubernetes"],
+      },
+    ],
+    education: [],
+    skills: [{ label: "Domain", items: ["Payments"] }],
+    projects: [],
+    certifications: [],
+    languages: [],
+    sections: [],
+  };
+
   function telemetryFromSpy(): Record<string, unknown> {
     expect(logSpy).toHaveBeenCalledTimes(1);
     const [prefix, telemetry] = logSpy.mock.calls[0];
@@ -255,7 +307,11 @@ describe("ingestResume — extraction telemetry", () => {
 
   it("logs one telemetry line for the text path with an empty absent-list, section headings, and zero date-misses", async () => {
     const llm = llmFor("resume-extract", ALL_PRESENT_EMIT);
-    await ingestResume("user-1", { text: "Backend engineer with experience in systems." }, { llm });
+    await ingestResume(
+      "user-1",
+      { text: "Backend engineer with experience in systems design, distributed systems, and payments infrastructure across several years of professional software engineering work." },
+      { llm },
+    );
 
     const telemetry = telemetryFromSpy();
     expect(telemetry).toMatchObject({
@@ -263,12 +319,17 @@ describe("ingestResume — extraction telemetry", () => {
       absentOptionalFields: [],
       sections: ["Volunteer Work", "Awards"],
       dateMissCount: 0,
+      emptyDatesCount: 0,
     });
   });
 
   it("lists absent optional scalar fields when headline/location/summary come back null", async () => {
     const llm = llmFor("resume-extract", ABSENT_SCALARS_EMIT);
-    await ingestResume("user-1", { text: "Backend engineer with experience in systems." }, { llm });
+    await ingestResume(
+      "user-1",
+      { text: "Backend engineer with experience in systems design, distributed systems, and payments infrastructure across several years of professional software engineering work." },
+      { llm },
+    );
 
     const telemetry = telemetryFromSpy();
     expect(telemetry).toMatchObject({
@@ -279,10 +340,26 @@ describe("ingestResume — extraction telemetry", () => {
 
   it("counts a date-miss when an experience entry has a non-empty dates string but no parsed start/end atom", async () => {
     const llm = llmFor("resume-extract", DATE_MISS_EMIT);
-    await ingestResume("user-1", { text: "Backend engineer with experience in systems." }, { llm });
+    await ingestResume(
+      "user-1",
+      { text: "Backend engineer with experience in systems design, distributed systems, and payments infrastructure across several years of professional software engineering work." },
+      { llm },
+    );
 
     const telemetry = telemetryFromSpy();
     expect(telemetry).toMatchObject({ dateMissCount: 1 });
+  });
+
+  it("counts an empty-dates entry (verbatim date range absent, folded to \"\") separately from a date-miss", async () => {
+    const llm = llmFor("resume-extract", EMPTY_DATES_EMIT);
+    await ingestResume(
+      "user-1",
+      { text: "Backend engineer with experience in systems design, distributed systems, and payments infrastructure across several years of professional software engineering work." },
+      { llm },
+    );
+
+    const telemetry = telemetryFromSpy();
+    expect(telemetry).toMatchObject({ dateMissCount: 0, emptyDatesCount: 1 });
   });
 
   it("logs extractionPath: \"vision\" exactly once for the vision routing path", async () => {

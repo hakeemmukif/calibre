@@ -32,7 +32,12 @@ function significantTokens(s: string): string[] {
 // alphanumeric blob substring fallback tolerates that split without
 // loosening hallucination detection: it's gated to alphabetic tokens of
 // length >= 4, so digits and short tokens (which would false-positive as a
-// substring of nearly anything) still require exact token membership.
+// substring of nearly anything) still require exact token membership. It
+// also excludes any needle token that is merely an interior substring of a
+// single haystack TOKEN ("Java" ⊂ "JavaScript", "Rust" ⊂ "trusted") — a
+// genuine de-scramble repair lives in the blob but spans a WHITESPACE
+// BREAK between two haystack tokens, so it is never a substring of any one
+// of them.
 export function fuzzyContains(haystack: string, needle: string): boolean {
   const needleTokens = significantTokens(needle);
   if (needleTokens.length === 0) return true; // nothing significant to violate
@@ -40,7 +45,13 @@ export function fuzzyContains(haystack: string, needle: string): boolean {
   const haystackBlob = haystack.toLowerCase().replace(/[^a-z0-9]/g, "");
   return needleTokens.every((t) => {
     if (haystackTokens.has(t)) return true;
-    if (/^[a-z]+$/.test(t) && t.length >= 4 && haystackBlob.includes(t)) return true;
+    if (
+      /^[a-z]+$/.test(t) &&
+      t.length >= 4 &&
+      haystackBlob.includes(t) &&
+      ![...haystackTokens].some((tok) => tok.includes(t))
+    )
+      return true;
     return false;
   });
 }
