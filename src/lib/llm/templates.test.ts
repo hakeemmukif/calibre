@@ -35,7 +35,7 @@ describe("renderTemplate", () => {
   });
 
   it("puts the candidate/résumé block last regardless of file position", () => {
-    const messages = renderTemplate("match-score", { jdFacts: "FACTS_MARKER", resume: "RESUME_MARKER" });
+    const messages = renderTemplate("match-score", { jdFacts: "FACTS_MARKER", resume: "RESUME_MARKER", metrics: "METRICS_MARKER" });
     expect(messages.at(-1)?.content).toContain("RESUME_MARKER");
     expect(messages.some((m) => m.content.includes("FACTS_MARKER"))).toBe(true);
     expect(messages.at(-1)?.content).not.toContain("FACTS_MARKER");
