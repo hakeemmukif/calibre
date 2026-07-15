@@ -1,11 +1,10 @@
 // @vitest-environment jsdom
-// M1 whole-branch-review fix: the page fetched getScanDetail once at mount
-// and rendered the running bridge (useScanRun + ScanProgress) while
-// detail.status === "running", but useScanRun() was wired with no
-// onDone/onError — so when the SSE done/error event arrived the page never
-// refetched and stayed stuck on "running" forever. Asserts the fixed
-// transition: a run mounted as "running", once useScanRun's onDone fires,
-// refetches getScanDetail and renders the terminal ScanReplay.
+// M2 T7: the running branch now renders the live concurrency-lane view
+// (SourceStrip + ScanLanes fed by useScanLive) instead of the M1 coarse
+// ScanProgress bridge. Asserts: (1) a running run renders lanes, not the
+// coarse "Discovering postings" bar; (2) once useScanLive's SSE stream
+// reaches "done", the page refetches getScanDetail and renders the terminal
+// ScanReplay.
 import "@testing-library/jest-dom/vitest";
 import * as React from "react";
 import { render, screen, cleanup, waitFor, act } from "@testing-library/react";
@@ -81,13 +80,31 @@ beforeEach(() => {
   });
 });
 
-describe("/scans/:id — running-to-terminal transition", () => {
-  it("refetches and renders ScanReplay once useScanRun's onDone fires", async () => {
+describe("/scans/:id — live lanes view", () => {
+  it("renders SourceStrip + ScanLanes for a running run, not the coarse bar", async () => {
     getScanDetail.mockResolvedValueOnce(runningDetail());
     render(<ScanDetailPage />);
 
     await waitFor(() => expect(subscribeSearch).toHaveBeenCalledWith("run-1", expect.any(Function)));
-    expect(screen.getByText("Discovering postings")).toBeInTheDocument();
+
+    act(() => {
+      capturedOnEvent!({ event: "source", data: { sourceId: "s1", name: "Greenhouse", status: "fetching" } });
+      capturedOnEvent!({
+        event: "jobPhase",
+        data: { jobId: "j1", title: "Data Engineer", company: "Acme", source: "s1", phase: "scoring" },
+      });
+    });
+
+    expect(await screen.findByText("Greenhouse")).toBeInTheDocument();
+    expect(screen.getByText("Data Engineer")).toBeInTheDocument();
+    expect(screen.queryByText("Discovering postings")).not.toBeInTheDocument();
+  });
+
+  it("refetches and renders ScanReplay once the live stream's done event fires", async () => {
+    getScanDetail.mockResolvedValueOnce(runningDetail());
+    render(<ScanDetailPage />);
+
+    await waitFor(() => expect(subscribeSearch).toHaveBeenCalledWith("run-1", expect.any(Function)));
 
     getScanDetail.mockResolvedValueOnce(terminalDetail());
     act(() => {
