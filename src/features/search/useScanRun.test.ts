@@ -34,7 +34,7 @@ function searchRun(overrides: Partial<SearchRun> = {}): SearchRun {
     persona: "remote",
     sources: [],
     progress: null,
-    stats: { scanned: 0, worth: 0, ghosts: 0 },
+    stats: { scanned: 0, matched: 0, scored: 0, worth: 0, ghosts: 0, unscored: 0, capStopped: false, discoverMs: 0, scoreMs: 0, costUsd: 0, policyVersion: "test" },
     startedAt: "2026-07-11T00:00:00.000Z",
     finishedAt: null,
     error: null,
@@ -125,13 +125,13 @@ describe("useScanRun", () => {
       await result.current.start("remote");
     });
 
-    const finished = searchRun({ id: "run-42", status: "completed", stats: { scanned: 10, worth: 3, ghosts: 1 } });
+    const finished = searchRun({ id: "run-42", status: "completed", stats: { scanned: 10, matched: 10, scored: 10, worth: 3, ghosts: 1, unscored: 0, capStopped: false, discoverMs: 0, scoreMs: 0, costUsd: 0, policyVersion: "test" } });
     act(() => {
       capturedOnEvent!({ event: "done", data: finished });
     });
 
     expect(result.current.state.status).toBe("done");
-    expect(result.current.state.stats).toEqual({ scanned: 10, worth: 3, ghosts: 1 });
+    expect(result.current.state.stats).toMatchObject({ scanned: 10, worth: 3, ghosts: 1 });
     expect(result.current.state.stages.every((s) => s.state === "done")).toBe(true);
     expect(onDone).toHaveBeenCalledWith(finished);
   });
