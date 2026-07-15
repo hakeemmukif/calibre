@@ -3,9 +3,9 @@
 // (component-inventory.md AppShellHeader/JobFeed; api-contract.md §3
 // "GET /api/jobs"). "save"/"dismiss" row actions and the URL-eval bar have no
 // route in the frozen v1 contract (deferred per api-contract.md §5) — they
-// are inert no-ops here, not invented endpoints. "Scan now" drives a real
-// POST /api/search run via useScanRun and renders the ScanProgress overlay
-// off its SSE stream (jobs stream in live; the feed refetches on `done`).
+// are inert no-ops here, not invented endpoints. "Scan now" starts a real
+// POST /api/search run and navigates to its /scans/:id home (D7) — the
+// in-feed live scan overlay is retired.
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { PersonaToggle } from "@/caliber-ui/compositions/Shell/PersonaToggle";
@@ -13,13 +13,12 @@ import { UrlEvalBar } from "@/caliber-ui/compositions/Shell/UrlEvalBar";
 import { NotificationBell } from "@/caliber-ui/compositions/Shell/NotificationBell";
 import { EvalResultCard } from "@/caliber-ui/compositions/Eval/EvalResultCard";
 import { JobFeed, type JobRowAction } from "@/caliber-ui/compositions/Feed/JobFeed";
-import { ScanProgress } from "@/caliber-ui/compositions/Feed/ScanProgress";
 import { ScoringStatusCard } from "@/caliber-ui/compositions/Feed/ScoringStatusCard";
 import { Button } from "@/caliber-ui/components/Button";
 import type { FeedFilter } from "@/caliber-ui/compositions/Feed/FilterChips";
 import { getJobs, deleteJob } from "@/features/feed/client";
-import { useScanRun } from "@/features/search/useScanRun";
-import { takeScanHandoff, type ScanHandoff } from "@/features/search/scanHandoff";
+import { startSearch } from "@/features/search/client";
+import { ApiError } from "@/features/http";
 import { useUrlChecks } from "@/features/url-check/checksStore";
 import type { Job, Persona, SummaryStripStats } from "@/types";
 
@@ -47,6 +46,7 @@ export default function FeedPage() {
   const [stats, setStats] = React.useState<SummaryStripStats>(EMPTY_STATS);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | undefined>();
+  const [scanLaunching, setScanLaunching] = React.useState(false);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -62,35 +62,9 @@ export default function FeedPage() {
     }
   }, [persona]);
 
-  const scan = useScanRun({
-    // Each scored job streams in as it's found; prepend, deduped by id (the
-    // registry has no replay buffer, so `done` still triggers an authoritative
-    // refetch below — this is the live preview, not the source of truth).
-    onJob: (job) => setJobs((prev) => (prev.some((j) => j.id === job.id) ? prev : [job, ...prev])),
-    onDone: () => void load(),
-  });
-
   React.useEffect(() => {
     void load();
   }, [load]);
-
-  // Résumé-upload handoff: attach to the just-started run for the active
-  // persona instead of starting a new one. Read INSIDE the effect (never
-  // during render — `sessionStorage` is undefined under SSR), and only on the
-  // first run (the ref survives StrictMode's dev remount, which tears the
-  // hook's SSE subscription down via its cleanup then re-runs this effect).
-  // `takeScanHandoff()` clears storage, so re-reading would come back empty;
-  // caching the run ids in the ref lets the second run RE-subscribe
-  // (subscribeTo is idempotent) instead of leaving the overlay stuck.
-  const handoffRef = React.useRef<ScanHandoff | null>(null);
-
-  React.useEffect(() => {
-    if (handoffRef.current === null) handoffRef.current = takeScanHandoff();
-    const runId = handoffRef.current[persona];
-    if (runId) scan.subscribeTo(runId);
-    // Mount-only: the handoff is consumed on arrival, not on persona change.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const checks = useUrlChecks();
 
@@ -128,21 +102,31 @@ export default function FeedPage() {
     }
   }
 
-  // Dismissing while the run is still "running"/"starting": unsubscribe
-  // (the run keeps going server-side) and refetch now, so the feed shows
-  // whatever has already been scored instead of only the SSE-streamed
-  // preview jobs. `done`/`error` dismissal stays plain `scan.reset` — `done`
-  // already refetched via `onDone` above.
-  function handleDismissRunning() {
-    scan.reset();
-    void load();
+  // "Scan now" → start the run and hand off to its /scans/:id home (D7). A
+  // 409 CONFLICT means a run is already active for this persona — reattach by
+  // routing to it instead of erroring (mirrors scans/page.tsx's handling).
+  async function handleScanNow() {
+    setScanLaunching(true);
+    setError(undefined);
+    try {
+      const run = await startSearch({ persona });
+      router.push(`/scans/${run.id}`);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409 && err.code === "CONFLICT") {
+        const activeRunId =
+          typeof err.details === "object" && err.details !== null && "activeRunId" in err.details
+            ? (err.details as { activeRunId: unknown }).activeRunId
+            : undefined;
+        if (typeof activeRunId === "string") {
+          router.push(`/scans/${activeRunId}`);
+          return;
+        }
+      }
+      setError(err instanceof Error ? err.message : "Couldn't start scan.");
+    } finally {
+      setScanLaunching(false);
+    }
   }
-
-  const scanActive = scan.state.status !== "idle";
-  // "starting" has no visual of its own — show the running view until the
-  // first progress event lands. Narrows to exactly what ScanProgress accepts.
-  const overlayStatus: "running" | "done" | "error" =
-    scan.state.status === "done" ? "done" : scan.state.status === "error" ? "error" : "running";
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg-app)" }}>
@@ -164,8 +148,8 @@ export default function FeedPage() {
               <Button
                 variant="primary"
                 iconLeft="search"
-                onClick={() => void scan.start(persona)}
-                disabled={scan.state.status === "starting" || scan.state.status === "running"}
+                onClick={() => void handleScanNow()}
+                disabled={scanLaunching}
               >
                 Scan now
               </Button>
@@ -208,31 +192,6 @@ export default function FeedPage() {
           onRowAction={handleRowAction}
         />
       </div>
-
-      {scanActive && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 24,
-            background: "var(--scrim, rgba(15, 18, 28, 0.55))",
-            zIndex: 50,
-          }}
-        >
-          <div style={{ width: "100%", maxWidth: 440 }}>
-            <ScanProgress
-              status={overlayStatus}
-              stages={scan.state.stages}
-              stats={scan.state.stats}
-              error={scan.state.error}
-              onClose={overlayStatus === "running" ? handleDismissRunning : scan.reset}
-            />
-          </div>
-        </div>
-      )}
     </div>
   );
 }

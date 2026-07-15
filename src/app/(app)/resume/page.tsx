@@ -14,7 +14,6 @@ import { Button } from "@/caliber-ui/components/Button";
 import { Icon } from "@/caliber-ui/components/Icon";
 import { getResume, uploadResume } from "@/features/resume/client";
 import { startSearch } from "@/features/search/client";
-import { writeScanHandoff, type ScanHandoff } from "@/features/search/scanHandoff";
 import type { Resume } from "@/types";
 
 export default function ResumePage() {
@@ -30,20 +29,15 @@ export default function ResumePage() {
     const results = await Promise.allSettled([startSearch({ persona: "remote" }), startSearch({ persona: "local" })]);
 
     // Both failed → stay on the page and surface a retry. If at least one
-    // started, hand its run id to /feed (which attaches its ScanProgress
-    // overlay to the live run) and navigate — that's the resume→feed flow.
-    const handoff: ScanHandoff = {};
-    if (results[0].status === "fulfilled") handoff.remote = results[0].value.id;
-    if (results[1].status === "fulfilled") handoff.local = results[1].value.id;
-
-    if (Object.keys(handoff).length === 0) {
+    // started, navigate to /scans — both runs are visible in the list (D7),
+    // which is where a scan now lives.
+    if (!results.some((r) => r.status === "fulfilled")) {
       const reason = results[0].status === "rejected" && results[0].reason instanceof Error ? results[0].reason.message : "unknown error";
       setSearchError(`Search failed to start — retry. (${reason})`);
       return;
     }
 
-    writeScanHandoff(handoff);
-    router.push("/feed");
+    router.push("/scans");
   }
 
   React.useEffect(() => {
