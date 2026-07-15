@@ -15,6 +15,9 @@ export type RunKind = "search" | "tailor";
 export type RunEvent =
   | { event: "progress"; data: unknown }
   | { event: "job"; data: unknown } // search only — B6's scored `Job` (api-contract.md §4)
+  | { event: "source"; data: unknown }
+  | { event: "jobPhase"; data: unknown }
+  | { event: "snapshot"; data: unknown }
   | { event: "done"; data: unknown }
   | { event: "error"; data: unknown };
 
