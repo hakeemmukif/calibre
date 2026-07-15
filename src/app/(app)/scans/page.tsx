@@ -3,8 +3,8 @@
 // listScans (feed/tracker's useEffect + useCallback loader pattern) and
 // renders them through ScansList. "Scan now" starts a run per ScanPersona
 // and navigates straight to its detail; a 409 ActiveRunConflictError routes
-// to the already-running run instead of erroring (mirrors
-// useScanRun.start's conflict handling).
+// to the already-running run instead of erroring (409 ActiveRunConflictError
+// reattaches to details.activeRunId rather than surfacing an error).
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { ScansList } from "@/caliber-ui/compositions/Scans/ScansList";

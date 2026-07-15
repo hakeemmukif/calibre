@@ -1,7 +1,7 @@
 // M2 client hook — subscribes to a run's SSE stream and folds each event
 // through the pure `foldScanEvent` reducer into the live concurrency-lane
 // frame; tracks a coarse status from the terminal `done`/`error` events.
-// Mirrors useScanRun's subscribe lifecycle. features/* only — never imports
+// Mirrors the search SSE subscribe lifecycle. features/* only — never imports
 // @/server/*.
 import { useEffect, useReducer, useState } from "react";
 import { subscribeSearch } from "./client";
