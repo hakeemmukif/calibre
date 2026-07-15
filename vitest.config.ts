@@ -7,6 +7,9 @@ export default defineConfig({
   resolve: { alias: { '@': resolve(__dirname, 'src') } },
   test: {
     environment: 'node',
+    // PGlite-backed repo suites run 500ms-1s each; under full-suite parallelism
+    // the default 5s trips spurious timeouts. Raised so the gate is deterministic.
+    testTimeout: 20000,
     setupFiles: ['./vitest.setup.ts'],
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     exclude: ['src/**/*.smoke.test.ts', 'src/**/*.live.test.ts', 'node_modules/**'],
