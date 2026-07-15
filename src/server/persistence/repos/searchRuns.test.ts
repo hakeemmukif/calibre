@@ -171,6 +171,20 @@ describe("searchRunsRepo", () => {
     expect(detail?.results).toHaveLength(0);
   });
 
+  it("appendResult is a no-op when called with a foreign userId (owner mismatch fence)", async () => {
+    const db = await createTestDb();
+    const repo = createSearchRunsRepo(db);
+    const resume = await insertResume(db, { isActive: true });
+    const [userB] = await db
+      .insert(users)
+      .values({ email: "user-b-searchruns-appendresult@example.com", passwordHash: "h", role: "user" })
+      .returning();
+    const run = await repo.insert({ userId: BOOTSTRAP_ADMIN_ID, resumeId: resume.id, personas: ["remote"], status: "running", stats: baseStatsFixture, results: [] });
+    await repo.appendResult(run.id, userB.id, { jobId: "foreign", title: "t", company: "c", source: "s", outcome: "scored" });
+    const detail = await repo.getDetail(run.id, BOOTSTRAP_ADMIN_ID);
+    expect(detail?.results).toHaveLength(0);
+  });
+
   it("listByUser paginates newest-first, scopes to the user, and joins the résumé label", async () => {
     const db = await createTestDb();
     const repo = createSearchRunsRepo(db);

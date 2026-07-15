@@ -1,7 +1,8 @@
-import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { ScanPersona, ScanResult } from "@/types";
 import { getDb } from "../db";
 import { resumes, searchRuns } from "../schema";
+import { decodeCursorId, encodeCursorId } from "./cursor";
 import type { Db } from "./db";
 
 export type NewSearchRun = typeof searchRuns.$inferInsert;
@@ -87,6 +88,16 @@ export function createSearchRunsRepo(db: Db) {
       opts?: { limit?: number; cursor?: string },
     ): Promise<{ items: SearchRunSummaryRow[]; nextCursor: string | null }> {
       const limit = Math.min(opts?.limit ?? 20, 50);
+      const conditions = [eq(searchRuns.userId, userId)];
+      if (opts?.cursor) {
+        const c = decodeCursorId(opts.cursor);
+        // Cursor-oracle fix (mirrors jobs.ts listScored): the subquery must
+        // carry the SAME user_id filter as the outer query, so a cursor
+        // encoding another user's run id can never resolve to a real row here.
+        conditions.push(
+          sql`(${searchRuns.startedAt}, ${searchRuns.id}) < (SELECT ${searchRuns.startedAt}, ${searchRuns.id} FROM ${searchRuns} WHERE ${searchRuns.id} = ${c.id} AND ${searchRuns.userId} = ${userId})`,
+        );
+      }
       const rows = await db
         .select({
           id: searchRuns.id, status: searchRuns.status, personas: searchRuns.personas,
@@ -98,15 +109,12 @@ export function createSearchRunsRepo(db: Db) {
         })
         .from(searchRuns)
         .innerJoin(resumes, eq(searchRuns.resumeId, resumes.id))
-        .where(
-          opts?.cursor
-            ? and(eq(searchRuns.userId, userId), lt(searchRuns.startedAt, new Date(opts.cursor)))
-            : eq(searchRuns.userId, userId),
-        )
-        .orderBy(desc(searchRuns.startedAt))
+        .where(and(...conditions))
+        .orderBy(desc(searchRuns.startedAt), desc(searchRuns.id))
         .limit(limit + 1);
-      const items = rows.slice(0, limit);
-      const nextCursor = rows.length > limit ? items[items.length - 1].startedAt.toISOString() : null;
+      const hasMore = rows.length > limit;
+      const items = hasMore ? rows.slice(0, limit) : rows;
+      const nextCursor = hasMore ? encodeCursorId(items[items.length - 1].id) : null;
       return { items, nextCursor };
     },
     async getDetail(id: string, userId: string): Promise<(SearchRunRow & { resumeName: string }) | null> {
