@@ -28,3 +28,6 @@ Job facts (extracted):
 --- user:candidate ---
 Candidate résumé:
 {{resume}}
+
+Verified résumé metrics (computed deterministically — treat as ground truth,
+do not recount years or tenure): {{metrics}}

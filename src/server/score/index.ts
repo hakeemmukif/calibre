@@ -11,6 +11,7 @@ import { jobsRepo, type JobRow } from "@/server/persistence/repos/jobs";
 import type { ProfileRow } from "@/server/persistence/repos/profile";
 import type { ResumeRow } from "@/server/persistence/repos/resumes";
 import type { SourceRow } from "@/server/persistence/repos/sources";
+import { computeResumeMetrics } from "@/server/resume/resume-metrics";
 import { parseSourceGeo } from "@/server/search/geo";
 import type { WebEvidence } from "@/types";
 import { resolveEligibility } from "./eligibility";
@@ -72,14 +73,19 @@ export async function scoreJob(args: {
   const tz = resolveTzBand({ statedTz: jdFactsResult.data.tzRequirement, location: job.location || undefined });
   await jobsRepo.updateRemoteFit(job.id, job.userId, tz?.band ?? null, jdFactsResult.data.hiringStructure ?? null);
 
-  const cheap = await scoreMatch(llm, { jdFacts: jdFactsResult.data, resume: resume.structured });
+  const metrics = computeResumeMetrics(resume.structured);
+  const cheap = await scoreMatch(llm, { jdFacts: jdFactsResult.data, resume: resume.structured, metrics });
 
   let final = cheap;
   let escalated = false;
   if (cheap.data.lowConfidence) {
     const escalateModel = escalateModelFor("match-score");
     if (escalateModel) {
-      const strong = await scoreMatch(llm, { jdFacts: jdFactsResult.data, resume: resume.structured }, escalateModel);
+      const strong = await scoreMatch(
+        llm,
+        { jdFacts: jdFactsResult.data, resume: resume.structured, metrics },
+        escalateModel,
+      );
       final = strong;
       escalated = true;
     }
