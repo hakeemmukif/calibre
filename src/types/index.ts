@@ -276,27 +276,50 @@ export const ApplicationAnswers = z.object({ // persisted set entity
 });
 export type ApplicationAnswers = z.infer<typeof ApplicationAnswers>;
 
+export const RequirementStatus = z.enum(["met", "buried", "gap"]);
+
+export const CorrelationRow = z.object({
+  requirement: z.string(),
+  term: z.string(),
+  kind: z.enum(["must", "nice", "responsibility"]),
+  status: RequirementStatus,
+  evidence: z.string().nullable(),   // verbatim résumé quote; non-null iff status ∈ {met, buried}
+  atsPresent: z.boolean(),           // deterministic: `term` occurs (normalized) in the résumé
+  reason: z.string(),
+  note: z.string().nullable(),
+});
+
+export const CorrelationReport = z.object({
+  id: z.string(), jobId: z.string(), resumeId: z.string(),
+  status: RunStatus, progress: Progress.nullable(),
+  rows: z.array(CorrelationRow),
+  semantic: z.object({ met: z.number().int(), buried: z.number().int(),
+    gap: z.number().int(), total: z.number().int() }),
+  ats: z.object({ present: z.number().int(), total: z.number().int(),
+    missing: z.array(z.string()) }),
+  model: z.string(), costUsd: z.number().nullable(),
+  createdAt: z.string().datetime(), completedAt: z.string().datetime().nullable(),
+});
+export type CorrelationReport = z.infer<typeof CorrelationReport>;
+export type CorrelationRow = z.infer<typeof CorrelationRow>;
+
 export const TailoredResume = z.object({
-  id: z.string(),
-  jobId: z.string(),
-  resumeId: z.string(),
-  status: RunStatus,
+  id: z.string(), jobId: z.string(), resumeId: z.string(), status: RunStatus,
   progress: Progress.nullable(),
-  resume: Resume.omit({ id: true, rawText: true }).nullable(), // null until completed
-  diff: z.array(
-    z.object({
-      section: z.string(),
-      op: z.enum(["add", "remove", "modify"]),
-      before: z.string().optional(),
-      after: z.string().optional(),
-      reason: z.string(),
-    }),
-  ),
-  model: z.string(),
-  createdAt: z.string().datetime(),
+  reportId: z.string().nullable(),
+  resume: Resume.omit({ id: true, rawText: true }).nullable(),
+  diff: z.array(z.object({
+    section: z.string(), op: z.enum(["add", "remove", "modify"]),
+    before: z.string().optional(), after: z.string().optional(),
+    reason: z.string(), requirement: z.string(),
+    target: z.object({ index: z.number().int().nullable(),
+      bulletIndex: z.number().int().nullable() }),
+  })),
+  model: z.string(), createdAt: z.string().datetime(),
   completedAt: z.string().datetime().nullable(),
 });
 export type TailoredResume = z.infer<typeof TailoredResume>;
+export type TailorDiffEntry = z.infer<typeof TailoredResume>["diff"][number];
 
 export const ErrorCode = z.enum([
   "VALIDATION_ERROR",

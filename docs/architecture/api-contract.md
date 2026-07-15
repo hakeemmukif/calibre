@@ -22,7 +22,9 @@ Schema-first: Zod schemas in `src/types` are the single source of truth; OpenAPI
 | F5 | POST | `/api/applications` | Mark applied (persist tracker row) | sync |
 | F5 | GET | `/api/applications` | List tracker rows | sync |
 | F5 | PATCH | `/api/applications/:id` | Update stage / status / note / tailored flag | sync |
-| F6 | POST | `/api/tailor` | Start tailoring the résumé to a job | async, 202 |
+| F6 | POST | `/api/tailor/correlate` | Start correlating the résumé against a job's requirements | async, 202 |
+| F6 | GET | `/api/tailor/correlate/:id` | Correlation status + result; SSE via `Accept: text/event-stream` | sync / SSE |
+| F6 | POST | `/api/tailor` | Start tailoring the résumé to a job (`{ jobId, reportId? }`) | async, 202 |
 | F6 | GET | `/api/tailor/:id` | Tailor status + result; SSE via `Accept: text/event-stream` | sync / SSE |
 | F6 | POST | `/api/tailor/:id/finalize` | Persist the accepted-only diff (renders an accepted-only résumé) | sync |
 | F6 | GET | `/api/tailor/:id/pdf` | Rendered PDF of the finalized (accepted-only) résumé | sync, binary |
@@ -229,12 +231,38 @@ export const ApplicationAnswers = z.object({         // persisted set entity
   answers: z.array(ApplicationAnswer), model: z.string(), createdAt: z.string().datetime(),
 });
 
+export const RequirementStatus = z.enum(['met', 'buried', 'gap']);
+
+export const CorrelationRow = z.object({
+  requirement: z.string(), term: z.string(),
+  kind: z.enum(['must', 'nice', 'responsibility']),
+  status: RequirementStatus,
+  evidence: z.string().nullable(),                    // verbatim résumé quote; non-null iff status ∈ {met, buried}
+  atsPresent: z.boolean(),                             // deterministic: `term` occurs (normalized) in the résumé
+  reason: z.string(), note: z.string().nullable(),
+});
+
+export const CorrelationReport = z.object({
+  id: z.string(), jobId: z.string(), resumeId: z.string(),
+  status: RunStatus, progress: Progress.nullable(),
+  rows: z.array(CorrelationRow),
+  semantic: z.object({ met: z.number().int(), buried: z.number().int(),
+    gap: z.number().int(), total: z.number().int() }),
+  ats: z.object({ present: z.number().int(), total: z.number().int(),
+    missing: z.array(z.string()) }),
+  model: z.string(), costUsd: z.number().nullable(),
+  createdAt: z.string().datetime(), completedAt: z.string().datetime().nullable(),
+});
+
 export const TailoredResume = z.object({
   id: z.string(), jobId: z.string(), resumeId: z.string(), status: RunStatus,
   progress: Progress.nullable(),
+  reportId: z.string().nullable(),
   resume: Resume.omit({ id: true, rawText: true }).nullable(),   // null until completed
   diff: z.array(z.object({ section: z.string(), op: z.enum(['add','remove','modify']),
-    before: z.string().optional(), after: z.string().optional(), reason: z.string() })),
+    before: z.string().optional(), after: z.string().optional(),
+    reason: z.string(), requirement: z.string(),
+    target: z.object({ index: z.number().int().nullable(), bulletIndex: z.number().int().nullable() }) })),
   model: z.string(), createdAt: z.string().datetime(), completedAt: z.string().datetime().nullable(),
 });
 
@@ -313,7 +341,11 @@ Boundary rule everywhere: `Schema.parse(body)` at the route handler; `ZodError` 
 
 **PATCH /api/applications/:id** — partial of `{ stage, statusLabel, statusTone, note, tailored, tailoredResumeId, answersId }` (empty patch → 422). → `200 Application` | `404`.
 
-**POST /api/tailor** — `{ jobId }`. → `202 TailoredResume` (queued). `404` unknown job, `409` no résumé.
+**POST /api/tailor/correlate** — `{ jobId }`. → `202 CorrelationReport` (queued). `404` unknown job, `409` no résumé.
+
+**GET /api/tailor/correlate/:id** — → `200 CorrelationReport` | `404`; SSE via Accept header.
+
+**POST /api/tailor** — `{ jobId, reportId? }` (`reportId` grounds the diff in an existing `CorrelationReport`; omitted means the tailor run resolves its own). → `202 TailoredResume` (queued). `404` unknown job, `409` no résumé.
 
 **GET /api/tailor/:id** — → `200 TailoredResume` | `404`; SSE via Accept header.
 
