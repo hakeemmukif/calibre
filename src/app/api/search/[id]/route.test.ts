@@ -46,6 +46,40 @@ function getRequest(id: string, headers: Record<string, string> = {}): NextReque
   return new NextRequest(`http://localhost/api/search/${id}`, { headers });
 }
 
+// Reads exactly `count` SSE events from a still-open stream (readAllSseEvents
+// would block forever on a run that never terminates). Does NOT cancel the
+// reader — cancelling makes later route-side enqueues throw into the run's
+// emit loop; abandoned enqueues just buffer harmlessly.
+async function readSseEvents(res: Response, count: number): Promise<{ id: number; event: string; data: unknown }[]> {
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const events: { id: number; event: string; data: unknown }[] = [];
+
+  while (events.length < count) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let sep;
+    while ((sep = buffer.indexOf("\n\n")) !== -1) {
+      const chunk = buffer.slice(0, sep);
+      buffer = buffer.slice(sep + 2);
+      const idLine = chunk.split("\n").find((l) => l.startsWith("id: "));
+      const eventLine = chunk.split("\n").find((l) => l.startsWith("event: "));
+      const dataLine = chunk.split("\n").find((l) => l.startsWith("data: "));
+      if (idLine && eventLine && dataLine) {
+        events.push({
+          id: Number(idLine.slice("id: ".length)),
+          event: eventLine.slice("event: ".length),
+          data: JSON.parse(dataLine.slice("data: ".length)),
+        });
+      }
+    }
+  }
+  return events;
+}
+
 describe("GET /api/search/:id", () => {
   beforeAll(async () => {
     state.testDb = await createTestDb();
@@ -135,6 +169,42 @@ describe("GET /api/search/:id", () => {
     const ids = events.map((e) => e.id);
     expect(ids).toEqual([...ids].sort((a, b) => a - b));
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("SSE: emits a snapshot before live deltas for a late subscriber", async () => {
+    await insertResume(state.testDb, { isActive: true });
+    await insertSource(state.testDb, { id: "greenhouse", kind: "ats", persona: "remote" });
+    state.hang = true; // keep the run live so the handle survives the late subscribe
+
+    const created = await POST(
+      new NextRequest("http://localhost/api/search", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ persona: "remote" }),
+      }),
+    );
+    const run = await created.json();
+
+    const handle = getRunHandle(run.id)!;
+    const frame = { sources: [], activeJobs: [], counts: { scored: 0, queued: 2, total: 2 } };
+    handle.setFrame(frame);
+
+    const res = await GET(getRequest(run.id, { accept: "text/event-stream" }), { params: Promise.resolve({ id: run.id }) });
+    handle.emit({ event: "source", data: { sourceId: "greenhouse", name: "Greenhouse", status: "fetching" } });
+
+    const events = await readSseEvents(res, 2);
+    expect(events[0].event).toBe("snapshot");
+    expect(events[0].id).toBe(0);
+    expect(events[0].data).toEqual(frame);
+    expect(events[1].event).toBe("source");
+    expect(events[1].id).toBeGreaterThanOrEqual(1);
+
+    // Settle the hung run before afterEach truncates the tables under it.
+    handle.abort("test cleanup");
+    const deadline = Date.now() + 2000;
+    while (!handle.isTerminal && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
   });
 
   it("SSE: falls back to a synthetic terminal event when no live handle exists for a completed run", async () => {
