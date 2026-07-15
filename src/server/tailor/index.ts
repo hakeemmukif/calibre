@@ -18,21 +18,10 @@ import { create, type RunHandle } from "@/server/runs/registry";
 import { emitToStore, ResumeStoreEmitSchema } from "@/server/resume/resume-store";
 import { TailoredResume } from "@/types";
 import { toTailoredResume } from "./assemble";
+import { NoActiveResumeError, UnknownJobError } from "./errors";
 import { applyAcceptedDiff, DiffEntrySchema } from "./merge";
 
-export class UnknownJobError extends Error {
-  constructor(jobId: string) {
-    super(`No job with id "${jobId}".`);
-    this.name = "UnknownJobError";
-  }
-}
-
-export class NoActiveResumeError extends Error {
-  constructor(message = "No résumé exists — tailoring requires an active résumé.") {
-    super(message);
-    this.name = "NoActiveResumeError";
-  }
-}
+export { NoActiveResumeError, UnknownJobError } from "./errors";
 
 export class UnknownTailorIdError extends Error {
   constructor(id: string) {
