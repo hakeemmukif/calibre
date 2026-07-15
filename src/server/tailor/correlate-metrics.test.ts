@@ -34,6 +34,64 @@ describe("verifyEvidence", () => {
       kind: "must", status: "gap", evidence: null, reason: "r", note: null }], store);
     expect(row.atsPresent).toBe(true); // present in skills even if the LLM said gap
   });
+
+  it("downgrades a met row with empty-string evidence", () => {
+    const [row] = verifyEvidence([{ requirement: "distributed systems experience",
+      term: "distributed", kind: "must", status: "met",
+      evidence: "", reason: "r", note: null }], store);
+    expect(row.status).toBe("gap");
+    expect(row.evidence).toBeNull();
+    expect(row.reason).toContain("unverifiable");
+  });
+
+  it("downgrades a met row with null evidence", () => {
+    const [row] = verifyEvidence([{ requirement: "distributed systems experience",
+      term: "distributed", kind: "must", status: "met",
+      evidence: null, reason: "r", note: null }], store);
+    expect(row.status).toBe("gap");
+    expect(row.evidence).toBeNull();
+    expect(row.reason).toContain("unverifiable");
+  });
+
+  it("downgrades a buried row whose evidence is fabricated", () => {
+    const [row] = verifyEvidence([{ requirement: "kafka streaming",
+      term: "kafka", kind: "nice", status: "buried",
+      evidence: "Built real-time Kafka streaming pipelines", reason: "r", note: null }], store);
+    expect(row.status).toBe("gap");
+    expect(row.evidence).toBeNull();
+    expect(row.reason).toContain("unverifiable");
+    expect(row.note).toContain("unverifiable");
+  });
+
+  it("atsPresent is false for a vacuous term (C++) absent from the résumé", () => {
+    const [row] = verifyEvidence([{ requirement: "C++ experience", term: "C++",
+      kind: "must", status: "gap", evidence: null, reason: "r", note: null }], store);
+    expect(row.atsPresent).toBe(false);
+  });
+
+  it("atsPresent is true for a vacuous term (C++) literally present in the résumé", () => {
+    const storeWithCpp: ResumeStore = {
+      ...store,
+      experience: [{ ...store.experience[0], bullets: ["Wrote performance-critical C++ services"] }],
+    };
+    const [row] = verifyEvidence([{ requirement: "C++ experience", term: "C++",
+      kind: "must", status: "gap", evidence: null, reason: "r", note: null }], storeWithCpp);
+    expect(row.atsPresent).toBe(true);
+  });
+
+  it("verifies a tenure quote against experience dates", () => {
+    const [row] = verifyEvidence([{ requirement: "5+ years experience",
+      term: "5+ years", kind: "must", status: "met",
+      evidence: "Backend Engineer, Paywatch, 2021-2024", reason: "r", note: null }], store);
+    expect(row.status).toBe("met");
+  });
+
+  it("nulls stray evidence on a gap row", () => {
+    const [row] = verifyEvidence([{ requirement: "kafka streaming", term: "kafka",
+      kind: "nice", status: "gap", evidence: "some stray quote", reason: "r", note: null }], store);
+    expect(row.status).toBe("gap");
+    expect(row.evidence).toBeNull();
+  });
 });
 
 describe("signals", () => {
