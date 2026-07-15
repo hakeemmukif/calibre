@@ -45,7 +45,7 @@ export async function getScanDetail(id: string): Promise<ScanDetail> {
 // drop (proxy reset, dev-server recompile).
 export function subscribeSearch(id: string, onEvent: (event: SseEvent) => void): () => void {
   const source = new EventSource(`/api/search/${id}`);
-  const eventNames = ["progress", "job", "done", "error"] as const;
+  const eventNames = ["progress", "job", "source", "jobPhase", "snapshot", "done", "error"] as const;
 
   const handlers = eventNames.map((name) => {
     const handler = (e: MessageEvent<string>) => {
