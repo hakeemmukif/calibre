@@ -55,7 +55,7 @@ export function TailorPreview({ resume, tailoredResume, diff, accepted }: Tailor
     <Card padding="lg" radius="md" style={{ background: "var(--surface)", maxWidth: 640 }}>
       <div style={{ font: "var(--type-h2)", color: "var(--text-strong)" }}>{headline}</div>
       <div style={{ font: "var(--type-caption)", color: "var(--text-muted)", marginTop: 4 }}>{resume.location}</div>
-      <div style={{ font: "var(--type-body)", color: "var(--text-body)", marginTop: 14 }}>{summary}</div>
+      {summary && <div style={{ font: "var(--type-body)", color: "var(--text-body)", marginTop: 14 }}>{summary}</div>}
 
       <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 16 }}>
         {experience.map((exp, i) => (

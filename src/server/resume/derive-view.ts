@@ -42,12 +42,15 @@ function deriveLocation(store: ResumeStore): string {
 }
 
 function deriveHeadline(store: ResumeStore): string {
+  if (store.headline) return store.headline;
   const fromContact = store.contact.find((c) => HEADLINE_LABEL_RE.test(c.label))?.value;
   if (fromContact) return fromContact;
   const fromExperience = store.experience[0]?.title;
   if (fromExperience) return fromExperience;
+  const fromEducation = store.education[0];
+  if (fromEducation) return fromEducation.credential ?? fromEducation.school;
   throw new ParseFailedError(
-    "Could not derive a headline from the résumé — no contact line matches headline/title/role and there is no most-recent experience title. Edit and re-submit with a role.",
+    "Could not derive a headline from the résumé — no headline field, no contact line matches headline/title/role, no most-recent experience title, and no education entry. Edit and re-submit with a role.",
   );
 }
 
@@ -77,6 +80,10 @@ export function toResumeView(
       bullets: e.bullets,
     })),
     skills: dedupePreserveOrder(store.skills.flatMap((g) => g.items)),
+    projects: store.projects,
+    certifications: store.certifications,
+    languages: store.languages,
     rawText: opts.rawText,
+    extractionPath: store.extractionPath,
   });
 }

@@ -124,18 +124,16 @@ function dedupePreserveOrder(items: string[]): string[] {
   return out;
 }
 
-const HEADLINE_LABEL_RE = /headline|title|role/i;
-
 /**
  * Titles from `structured.experience[].title` + a best-effort headline
- * (contact line matching headline/title/role, else the most recent
- * experience's title — same precedence as `server/resume/derive-view.ts`,
- * kept independent since this is a best-effort search input, not the
- * fail-loud wire-view boundary). Keywords from `structured.skills`.
+ * (`structured.headline`, else the most recent experience's title — same
+ * precedence as `server/resume/derive-view.ts`, kept independent since this
+ * is a best-effort search input, not the fail-loud wire-view boundary).
+ * Keywords from `structured.skills`.
  */
 export function deriveRoleTargets(resume: Pick<ResumeRow, "structured">, persona: "remote" | "local"): RoleTarget[] {
   const store = resume.structured;
-  const headline = store.contact.find((c) => HEADLINE_LABEL_RE.test(c.label))?.value ?? store.experience[0]?.title;
+  const headline = store.headline ?? store.experience[0]?.title;
 
   const titles = dedupePreserveOrder([...store.experience.map((e) => e.title), ...(headline ? [headline] : [])]);
   const keywords = dedupePreserveOrder(store.skills.flatMap((g) => g.items));

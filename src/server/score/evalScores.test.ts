@@ -9,8 +9,10 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import type { LlmClient } from "@/lib/llm/client";
+import type { ResumeMetrics } from "@/server/resume/resume-metrics";
 import { LegitimacyTier } from "@/types";
-import { EvalLegitimacySchema } from "./evalScores";
+import { EvalLegitimacySchema, scoreMatch } from "./evalScores";
 
 describe("EvalScoresSchema legitimacy tier vocabulary", () => {
   it("the schema's tier enum is exactly the frozen LegitimacyTier contract", () => {
@@ -34,5 +36,51 @@ describe("EvalScoresSchema legitimacy tier vocabulary", () => {
     // half passed even before the fix — the schema mismatch above is what
     // makes the pair a seam: either one drifting from `LegitimacyTier` fails.
     expect(new Set(tokens)).toEqual(new Set(LegitimacyTier.options));
+  });
+});
+
+describe("scoreMatch", () => {
+  it("renders the résumé metrics into the match-score prompt as ground truth", async () => {
+    // Fixed literal (task-11 brief): a real computeResumeMetrics(now=...)
+    // would work too, but a literal keeps this assertion free of any
+    // currentTenureMonths time-dependence.
+    const metrics: ResumeMetrics = {
+      totalYearsExperience: 5.5,
+      currentTenureMonths: 18,
+      roleCount: 3,
+      durationDerivedRoleCount: 3,
+      avgTenureMonths: 22,
+      distinctSkillCount: 12,
+      certificationCount: 1,
+      languageCount: 2,
+      quantifiedBulletRatio: 0.4,
+    };
+
+    let capturedMessages: { role: string; content: string }[] = [];
+    const llm: LlmClient = {
+      async complete(args) {
+        capturedMessages = args.messages;
+        return {
+          data: args.responseSchema.parse({
+            score: 4,
+            verdict: "Apply",
+            why: "Good fit.",
+            breakdown: [],
+            fit: [],
+            gaps: [],
+            reasons: { for: [], against: [] },
+            legitimacy: { tier: "clear", summary: "Fine.", signals: [] },
+            lowConfidence: false,
+          }),
+          model: "mock",
+          costUsd: 0,
+        };
+      },
+    };
+
+    await scoreMatch(llm, { jdFacts: { title: "Engineer" }, resume: { name: "Jane" }, metrics });
+
+    const rendered = capturedMessages.map((m) => m.content).join("\n");
+    expect(rendered).toContain(JSON.stringify(metrics));
   });
 });

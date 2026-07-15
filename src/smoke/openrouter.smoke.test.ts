@@ -6,6 +6,7 @@ import { getLlm } from "@/lib/llm/client";
 import { modelFor } from "@/lib/llm/models";
 import { extractJdFacts } from "@/server/score/jdFacts";
 import { scoreMatch } from "@/server/score/evalScores";
+import type { ResumeMetrics } from "@/server/resume/resume-metrics";
 
 const FIXTURE_JD = `
 Senior Backend Engineer — Acme Logistics (Remote, APAC timezones, full-time)
@@ -19,6 +20,18 @@ Apply via our careers page at acmelogistics.com/careers.
 
 const FIXTURE_RESUME = {
   summary: "Backend engineer, 6 years Node.js/Postgres, led a search-ingestion migration.",
+};
+
+const FIXTURE_METRICS: ResumeMetrics = {
+  totalYearsExperience: 6,
+  currentTenureMonths: 24,
+  roleCount: 1,
+  durationDerivedRoleCount: 1,
+  avgTenureMonths: 72,
+  distinctSkillCount: 8,
+  certificationCount: 0,
+  languageCount: 1,
+  quantifiedBulletRatio: 0.5,
 };
 
 describe("openrouter smoke", () => {
@@ -35,7 +48,7 @@ describe("openrouter smoke", () => {
   it("match-score: real completion Zod-parses, routes to the configured model, costs a sane amount", async () => {
     const llm = getLlm();
     const { data: jdFacts } = await extractJdFacts(llm, FIXTURE_JD);
-    const { data, model, costUsd } = await scoreMatch(llm, { jdFacts, resume: FIXTURE_RESUME });
+    const { data, model, costUsd } = await scoreMatch(llm, { jdFacts, resume: FIXTURE_RESUME, metrics: FIXTURE_METRICS });
 
     expect(data.verdict).toBeTruthy();
     expect(model).toBe(modelFor("match-score").model);

@@ -28,6 +28,8 @@ const { POST: postFinalize } = await import("../finalize/route");
 const { GET } = await import("./route");
 
 const BASE_STORE = {
+  storeVersion: 2 as const,
+  extractionPath: "text" as const,
   name: "Jane Doe",
   contact: [
     { label: "email", value: "jane@example.com" },
@@ -38,14 +40,21 @@ const BASE_STORE = {
   experience: [],
   education: [],
   skills: [{ label: "Languages", items: ["TypeScript"] }],
-  extras: [],
+  projects: [],
+  certifications: [],
+  languages: [],
+  sections: [],
 };
 
-const TAILORED_STORE = { ...BASE_STORE, summary: "Backend engineer specializing in payments.", extras: ["Speaks English and Malay"] };
+const TAILORED_STORE = {
+  ...BASE_STORE,
+  summary: "Backend engineer specializing in payments.",
+  sections: [{ heading: "Additional Info", items: ["Speaks English and Malay"] }],
+};
 
 const DIFF = [
   { section: "summary" as const, op: "modify" as const, before: BASE_STORE.summary, after: TAILORED_STORE.summary, reason: "sharper framing" },
-  { section: "extras" as const, op: "add" as const, after: "Speaks English and Malay", reason: "JD language requirement" },
+  { section: "sections" as const, op: "add" as const, after: "Speaks English and Malay", reason: "JD language requirement" },
 ];
 
 function getPdfRequest(id: string): NextRequest {
@@ -215,7 +224,7 @@ describe("GET /api/tailor/:id/pdf", () => {
     const renderedHtml = pdf.htmlToPdf.mock.calls[0][0] as string;
     // Reflects the LAST finalize: extras accepted, summary reverted to base
     // (proving `structured` wasn't destroyed by the first finalize).
-    const expectedHtml = renderCvHtml({ ...BASE_STORE, extras: TAILORED_STORE.extras });
+    const expectedHtml = renderCvHtml({ ...BASE_STORE, sections: TAILORED_STORE.sections });
     expect(renderedHtml).toBe(expectedHtml);
     expect(renderedHtml).toContain("Speaks English and Malay");
     expect(renderedHtml).not.toContain(TAILORED_STORE.summary);

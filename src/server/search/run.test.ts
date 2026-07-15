@@ -178,13 +178,18 @@ async function waitForTerminal(_repo: ReturnType<typeof createSearchRunsRepo>, i
 
 const resumeFixture = {
   structured: {
+    storeVersion: 2 as const,
+    extractionPath: "text" as const,
     name: "Jane Doe",
     contact: [{ label: "email", value: "jane@example.com" }],
     summary: "Backend engineer.",
-    experience: [{ company: "Old Co", title: "Senior Data Engineer", dates: "2020-Present", bullets: [] }],
+    experience: [{ company: "Old Co", title: "Senior Data Engineer", dates: "2020-Present", isCurrent: true, bullets: [] }],
     education: [],
     skills: [{ label: "Languages", items: ["TypeScript"] }],
-    extras: [],
+    projects: [],
+    certifications: [],
+    languages: [],
+    sections: [],
   },
   sourceKind: "paste" as const,
   isActive: true,

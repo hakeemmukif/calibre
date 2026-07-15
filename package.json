@@ -10,7 +10,8 @@
     "test:coverage": "vitest run --coverage",
     "pretest:e2e": "tsx e2e/runGlobalSetup.ts",
     "test:e2e": "playwright test",
-    "smoke:real": "vitest run --config vitest.smoke.config.ts",
+    "smoke:real": "vitest run --config vitest.smoke.config.ts src/smoke",
+    "eval:resume": "vitest run --config vitest.smoke.config.ts src/server/resume/eval.live.test.ts",
     "typecheck": "tsc --noEmit",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
@@ -28,6 +29,7 @@
   },
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^8.5.0",
+    "@napi-rs/canvas": "^0.1.100",
     "@node-rs/argon2": "^2.0.2",
     "drizzle-orm": "^0.45.2",
     "lucide-react": "^1.24.0",

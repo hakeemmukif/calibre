@@ -764,6 +764,26 @@
             "minimum": 0,
             "type": "integer"
           },
+          "certifications": {
+            "items": {
+              "properties": {
+                "issuer": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "year": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "experience": {
             "items": {
               "properties": {
@@ -793,14 +813,62 @@
             },
             "type": "array"
           },
+          "extractionPath": {
+            "enum": [
+              "text",
+              "vision"
+            ],
+            "type": "string"
+          },
           "headline": {
             "type": "string"
           },
           "id": {
             "type": "string"
           },
+          "languages": {
+            "items": {
+              "properties": {
+                "language": {
+                  "type": "string"
+                },
+                "proficiency": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "language"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "location": {
             "type": "string"
+          },
+          "projects": {
+            "items": {
+              "properties": {
+                "bullets": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "bullets"
+              ],
+              "type": "object"
+            },
+            "type": "array"
           },
           "rawText": {
             "type": "string"
@@ -825,9 +893,11 @@
           "updatedAt",
           "headline",
           "location",
-          "summary",
           "experience",
           "skills",
+          "projects",
+          "certifications",
+          "languages",
           "rawText"
         ],
         "type": "object"
@@ -1188,6 +1258,26 @@
                 "minimum": 0,
                 "type": "integer"
               },
+              "certifications": {
+                "items": {
+                  "properties": {
+                    "issuer": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "year": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "experience": {
                 "items": {
                   "properties": {
@@ -1217,11 +1307,59 @@
                 },
                 "type": "array"
               },
+              "extractionPath": {
+                "enum": [
+                  "text",
+                  "vision"
+                ],
+                "type": "string"
+              },
               "headline": {
                 "type": "string"
               },
+              "languages": {
+                "items": {
+                  "properties": {
+                    "language": {
+                      "type": "string"
+                    },
+                    "proficiency": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "language"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "location": {
                 "type": "string"
+              },
+              "projects": {
+                "items": {
+                  "properties": {
+                    "bullets": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "url": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "bullets"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
               },
               "skills": {
                 "items": {
@@ -1242,9 +1380,11 @@
               "updatedAt",
               "headline",
               "location",
-              "summary",
               "experience",
-              "skills"
+              "skills",
+              "projects",
+              "certifications",
+              "languages"
             ],
             "type": [
               "object",

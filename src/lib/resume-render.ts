@@ -31,19 +31,51 @@ export function renderCvHtml(store: ResumeStore): string {
     .join("");
 
   const educationHtml = store.education
-    .map((ed) => `<li>${escapeHtml(ed.credential)}, ${escapeHtml(ed.school)} (${escapeHtml(ed.dates)})</li>`)
+    .map((ed) => {
+      const parts = [ed.credential, ed.school].filter(Boolean).map((s) => escapeHtml(s as string)).join(", ");
+      const dates = ed.dates ? ` (${escapeHtml(ed.dates)})` : "";
+      return `<li>${parts}${dates}</li>`;
+    })
     .join("");
 
   const skillsHtml = store.skills
     .map(
       (g) => `<div class="skill-group">
-  <h4>${escapeHtml(g.label)}</h4>
+  ${g.label ? `<h4>${escapeHtml(g.label)}</h4>` : ""}
   <p>${g.items.map(escapeHtml).join(", ")}</p>
 </div>`,
     )
     .join("");
 
-  const extrasHtml = store.extras.map((x) => `<li>${escapeHtml(x)}</li>`).join("");
+  const projectsHtml = store.projects
+    .map(
+      (p) => `<section class="project-entry">
+  <h3>${escapeHtml(p.name)}${p.url ? ` — ${escapeHtml(p.url)}` : ""}</h3>
+  <ul>${p.bullets.map((b) => `<li>${escapeHtml(b)}</li>`).join("")}</ul>
+</section>`,
+    )
+    .join("");
+
+  const certificationsHtml = store.certifications
+    .map((c) => {
+      const parts = [c.name, c.issuer].filter(Boolean).map((s) => escapeHtml(s as string)).join(", ");
+      const year = c.year ? ` (${escapeHtml(c.year)})` : "";
+      return `<li>${parts}${year}</li>`;
+    })
+    .join("");
+
+  const languagesHtml = store.languages
+    .map((l) => `<li>${escapeHtml(l.language)}${l.proficiency ? ` (${escapeHtml(l.proficiency)})` : ""}</li>`)
+    .join("");
+
+  const sectionsHtml = store.sections
+    .map(
+      (s) => `<section class="extra-section">
+  <h4>${escapeHtml(s.heading)}</h4>
+  <ul>${s.items.map((i) => `<li>${escapeHtml(i)}</li>`).join("")}</ul>
+</section>`,
+    )
+    .join("");
 
   return `<!DOCTYPE html>
 <html>
@@ -51,11 +83,14 @@ export function renderCvHtml(store: ResumeStore): string {
 <body>
 <h1>${escapeHtml(store.name)}</h1>
 <ul class="contact">${contactHtml}</ul>
-<section class="summary"><p>${escapeHtml(store.summary)}</p></section>
+<section class="summary"><p>${store.summary ? escapeHtml(store.summary) : ""}</p></section>
 <section class="experience">${experienceHtml}</section>
 <section class="education"><ul>${educationHtml}</ul></section>
 <section class="skills">${skillsHtml}</section>
-<section class="extras"><ul>${extrasHtml}</ul></section>
+<section class="projects">${projectsHtml}</section>
+<section class="certifications"><ul>${certificationsHtml}</ul></section>
+<section class="languages"><ul>${languagesHtml}</ul></section>
+<section class="sections">${sectionsHtml}</section>
 </body>
 </html>`;
 }

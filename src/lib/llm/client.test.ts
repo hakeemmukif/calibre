@@ -52,6 +52,45 @@ describe("getLlm", () => {
     expect(callArgs.response_format.json_schema.schema).toEqual(z.toJSONSchema(schema));
   });
 
+  it("sends strict:true and stamps additionalProperties:false on every object node when the task opts in", async () => {
+    process.env.OPENROUTER_API_KEY = "test-key";
+    mocks.create.mockResolvedValue(reply({ a: { b: "x" } }));
+    const llm = getLlm();
+
+    await llm.complete({
+      task: "resume-extract", // config sets strict:true in models.yml
+      messages: [{ role: "user", content: "hi" }],
+      responseSchema: z.object({ a: z.object({ b: z.string() }) }),
+    });
+
+    const rf = mocks.create.mock.calls[0][0].response_format.json_schema;
+    expect(rf.strict).toBe(true);
+    expect(rf.schema.additionalProperties).toBe(false);
+    expect(rf.schema.properties.a.additionalProperties).toBe(false);
+  });
+
+  it("harden() forces additionalProperties:false on a node zod itself leaves open (proves harden() isn't a no-op)", async () => {
+    process.env.OPENROUTER_API_KEY = "test-key";
+    mocks.create.mockResolvedValue(reply({ a: { b: "x" } }));
+    const llm = getLlm();
+
+    // .catchall() is the one zod4 construct that does NOT default a node's
+    // additionalProperties to false — confirming that here means the
+    // assertion below only passes because harden() ran, not because zod
+    // already closed the schema (unlike the plain z.object() case above).
+    const schemaWithCatchall = z.object({ a: z.object({ b: z.string() }) }).catchall(z.unknown());
+    expect(z.toJSONSchema(schemaWithCatchall).additionalProperties).not.toBe(false);
+
+    await llm.complete({
+      task: "resume-extract", // config sets strict:true in models.yml
+      messages: [{ role: "user", content: "hi" }],
+      responseSchema: schemaWithCatchall,
+    });
+
+    const rf2 = mocks.create.mock.calls[0][0].response_format.json_schema;
+    expect(rf2.schema.additionalProperties).toBe(false);
+  });
+
   it("sends reasoning_effort from the task config (resume-extract → low)", async () => {
     process.env.OPENROUTER_API_KEY = "test-key";
     mocks.create.mockResolvedValue(reply({ ok: true }));
@@ -100,6 +139,54 @@ describe("getLlm", () => {
 
     // openai/gpt-oss-120b: promptUsdPerMTok 0.03, completionUsdPerMTok 0.15
     expect(result.costUsd).toBeCloseTo(0.03 + 0.15, 10);
+  });
+
+  it("with `images`, the last user message becomes a content-parts array with text + image_url entries", async () => {
+    process.env.OPENROUTER_API_KEY = "test-key";
+    mocks.create.mockResolvedValue(reply({ ok: true }));
+    const llm = getLlm();
+
+    await llm.complete({
+      task: "resume-extract-vision",
+      messages: [
+        { role: "system", content: "system prompt" },
+        { role: "user", content: "look at these images" },
+      ],
+      responseSchema: schema,
+      images: ["data:image/png;base64,AAA", "data:image/png;base64,BBB"],
+    });
+
+    const sentMessages = mocks.create.mock.calls[0][0].messages;
+    expect(sentMessages[0]).toEqual({ role: "system", content: "system prompt" });
+    expect(sentMessages[1]).toEqual({
+      role: "user",
+      content: [
+        { type: "text", text: "look at these images" },
+        { type: "image_url", image_url: { url: "data:image/png;base64,AAA" } },
+        { type: "image_url", image_url: { url: "data:image/png;base64,BBB" } },
+      ],
+    });
+  });
+
+  it("without `images`, messages are sent exactly as given (plain string content)", async () => {
+    process.env.OPENROUTER_API_KEY = "test-key";
+    mocks.create.mockResolvedValue(reply({ ok: true }));
+    const llm = getLlm();
+
+    await llm.complete({
+      task: "resume-extract",
+      messages: [
+        { role: "system", content: "system prompt" },
+        { role: "user", content: "plain text" },
+      ],
+      responseSchema: schema,
+    });
+
+    const sentMessages = mocks.create.mock.calls[0][0].messages;
+    expect(sentMessages).toEqual([
+      { role: "system", content: "system prompt" },
+      { role: "user", content: "plain text" },
+    ]);
   });
 
   it("modelOverride overrides the task's base model in the outgoing request", async () => {

@@ -1,0 +1,13 @@
+{
+  "id": "fresh-grad",
+  "category": "synthetic",
+  "rawText": "Nur Aisyah Rahman aisyah.rahman@example.com | Petaling Jaya, Selangor EDUCATION Bachelor of Computer Science (Hons), Universiti Malaya — Graduated May 2026 CGPA 3.72. Relevant coursework: Data Structures, Databases, Web Development. CERTIFICATIONS AWS Certified Cloud Practitioner (2026) SKILLS Java Python SQL Git React Node.js PROJECTS Campus Marketplace — a web app for students to buy and sell used textbooks, built with React and Node.js, deployed to 200+ users during a semester pilot.",
+  "expected": {
+    "name": "Nur Aisyah Rahman",
+    "certifications": ["AWS Certified Cloud Practitioner"],
+    "languages": [],
+    "projects": ["Campus Marketplace"],
+    "skillsMin": 4,
+    "roles": []
+  }
+}

@@ -48,6 +48,37 @@ export const LowATS: Story = {
   args: { resume: lowAtsResume, onTailor: noop, onReupload: noop },
 };
 
+// T5b-2: vision-extracted résumés can hallucinate — review-nudge banner.
+const visionResume = Resume.parse({ ...resume, extractionPath: "vision" });
+
+export const VisionExtracted: Story = {
+  args: { resume: visionResume, onTailor: noop, onReupload: noop },
+};
+
+const resumeWithProjects = Resume.parse({
+  ...resume,
+  projects: [
+    {
+      name: "Caliber",
+      url: "github.com/example/caliber",
+      bullets: ["Built the résumé extraction + tailoring pipeline.", "Designed the ATS scoring engine."],
+    },
+    { name: "Settlement Simulator", bullets: ["Load-tested the Kafka settlement pipeline against 10x traffic."] },
+  ],
+  certifications: [
+    { name: "PMP", issuer: "PMI", year: "2023" },
+    { name: "AWS Certified Solutions Architect", year: "2022" },
+  ],
+  languages: [
+    { language: "English", proficiency: "Fluent" },
+    { language: "Bahasa Malaysia", proficiency: "Native" },
+  ],
+});
+
+export const WithProjectsCertsLanguages: Story = {
+  args: { resume: resumeWithProjects, onTailor: noop, onReupload: noop },
+};
+
 // Empty — before a résumé exists, the Resume page embeds ResumeUpload
 // directly (GET /api/resume 404s; there is no ResumeView to render yet).
 export const Empty: Story = {

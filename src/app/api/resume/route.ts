@@ -10,6 +10,7 @@ import { UnauthorizedError } from "@/server/auth/errors";
 import { ParseFailedError } from "@/server/resume/derive-view";
 import { ResumeTooLongError, UnsupportedMimeError } from "@/server/resume/extract-text";
 import { getActiveResume, ingestResume } from "@/server/resume/ingest";
+import { NonEnglishResumeError } from "@/server/resume/language";
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const PasteBody = z.object({ text: z.string().min(100) });
@@ -54,6 +55,9 @@ export async function POST(request: NextRequest) {
       return errorResponse(422, "VALIDATION_ERROR", "Invalid résumé payload.", err.issues);
     }
     if (err instanceof UnsupportedMimeError) {
+      return errorResponse(422, "VALIDATION_ERROR", err.message);
+    }
+    if (err instanceof NonEnglishResumeError) {
       return errorResponse(422, "VALIDATION_ERROR", err.message);
     }
     if (err instanceof ResumeTooLongError) {

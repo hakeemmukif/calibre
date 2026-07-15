@@ -78,9 +78,11 @@ export function ResumeRail({ resume, open, onToggle, active }: ResumeRailProps) 
           <Section title="Headline" active={active?.source === "headline"}>
             {resume.headline}
           </Section>
-          <Section title="Summary" active={active?.source === "summary"}>
-            {resume.summary}
-          </Section>
+          {resume.summary && (
+            <Section title="Summary" active={active?.source === "summary"}>
+              {resume.summary}
+            </Section>
+          )}
           <Section title="Skills" active={active?.source === "skills"}>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
               {resume.skills.map((s) => (

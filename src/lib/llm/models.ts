@@ -10,6 +10,7 @@ interface RawTaskConfig {
   maxTokens: number;
   temperature: number;
   reasoningEffort?: "low" | "medium" | "high";
+  strict?: boolean;
 }
 
 interface RawPrice {
@@ -42,9 +43,16 @@ export function modelFor(task: TaskName): {
   maxTokens: number;
   temperature: number;
   reasoningEffort?: "low" | "medium" | "high";
+  strict?: boolean;
 } {
-  const { model, maxTokens, temperature, reasoningEffort } = taskConfig(task);
-  return { model, maxTokens, temperature, ...(reasoningEffort !== undefined ? { reasoningEffort } : {}) };
+  const { model, maxTokens, temperature, reasoningEffort, strict } = taskConfig(task);
+  return {
+    model,
+    maxTokens,
+    temperature,
+    ...(reasoningEffort !== undefined ? { reasoningEffort } : {}),
+    ...(strict !== undefined ? { strict } : {}),
+  };
 }
 
 export function escalateModelFor(task: TaskName): string | null {

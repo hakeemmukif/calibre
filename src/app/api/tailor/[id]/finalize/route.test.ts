@@ -18,6 +18,8 @@ vi.mock("@/server/auth/session", async (orig) => ({
 const { POST } = await import("./route");
 
 const BASE_STORE = {
+  storeVersion: 2 as const,
+  extractionPath: "text" as const,
   name: "Jane Doe",
   contact: [
     { label: "email", value: "jane@example.com" },
@@ -28,7 +30,10 @@ const BASE_STORE = {
   experience: [],
   education: [],
   skills: [{ label: "Languages", items: ["TypeScript"] }],
-  extras: [],
+  projects: [],
+  certifications: [],
+  languages: [],
+  sections: [],
 };
 
 const TAILORED_STORE = { ...BASE_STORE, summary: "Backend engineer specializing in payments." };

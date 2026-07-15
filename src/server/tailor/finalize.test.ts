@@ -12,6 +12,8 @@ const { finalizeTailor, RunNotReadyError, UnknownTailorIdError } = await import(
 const { tailoredResumesRepo } = await import("@/server/persistence/repos/tailoredResumes");
 
 const BASE_STORE = {
+  storeVersion: 2 as const,
+  extractionPath: "text" as const,
   name: "Jane Doe",
   contact: [
     { label: "email", value: "jane@example.com" },
@@ -19,24 +21,27 @@ const BASE_STORE = {
   ],
   summary: "Backend engineer.",
   experience: [
-    { company: "Acme Corp", title: "Backend Engineer", dates: "2020–Present", bullets: ["Built internal tools"] },
+    { company: "Acme Corp", title: "Backend Engineer", dates: "2020–Present", isCurrent: true, bullets: ["Built internal tools"] },
   ],
   education: [],
   skills: [{ label: "Languages", items: ["TypeScript"] }],
-  extras: [],
+  projects: [],
+  certifications: [],
+  languages: [],
+  sections: [],
 };
 
 const TAILORED_STORE = {
   ...BASE_STORE,
   summary: "Backend engineer specializing in payments infrastructure.",
   skills: [{ label: "Languages", items: ["TypeScript", "Go"] }],
-  extras: ["Speaks English and Malay"],
+  sections: [{ heading: "Additional Info", items: ["Speaks English and Malay"] }],
 };
 
 const DIFF = [
   { section: "summary", op: "modify" as const, before: BASE_STORE.summary, after: TAILORED_STORE.summary, reason: "emphasize payments" },
   { section: "skills", op: "modify" as const, before: "TypeScript", after: "TypeScript, Go", reason: "surface Go experience" },
-  { section: "extras", op: "add" as const, after: "Speaks English and Malay", reason: "language requirement in JD" },
+  { section: "sections", op: "add" as const, after: "Speaks English and Malay", reason: "language requirement in JD" },
 ];
 
 describe("finalizeTailor", () => {

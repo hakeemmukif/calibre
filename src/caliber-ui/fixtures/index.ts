@@ -245,6 +245,9 @@ export const resume: Resume = Resume.parse({
     },
   ],
   skills: ["Node.js", "TypeScript", "Kafka", "PostgreSQL", "AWS", "Docker", "REST APIs", "System design"],
+  projects: [],
+  certifications: [],
+  languages: [],
   rawText:
     "Senior Backend Engineer with 6 years building payments and ledger systems...\n\nExperience\nFave (SEA fintech) — Senior Backend Engineer, 2023–2026\n- Rebuilt merchant settlement pipeline on Kafka + Postgres...\n\niPay88 — Backend Engineer, 2020–2023\n- Built merchant onboarding API used by 3,000+ SMEs...\n\nSkills: Node.js, TypeScript, Kafka, PostgreSQL, AWS, Docker, REST APIs, System design",
 });
@@ -408,6 +411,9 @@ export const tailored: TailoredResume = TailoredResume.parse({
       },
     ],
     skills: ["Node.js", "TypeScript", "Kafka", "PostgreSQL", "AWS", "Docker", "REST APIs", "System design"],
+    projects: [],
+    certifications: [],
+    languages: [],
   },
   diff: [
     {

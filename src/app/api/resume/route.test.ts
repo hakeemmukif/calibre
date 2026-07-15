@@ -11,7 +11,7 @@ import { UnauthorizedError } from "@/server/auth/errors";
 import { users } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import { resolveUpload } from "@/server/resume/uploads";
-import type { ResumeStore } from "@/server/resume/resume-store";
+import type { ResumeStoreEmit } from "@/server/resume/resume-store";
 
 const PDF_FIXTURE = join(process.cwd(), "src/server/resume/__fixtures__/tiny.pdf");
 const DOCX_FIXTURE = join(process.cwd(), "src/server/resume/__fixtures__/tiny.docx");
@@ -42,9 +42,15 @@ vi.mock("@/server/auth/session", async (orig) => ({
 
 const { GET, POST } = await import("./route");
 
-function structuredFixture(overrides: Partial<ResumeStore> = {}): ResumeStore {
+// Mock "resume-extract" output — ingest.ts now validates this against
+// ResumeStoreEmitSchema (every field required, scalars nullable) and runs it
+// through emitToStore(), so this fixture is EMIT-shaped, not STORE-shaped.
+function structuredFixture(overrides: Partial<ResumeStoreEmit> = {}): ResumeStoreEmit {
   return {
+    storeVersion: 2,
     name: "Jane Doe",
+    headline: null,
+    location: null,
     contact: [
       { label: "email", value: "jane@example.com" },
       { label: "location", value: "Kuala Lumpur, Malaysia" },
@@ -55,12 +61,18 @@ function structuredFixture(overrides: Partial<ResumeStore> = {}): ResumeStore {
         company: "Acme Co",
         title: "Senior Backend Engineer",
         dates: "2022–Present",
+        start: null,
+        end: null,
+        location: null,
         bullets: ["Led migration to Kubernetes"],
       },
     ],
     education: [],
     skills: [{ label: "Languages", items: ["TypeScript", "Go"] }],
-    extras: [],
+    projects: [],
+    certifications: [],
+    languages: [],
+    sections: [],
     ...overrides,
   };
 }
@@ -93,7 +105,10 @@ describe("/api/resume", () => {
   });
 
   beforeEach(() => {
-    state.llm = makeMockLlm({ "resume-extract": structuredFixture() });
+    // Both tasks scripted with the same fixture: tiny.pdf's real text layer
+    // (~153 chars) is under the vision-routing threshold, so PDF uploads in
+    // this file exercise the resume-extract-vision path, not resume-extract.
+    state.llm = makeMockLlm({ "resume-extract": structuredFixture(), "resume-extract-vision": structuredFixture() });
     state.llmError = undefined;
     requireUser.mockReset();
     requireUser.mockResolvedValue({ id: BOOTSTRAP_ADMIN_ID, email: "admin@example.com", role: "admin" });
@@ -217,6 +232,22 @@ describe("/api/resume", () => {
     expect(res.status).toBe(422);
     expect((await res.json()).error.code).toBe("VALIDATION_ERROR");
 
+    expect((await GET()).status).toBe(404);
+  });
+
+  it("POST {text} in Bahasa Malaysia (non-English) returns 422 VALIDATION_ERROR before hitting the LLM", async () => {
+    const create = vi.fn();
+    state.llm = { complete: create } as unknown as LlmClient;
+
+    const bahasaMalaysia =
+      "Saya bekerja sebagai jurutera perisian di sebuah syarikat teknologi selama lima tahun. " +
+      "Saya mempunyai kemahiran dalam pengekodan, reka bentuk sistem, serta kerja berpasukan. " +
+      "Saya juga pernah mengetuai projek pembangunan aplikasi mudah alih untuk pelanggan korporat.";
+    const res = await POST(jsonRequest({ text: bahasaMalaysia }));
+
+    expect(res.status).toBe(422);
+    expect((await res.json()).error.code).toBe("VALIDATION_ERROR");
+    expect(create).not.toHaveBeenCalled();
     expect((await GET()).status).toBe(404);
   });
 

@@ -42,13 +42,12 @@ describe("extractText", () => {
     await expect(extractText({ file: { bytes, mime: "image/png" } })).rejects.toThrow(UnsupportedMimeError);
   });
 
-  it("propagates PdfParseError for a scanned/empty PDF (no text layer)", async () => {
+  it("returns empty text for a scanned/image-only PDF (no text layer) — ingest.ts decides whether to route to vision", async () => {
     vi.doMock("unpdf", () => ({ extractText: async () => ({ totalPages: 1, text: "" }) }));
     vi.resetModules();
     const { extractText: extractTextFresh } = await import("./extract-text");
-    const { PdfParseError: PdfParseErrorFresh } = await import("@/lib/pdf-text");
     const bytes = Buffer.from("%PDF-1.4 fake bytes");
-    await expect(extractTextFresh({ file: { bytes, mime: "application/pdf" } })).rejects.toThrow(PdfParseErrorFresh);
+    await expect(extractTextFresh({ file: { bytes, mime: "application/pdf" } })).resolves.toBe("");
     vi.doUnmock("unpdf");
     vi.resetModules();
   });

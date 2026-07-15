@@ -3,19 +3,70 @@
 // test-profile seam via getLlm. Leaf module: only imports the TaskName type.
 import type { TaskName } from "./client";
 
+// The mock "resume-extract" task response — validated against
+// ResumeStoreEmitSchema (every field required, scalars nullable), same as
+// the real LLM call now wired in server/resume/ingest.ts. Flows through
+// emitToStore() before it reaches any consumer.
 export const RESUME_STORE = {
+  storeVersion: 2,
   name: "Jane Doe",
+  headline: null,
+  location: null,
+  summary: "Backend engineer with six years of experience building payments systems.",
   contact: [
     { label: "email", value: "jane@example.com" },
     { label: "location", value: "Kuala Lumpur, Malaysia" },
   ],
-  summary: "Backend engineer with six years of experience building payments systems.",
   experience: [
-    { company: "Acme Co", title: "Senior Backend Engineer", dates: "2022–Present", bullets: ["Led migration to Kubernetes"] },
+    {
+      company: "Acme Co",
+      title: "Senior Backend Engineer",
+      dates: "2022–Present",
+      start: "2022-01",
+      end: null,
+      location: null,
+      bullets: ["Led migration to Kubernetes"],
+    },
   ],
   education: [],
   skills: [{ label: "Domain", items: ["Payments", "TypeScript"] }],
-  extras: [],
+  projects: [],
+  certifications: [],
+  languages: [],
+  sections: [],
+};
+
+// The mock "resume-extract-vision" task response — same EMIT shape as
+// RESUME_STORE above (ResumeStoreEmitSchema), for the image-only/near-
+// textless PDF routing path (server/resume/ingest.ts). Flows through
+// emitToStore(_, "vision") before it reaches any consumer.
+export const RESUME_STORE_VISION = {
+  storeVersion: 2,
+  name: "Jane Doe",
+  headline: null,
+  location: null,
+  summary: "Backend engineer with six years of experience building payments systems.",
+  contact: [
+    { label: "email", value: "jane@example.com" },
+    { label: "location", value: "Kuala Lumpur, Malaysia" },
+  ],
+  experience: [
+    {
+      company: "Acme Co",
+      title: "Senior Backend Engineer",
+      dates: "2022–Present",
+      start: "2022-01",
+      end: null,
+      location: null,
+      bullets: ["Led migration to Kubernetes"],
+    },
+  ],
+  education: [],
+  skills: [{ label: "Domain", items: ["Payments", "TypeScript"] }],
+  projects: [],
+  certifications: [],
+  languages: [],
+  sections: [],
 };
 
 export const JD_FACTS = {
@@ -65,14 +116,47 @@ export const MATCH_SCORE = {
   lowConfidence: false,
 };
 
+// The mock "tailor" task response — its `resume` field validates against
+// ResumeStoreEmitSchema (every field required, scalars nullable), same as
+// RESUME_STORE above (TailorResultSchema, server/tailor/index.ts). Flows
+// through emitToStore() before it reaches any consumer.
+const TAILORED_RESUME_EMIT = {
+  storeVersion: 2 as const,
+  name: "Jane Doe",
+  headline: null,
+  location: null,
+  summary: "Backend engineer specializing in payments infrastructure.",
+  contact: [
+    { label: "email", value: "jane@example.com" },
+    { label: "location", value: "Kuala Lumpur, Malaysia" },
+  ],
+  experience: [
+    {
+      company: "Acme Co",
+      title: "Senior Backend Engineer",
+      dates: "2022–Present",
+      start: "2022-01",
+      end: null,
+      location: null,
+      bullets: ["Led migration to Kubernetes"],
+    },
+  ],
+  education: [],
+  skills: [{ label: "Domain", items: ["Payments", "TypeScript"] }],
+  projects: [],
+  certifications: [],
+  languages: [],
+  sections: [],
+};
+
 export const TAILOR_RESULT = {
-  resume: { ...RESUME_STORE, summary: "Backend engineer specializing in payments infrastructure." },
+  resume: TAILORED_RESUME_EMIT,
   diff: [
     {
       section: "summary",
       op: "modify" as const,
       before: RESUME_STORE.summary,
-      after: "Backend engineer specializing in payments infrastructure.",
+      after: TAILORED_RESUME_EMIT.summary,
       reason: "Ties the summary to the payments domain named in the posting.",
     },
   ],
@@ -96,6 +180,7 @@ export const QUESTION_ANSWER = {
 // Keyed by TaskName so makeMockLlm(scriptedFixtures) answers every F1-F6 call.
 export const scriptedFixtures: Partial<Record<TaskName, unknown>> = {
   "resume-extract": RESUME_STORE,
+  "resume-extract-vision": RESUME_STORE_VISION,
   "jd-extract": JD_FACTS,
   "url-check-search": URL_SEARCH_RESULT,
   "ghost-web": GHOST_WEB_EVIDENCE,

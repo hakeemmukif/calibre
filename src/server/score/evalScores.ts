@@ -14,6 +14,7 @@
 import { z } from "zod";
 import type { LlmClient } from "@/lib/llm/client";
 import { renderTemplate } from "@/lib/llm/templates";
+import type { ResumeMetrics } from "@/server/resume/resume-metrics";
 import { LegitimacyTier, Tone } from "@/types";
 
 export const EvalLegitimacySchema = z.object({
@@ -54,7 +55,7 @@ export type EvalScores = z.infer<typeof EvalScoresSchema>;
 
 export async function scoreMatch(
   llm: LlmClient,
-  vars: { jdFacts: unknown; resume: unknown },
+  vars: { jdFacts: unknown; resume: unknown; metrics: ResumeMetrics },
   modelOverride?: string,
   signal?: AbortSignal,
 ): Promise<{ data: EvalScores; model: string; costUsd: number }> {
@@ -64,6 +65,7 @@ export async function scoreMatch(
     messages: renderTemplate("match-score", {
       jdFacts: JSON.stringify(vars.jdFacts),
       resume: JSON.stringify(vars.resume),
+      metrics: JSON.stringify(vars.metrics),
     }),
     responseSchema: EvalScoresSchema,
     signal,

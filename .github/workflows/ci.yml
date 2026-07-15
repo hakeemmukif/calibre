@@ -12,6 +12,38 @@ jobs:
       - run: npm test
       - run: npm run contract:check
       - run: npm run build
+  eval-resume:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 2 }
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            resume:
+              - 'config/templates/resume-extract*.md'
+              - 'src/server/resume/resume-store.ts'
+              - 'config/models.yml'
+      - uses: actions/setup-node@v4
+        if: steps.filter.outputs.resume == 'true'
+        with: { node-version: '22', cache: 'npm' }
+      - run: npm ci
+        if: steps.filter.outputs.resume == 'true'
+      # Operator: add OPENROUTER_API_KEY as a repo/environment secret to
+      # activate this job. Without it, this step (and the job) no-ops
+      # cleanly instead of failing CI — costs real tokens once activated.
+      - name: Live résumé-extraction eval
+        if: steps.filter.outputs.resume == 'true' && secrets.OPENROUTER_API_KEY != ''
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          # eval.live.test.ts never touches the DB, but it runs through
+          # vitest.smoke.config.ts, whose setupFiles (src/smoke/setup.ts)
+          # requires DATABASE_URL to be *set* (not connected-to) — placeholder
+          # only, no Postgres service needed for this job.
+          DATABASE_URL: postgresql://unused:unused@localhost:5432/unused
+        run: npm run eval:resume
   e2e:
     needs: check
     runs-on: ubuntu-latest

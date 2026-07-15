@@ -1,0 +1,18 @@
+{
+  "id": "single-column",
+  "category": "synthetic",
+  "rawText": "Priya Sundram Senior Product Manager priya.sundram@example.com | Singapore SUMMARY Product manager with 8 years of experience shipping B2B SaaS products across fintech and logistics. WORKING EXPERIENCE Senior Product Manager Ledger Works Singapore January 2019 - PRESENT Launched a multi-currency invoicing product that grew to $4M ARR within 18 months. Ran quarterly discovery interviews with over 50 customers to prioritize the roadmap. Product Manager Freight Bridge Singapore June 2016 - December 2018 Owned the carrier-onboarding flow, cutting onboarding time from 14 days to 3 days. CERTIFICATIONS Certified Scrum Product Owner (CSPO) SKILLS Roadmapping SQL Figma A/B Testing Stakeholder Management",
+  "expected": {
+    "name": "Priya Sundram",
+    "headline": "Senior Product Manager",
+    "location": "Singapore",
+    "certifications": ["Certified Scrum Product Owner"],
+    "languages": [],
+    "projects": [],
+    "skillsMin": 4,
+    "roles": [
+      { "company": "Ledger Works", "start": "2019-01", "end": null, "isCurrent": true },
+      { "company": "Freight Bridge", "start": "2016-06", "end": "2018-12", "isCurrent": false }
+    ]
+  }
+}

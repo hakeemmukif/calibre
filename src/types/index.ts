@@ -141,12 +141,16 @@ export const Resume = z.object({ // §5; `hasResume` is NOT a field — absence 
   updatedAt: z.string().datetime(), // wire form of kit's `updated`; UI derives "3d ago"
   headline: z.string(),
   location: z.string(),
-  summary: z.string(),
+  summary: z.string().optional(),
   experience: z.array(
     z.object({ title: z.string(), company: z.string(), dates: z.string(), bullets: z.array(z.string()) }),
   ),
   skills: z.array(z.string()),
+  projects: z.array(z.object({ name: z.string(), url: z.string().optional(), bullets: z.array(z.string()) })),
+  certifications: z.array(z.object({ name: z.string(), issuer: z.string().optional(), year: z.string().optional() })),
+  languages: z.array(z.object({ language: z.string(), proficiency: z.string().optional() })),
   rawText: z.string(), // parse provenance, grounds F4/F6
+  extractionPath: z.enum(["text", "vision"]).optional(), // presentational (T5b-2); optional for fixture convenience — every real v2 store stamps it; promote to required at the next contract revision
 });
 export type Resume = z.infer<typeof Resume>;
 

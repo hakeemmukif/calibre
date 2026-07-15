@@ -11,13 +11,18 @@ import { resolveUpload } from "./uploads";
 import { migrateUploads } from "./migrate-uploads";
 
 const structuredFixture = {
+  storeVersion: 2 as const,
+  extractionPath: "text" as const,
   name: "Jane Doe",
   contact: [],
   summary: "s",
   experience: [],
   education: [],
   skills: [],
-  extras: [],
+  projects: [],
+  certifications: [],
+  languages: [],
+  sections: [],
 };
 
 async function insertResume(db: TestDb, userId: string, originalPath: string | null) {

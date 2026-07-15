@@ -49,14 +49,14 @@ function draftAnswerFor(question: ApplicationQuestion, seeded?: ApplicationAnswe
     return { questionId: question.id, prompt: question.prompt, answer: "Yes", grounding: [] };
   }
   const bullet = resume.experience[0]?.bullets[0];
-  const text = `${resume.summary} ${bullet ? `For example: ${bullet}` : ""}`.trim();
+  const text = `${resume.summary ?? ""} ${bullet ? `For example: ${bullet}` : ""}`.trim();
   const clipped = question.maxLength ? text.slice(0, question.maxLength) : text;
   return {
     questionId: question.id,
     prompt: question.prompt,
     answer: clipped,
     grounding: [
-      { source: "summary", quote: resume.summary },
+      ...(resume.summary ? ([{ source: "summary" as const, quote: resume.summary }]) : []),
       ...(bullet ? ([{ source: "experience" as const, quote: bullet }]) : []),
     ],
   };
