@@ -40,6 +40,7 @@ describe("computeResumeMetrics", () => {
       totalYearsExperience: 0,
       currentTenureMonths: 0,
       roleCount: 0,
+      durationDerivedRoleCount: 0,
       avgTenureMonths: 0,
       distinctSkillCount: 0,
       certificationCount: 0,
@@ -187,6 +188,54 @@ describe("computeResumeMetrics", () => {
     const metrics = computeResumeMetrics(store);
     expect(metrics.totalYearsExperience).toBe(0);
     expect(metrics.avgTenureMonths).toBe(0);
+  });
+
+  it("parses a 'YYYY to YYYY' dates string (no dash) when atoms are absent", () => {
+    const store = baseStore({
+      experience: [experience({ company: "NoDash Co", dates: "2018 to 2022" })],
+    });
+    expect(computeResumeMetrics(store).totalYearsExperience).toBe(4);
+  });
+
+  it("parses a month-name dates string ('Jun 2020 – Aug 2022') when atoms are absent", () => {
+    const store = baseStore({
+      experience: [experience({ company: "Months Co", dates: "Jun 2020 – Aug 2022" })],
+    });
+    expect(computeResumeMetrics(store).totalYearsExperience).toBe(2);
+  });
+
+  it("parses a dash-less ongoing dates string ('Since 2019') to `now` when atoms are absent", () => {
+    const store = baseStore({
+      experience: [experience({ company: "Since Co", dates: "Since 2019", isCurrent: true })],
+    });
+    const now = new Date(2024, 0, 1); // Jan 2024
+    expect(computeResumeMetrics(store, now).currentTenureMonths).toBe(60);
+  });
+
+  it("reports durationDerivedRoleCount as a partial coverage signal when only some roles resolve", () => {
+    const store = baseStore({
+      experience: [
+        experience({ company: "Acme", dates: "2020–2022", start: "2020-01", end: "2022-01" }),
+        experience({ company: "NoDash Co", dates: "2018 to 2022" }),
+        experience({ company: "Freelance", dates: "assorted gigs" }),
+      ],
+    });
+    const metrics = computeResumeMetrics(store);
+    expect(metrics.roleCount).toBe(3);
+    expect(metrics.durationDerivedRoleCount).toBe(2);
+  });
+
+  it("distinguishes an all-underivable résumé (0 years) from a genuine zero-experience one via durationDerivedRoleCount", () => {
+    const store = baseStore({
+      experience: [
+        experience({ company: "Freelance", dates: "assorted gigs" }),
+        experience({ company: "Consulting", dates: "various" }),
+      ],
+    });
+    const metrics = computeResumeMetrics(store);
+    expect(metrics.totalYearsExperience).toBe(0);
+    expect(metrics.roleCount).toBe(2);
+    expect(metrics.durationDerivedRoleCount).toBe(0);
   });
 
   it("is deterministic for the same input and `now`", () => {

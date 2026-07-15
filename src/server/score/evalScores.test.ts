@@ -48,6 +48,7 @@ describe("scoreMatch", () => {
       totalYearsExperience: 5.5,
       currentTenureMonths: 18,
       roleCount: 3,
+      durationDerivedRoleCount: 3,
       avgTenureMonths: 22,
       distinctSkillCount: 12,
       certificationCount: 1,

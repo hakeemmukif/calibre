@@ -10,6 +10,7 @@ export interface ResumeMetrics {
   totalYearsExperience: number;
   currentTenureMonths: number;
   roleCount: number;
+  durationDerivedRoleCount: number;
   avgTenureMonths: number;
   distinctSkillCount: number;
   certificationCount: number;
@@ -20,8 +21,8 @@ export interface ResumeMetrics {
 type ExperienceEntry = ResumeStore["experience"][number];
 type Interval = { start: number; end: number };
 
-const YEAR_ONGOING_RE = /(\d{4})\s*[-–—]\s*(present|current|now|ongoing)\b/i;
-const YEAR_RANGE_RE = /(\d{4})\s*[-–—]\s*(\d{4})/;
+const YEAR_RE = /\b(?:19|20)\d{2}\b/g;
+const ONGOING_RE = /\b(present|current|now|ongoing)\b/i;
 const QUANTIFIED_RE = /\d|[%$€£¥]/;
 
 function atomToMonthIndex(atom: string): number {
@@ -35,16 +36,23 @@ function nowMonthIndex(now: Date): number {
 
 // Year-only fallback: parses the verbatim `dates` string at Jan-of-year
 // granularity. Only reached when the normalized start/end atoms don't fully
-// resolve a role's duration.
-function parseYearRangeFromDates(dates: string, now: Date): Interval | null {
-  const ongoing = dates.match(YEAR_ONGOING_RE);
-  if (ongoing) {
-    return { start: Number(ongoing[1]) * 12, end: nowMonthIndex(now) };
+// resolve a role's duration. Extracts every 4-digit year in the string
+// (regardless of separator — dash, "to", month names, "Since") rather than
+// requiring a specific dash-adjacent shape, so "2018 to 2022", "Jun 2020 –
+// Aug 2022", and "Since 2019" all resolve alongside the dash cases. The
+// entry's own `isCurrent` flag counts as an ongoing signal too, since a
+// résumé can mark a role current without the dates string spelling out
+// "Present" (e.g. "Since 2019").
+function parseYearRangeFromDates(dates: string, now: Date, isCurrent: boolean): Interval | null {
+  const years = dates.match(YEAR_RE)?.map(Number) ?? [];
+  const ongoing = ONGOING_RE.test(dates) || isCurrent;
+
+  if (ongoing && years.length >= 1) {
+    return { start: years[0] * 12, end: nowMonthIndex(now) };
   }
-  const range = dates.match(YEAR_RANGE_RE);
-  if (range) {
-    const start = Number(range[1]) * 12;
-    const end = Number(range[2]) * 12;
+  if (years.length >= 2) {
+    const start = years[0] * 12;
+    const end = years[years.length - 1] * 12;
     if (end >= start) return { start, end };
   }
   return null;
@@ -61,7 +69,7 @@ function roleInterval(entry: ExperienceEntry, now: Date): Interval | null {
 
   if (start !== null && end !== null && end >= start) return { start, end };
 
-  const parsed = parseYearRangeFromDates(entry.dates, now);
+  const parsed = parseYearRangeFromDates(entry.dates, now, entry.isCurrent);
   if (parsed) return parsed;
 
   console.warn(`resume-metrics: could not derive a duration for role "${entry.title}" at "${entry.company}" (dates: "${entry.dates}") — excluded from duration math`);
@@ -114,6 +122,7 @@ export function computeResumeMetrics(store: ResumeStore, now: Date = new Date())
   const currentTenureMonths = currentStarts.length > 0 ? nowMonthIndex(now) - Math.min(...currentStarts) : 0;
 
   const roleCount = store.experience.length;
+  const durationDerivedRoleCount = derivable.length;
   const avgTenureMonths =
     derivable.length > 0 ? derivable.reduce((sum, { start, end }) => sum + (end - start), 0) / derivable.length : 0;
 
@@ -127,6 +136,7 @@ export function computeResumeMetrics(store: ResumeStore, now: Date = new Date())
     totalYearsExperience,
     currentTenureMonths,
     roleCount,
+    durationDerivedRoleCount,
     avgTenureMonths,
     distinctSkillCount,
     certificationCount,

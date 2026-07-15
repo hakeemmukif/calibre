@@ -26,6 +26,7 @@ const FIXTURE_METRICS: ResumeMetrics = {
   totalYearsExperience: 6,
   currentTenureMonths: 24,
   roleCount: 1,
+  durationDerivedRoleCount: 1,
   avgTenureMonths: 72,
   distinctSkillCount: 8,
   certificationCount: 0,

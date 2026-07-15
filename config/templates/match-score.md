@@ -29,5 +29,10 @@ Job facts (extracted):
 Candidate résumé:
 {{resume}}
 
-Verified résumé metrics (computed deterministically — treat as ground truth,
-do not recount years or tenure): {{metrics}}
+Verified résumé metrics (computed deterministically): {{metrics}}.
+`durationDerivedRoleCount` of `roleCount` roles had a machine-readable
+duration — treat the covered figures as ground truth, but when
+`durationDerivedRoleCount` is low relative to `roleCount` (or 0), the parser
+could not read this résumé's date formats, so judge experience/tenure from
+the résumé text yourself rather than trusting `totalYearsExperience` /
+`currentTenureMonths`.
