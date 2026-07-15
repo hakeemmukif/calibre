@@ -165,22 +165,65 @@ export const Progress = z.object({ // donor JobProgress shape
 });
 export type Progress = z.infer<typeof Progress>;
 
+export const ScanStats = z.object({
+  scanned: z.number().int(),
+  matched: z.number().int(),
+  scored: z.number().int(),
+  worth: z.number().int(),
+  ghosts: z.number().int(),
+  unscored: z.number().int(),
+  capStopped: z.boolean(),
+  discoverMs: z.number().int(),
+  scoreMs: z.number().int(),
+  costUsd: z.number(),
+  policyVersion: z.string(),
+});
+export type ScanStats = z.infer<typeof ScanStats>;
+
 export const SearchRun = z.object({
   id: z.string(),
   status: RunStatus,
   persona: Persona,
   sources: z.array(z.string()), // SourceRef ids in scope
   progress: Progress.nullable(),
-  stats: z.object({
-    scanned: z.number().int(),
-    worth: z.number().int(),
-    ghosts: z.number().int(),
-  }), // §5 ScanStats, feeds summary strip
+  stats: ScanStats, // §5 ScanStats, feeds summary strip
   startedAt: z.string().datetime(),
   finishedAt: z.string().datetime().nullable(),
   error: z.string().nullable(),
 });
 export type SearchRun = z.infer<typeof SearchRun>;
+
+export const ScanResult = z.object({
+  jobId: z.string(),
+  title: z.string(),
+  company: z.string(),
+  source: z.string(),
+  outcome: z.enum(["scored", "unscored", "error", "skipped"]),
+  verdict: z.enum(["Apply", "Consider", "Research first", "Skip"]).optional(),
+  legitimacyTier: LegitimacyTier.optional(),
+  fit: z.number().min(0).max(5).optional(),
+  scoredMs: z.number().int().optional(),
+  reason: z.literal("dailyCap").optional(), // only when outcome === "skipped"
+  error: z.string().optional(),             // only when outcome === "error"
+});
+export type ScanResult = z.infer<typeof ScanResult>;
+
+export const SearchRunSummary = z.object({
+  id: z.string(),
+  status: RunStatus,
+  persona: Persona,
+  resumeName: z.string(), // joined from resumes at read time
+  startedAt: z.string().datetime(),
+  finishedAt: z.string().datetime().nullable(),
+  stats: ScanStats,
+});
+export type SearchRunSummary = z.infer<typeof SearchRunSummary>;
+
+export const ScanDetail = SearchRunSummary.extend({
+  error: z.string().nullable(),
+  results: z.array(ScanResult),
+});
+export type ScanDetail = z.infer<typeof ScanDetail>;
 
 export const Application = z.object({ // §5 Applied, wire-normalised
   id: z.string(),
