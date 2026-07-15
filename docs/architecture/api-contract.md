@@ -365,17 +365,17 @@ Boundary rule everywhere: `Schema.parse(body)` at the route handler; `ZodError` 
 
 ## 4. Streaming (SSE)
 
-Both run endpoints emit the same envelope; every `data:` payload is schema-validated JSON, and events carry monotonic `id:` for `Last-Event-ID` resume:
+The three run endpoints (search, tailor, correlate) emit the same envelope; every `data:` payload is schema-validated JSON, and events carry monotonic `id:` for `Last-Event-ID` resume:
 
 ```ts
 // event: progress → Progress   e.g. {stage:'boards', current:3, total:7, label:'Scanning Hiredly…'}
 // event: job      → Job        (search only: scored job streamed into the feed as found)
-// event: done     → SearchRun | TailoredResume   (terminal snapshot, then close)
+// event: done     → SearchRun | TailoredResume | CorrelationReport   (terminal snapshot, then close)
 // event: error    → ErrorEnvelope                (terminal, then close)
 export const SseEvent = z.discriminatedUnion('event', [
   z.object({ event: z.literal('progress'), data: Progress }),
   z.object({ event: z.literal('job'),      data: Job }),
-  z.object({ event: z.literal('done'),     data: z.union([SearchRun, TailoredResume]) }),
+  z.object({ event: z.literal('done'),     data: z.union([SearchRun, TailoredResume, CorrelationReport]) }),
   z.object({ event: z.literal('error'),    data: ErrorEnvelope }),
 ]);
 ```
