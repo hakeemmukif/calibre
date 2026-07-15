@@ -26,6 +26,13 @@ function formatElapsed(ms: number): string {
 
 export default function ScanDetailPage() {
   const { id } = useParams<{ id: string }>();
+  // Keyed by `id` so navigating between runs remounts the view entirely —
+  // useScanLive's useReducer state lives in this component, and a `key` on
+  // a descendant can't reset an ancestor's hook state (M2 T7 review fix).
+  return <ScanDetailView key={id} id={id} />;
+}
+
+function ScanDetailView({ id }: { id: string }) {
   const [detail, setDetail] = React.useState<ScanDetail | null>(null);
   const [notFound, setNotFound] = React.useState(false);
   const [error, setError] = React.useState<string | undefined>();
@@ -110,7 +117,7 @@ export default function ScanDetailPage() {
   if (detail.status === "running" || detail.status === "queued") {
     return (
       <div style={{ minHeight: "100vh", background: "var(--bg-app)", padding: 24 }}>
-        <div style={{ maxWidth: "var(--content-max, 900px)", margin: "0 auto", display: "flex", flexDirection: "column", gap: 16 }} key={id}>
+        <div style={{ maxWidth: "var(--content-max, 900px)", margin: "0 auto", display: "flex", flexDirection: "column", gap: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span style={{ font: "var(--type-h3)", color: "var(--text-strong)" }}>{detail.resumeName}</span>
             <Tag tone="neutral">{detail.persona}</Tag>

@@ -13,8 +13,9 @@ import type { ScanDetail, SearchRun, SseEvent } from "@/types";
 
 afterEach(cleanup);
 
+let currentParamsId = "run-1";
 vi.mock("next/navigation", () => ({
-  useParams: () => ({ id: "run-1" }),
+  useParams: () => ({ id: currentParamsId }),
 }));
 
 let capturedOnEvent: ((event: SseEvent) => void) | null = null;
@@ -27,9 +28,9 @@ vi.mock("@/features/search/client", () => ({ getScanDetail, subscribeSearch, sta
 
 import ScanDetailPage from "./page";
 
-function runningDetail(): ScanDetail {
+function runningDetail(id = "run-1"): ScanDetail {
   return {
-    id: "run-1",
+    id,
     status: "running",
     persona: "remote",
     resumeName: "jane_v2.pdf",
@@ -70,6 +71,7 @@ function finishedSearchRun(): SearchRun {
 }
 
 beforeEach(() => {
+  currentParamsId = "run-1";
   capturedOnEvent = null;
   getScanDetail.mockReset();
   subscribeSearch.mockReset();
@@ -114,5 +116,44 @@ describe("/scans/:id — live lanes view", () => {
     await waitFor(() => expect(getScanDetail).toHaveBeenCalledTimes(2));
     expect(await screen.findByText("Discover")).toBeInTheDocument();
     expect(screen.queryByText("Discovering postings")).not.toBeInTheDocument();
+  });
+
+  it("resets live lane state when navigating from one running run to another (M2 T7 review fix)", async () => {
+    getScanDetail.mockResolvedValueOnce(runningDetail("run-1"));
+    const { rerender } = render(<ScanDetailPage />);
+
+    await waitFor(() => expect(subscribeSearch).toHaveBeenCalledWith("run-1", expect.any(Function)));
+    act(() => {
+      capturedOnEvent!({ event: "source", data: { sourceId: "s1", name: "Greenhouse", status: "fetching" } });
+      capturedOnEvent!({
+        event: "jobPhase",
+        data: { jobId: "j1", title: "Data Engineer", company: "Acme", source: "s1", phase: "scoring" },
+      });
+    });
+    expect(await screen.findByText("Greenhouse")).toBeInTheDocument();
+    expect(screen.getByText("Data Engineer")).toBeInTheDocument();
+
+    // Navigate: params now resolve to run-2, and the page rerenders — the
+    // component keyed by `id` remounts, so useScanLive's reducer state
+    // (and any run-1 lane content) must not survive the transition.
+    currentParamsId = "run-2";
+    getScanDetail.mockResolvedValueOnce(runningDetail("run-2"));
+    rerender(<ScanDetailPage />);
+
+    await waitFor(() => expect(subscribeSearch).toHaveBeenCalledWith("run-2", expect.any(Function)));
+    expect(screen.queryByText("Greenhouse")).not.toBeInTheDocument();
+    expect(screen.queryByText("Data Engineer")).not.toBeInTheDocument();
+
+    act(() => {
+      capturedOnEvent!({ event: "source", data: { sourceId: "s2", name: "Lever", status: "fetching" } });
+      capturedOnEvent!({
+        event: "jobPhase",
+        data: { jobId: "j2", title: "Backend Engineer", company: "Beta", source: "s2", phase: "scoring" },
+      });
+    });
+    expect(await screen.findByText("Lever")).toBeInTheDocument();
+    expect(screen.getByText("Backend Engineer")).toBeInTheDocument();
+    expect(screen.queryByText("Greenhouse")).not.toBeInTheDocument();
+    expect(screen.queryByText("Data Engineer")).not.toBeInTheDocument();
   });
 });
