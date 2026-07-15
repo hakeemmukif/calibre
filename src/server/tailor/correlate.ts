@@ -97,6 +97,9 @@ async function runCorrelateJob(
   if (missing.length > 0) {
     throw new Error(`correlate: classifier dropped requirement id(s) ${missing.map((m) => m.id).join(",")}`);
   }
+  if (result.data.rows.length !== requirements.length) {
+    throw new Error(`correlate: classifier returned ${result.data.rows.length} rows for ${requirements.length} requirements (duplicate or extra ids)`);
+  }
   const classified: Omit<CorrelationRow, "atsPresent">[] = result.data.rows.map((o) => {
     const req = byId.get(o.id);
     if (!req) throw new Error(`correlate: classifier returned unknown id ${o.id}`);

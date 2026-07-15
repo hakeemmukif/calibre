@@ -125,4 +125,49 @@ describe("correlate", () => {
     expect(row.status).toBe("completed");
     expect(row.rows[0].status).toBe("gap");
   });
+
+  it("fails loud (queued -> failed) when the classifier drops a requirement id", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id);
+    const resume = await insertResume(state.testDb, { isActive: true });
+    await insertJobScore(state.testDb, job.id, resume.id, {
+      jdFacts: { title: "Backend Engineer", mustHaves: ["kafka"], niceToHaves: [], responsibilities: [], redFlags: [] },
+    });
+
+    const llm = makeMockLlm({ correlate: { rows: [] } });
+
+    const queued = await correlate(BOOTSTRAP_ADMIN_ID, { jobId: job.id }, { llm });
+    const row = await pollUntilTerminal(queued.id);
+    expect(row.status).toBe("failed");
+  });
+
+  it("fails loud (queued -> failed) when the classifier returns duplicate ids for one requirement", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id);
+    const resume = await insertResume(state.testDb, { isActive: true });
+    await insertJobScore(state.testDb, job.id, resume.id, {
+      jdFacts: { title: "Backend Engineer", mustHaves: ["kafka"], niceToHaves: [], responsibilities: [], redFlags: [] },
+    });
+
+    const llm = makeMockLlm({
+      correlate: {
+        rows: [
+          { id: 0, term: "kafka", status: "met", evidence: "e", reason: "r", note: null },
+          { id: 0, term: "kafka", status: "met", evidence: "e", reason: "r", note: null },
+        ],
+      },
+    });
+
+    const queued = await correlate(BOOTSTRAP_ADMIN_ID, { jobId: job.id }, { llm });
+    const row = await pollUntilTerminal(queued.id);
+    expect(row.status).toBe("failed");
+  });
+
+  it("404s (UnknownJobError) for a job owned by a different user", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id);
+
+    await expect(correlate(crypto.randomUUID(), { jobId: job.id }, { llm: makeMockLlm({}) }))
+      .rejects.toBeInstanceOf(UnknownJobError);
+  });
 });
