@@ -1,0 +1,53 @@
+{
+  "id": "01-backend-distributed",
+  "category": "synthetic",
+  "resume": {
+    "storeVersion": 2,
+    "extractionPath": "text",
+    "name": "Aisha Rahman",
+    "headline": "Backend Engineer",
+    "location": "Kuala Lumpur",
+    "summary": "Backend engineer building distributed payment systems.",
+    "contact": [],
+    "education": [],
+    "projects": [],
+    "certifications": [],
+    "languages": [],
+    "sections": [],
+    "experience": [
+      {
+        "company": "Paywatch",
+        "title": "Backend Engineer",
+        "dates": "2021-2024",
+        "isCurrent": false,
+        "bullets": [
+          "Led a distributed payments platform handling FX settlement across 4 markets",
+          "Operated services on Kubernetes with Postgres"
+        ]
+      }
+    ],
+    "skills": [
+      { "label": "Backend", "items": ["Kubernetes", "Postgres", "Go"] }
+    ]
+  },
+  "jdFacts": {
+    "title": "Senior Backend Engineer",
+    "mustHaves": [
+      "Experience with distributed systems",
+      "Kubernetes in production",
+      "Kafka event streaming"
+    ],
+    "niceToHaves": ["FX or payments domain"],
+    "responsibilities": ["Operate production services"],
+    "redFlags": []
+  },
+  "expected": {
+    "rows": [
+      { "requirement": "Experience with distributed systems", "status": "met" },
+      { "requirement": "Kubernetes in production", "status": "met" },
+      { "requirement": "Kafka event streaming", "status": "gap" },
+      { "requirement": "FX or payments domain", "status": "met" },
+      { "requirement": "Operate production services", "status": "buried" }
+    ]
+  }
+}

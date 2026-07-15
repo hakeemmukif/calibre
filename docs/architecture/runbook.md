@@ -9,3 +9,8 @@ Verified prerequisites to boot `next dev`/`next start` against the real backend 
 3. Set real OpenRouter model ids in `config/models.yml`, replacing the `TODO(operator): confirm model id before real spend` placeholders.
 4. Run `npx playwright install chromium` — required for `GET /api/tailor/:id/pdf` (`src/lib/pdf.ts`) and the liveness deep-probe fallback (`CALIBER_LIVENESS_PLAYWRIGHT=1`, `src/server/score/liveness.ts`) and the F4 tier-2 DOM parse; none of these launch Chromium without it.
 5. `npm run dev`.
+
+## Eval harnesses (live LLM, costs real tokens)
+
+- `OPENROUTER_API_KEY=… npm run eval:resume` — résumé-extraction regression. Growth rule: every résumé that fails in prod joins `src/server/resume/__fixtures__/golden/`.
+- `OPENROUTER_API_KEY=… npm run eval:tailor` — requirement-correlation regression (costs real tokens). Growth rule: every misclassified résumé/JD joins `src/server/tailor/__fixtures__/golden/`.

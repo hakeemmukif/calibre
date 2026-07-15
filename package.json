@@ -12,6 +12,7 @@
     "test:e2e": "playwright test",
     "smoke:real": "vitest run --config vitest.smoke.config.ts src/smoke",
     "eval:resume": "vitest run --config vitest.smoke.config.ts src/server/resume/eval.live.test.ts",
+    "eval:tailor": "vitest run --config vitest.smoke.config.ts src/server/tailor/eval.live.test.ts",
     "typecheck": "tsc --noEmit",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",

@@ -1,0 +1,56 @@
+{
+  "id": "03-seniority-tenure",
+  "category": "synthetic",
+  "resume": {
+    "storeVersion": 2,
+    "extractionPath": "text",
+    "name": "Marcus Tan",
+    "headline": "Software Engineer",
+    "location": "Singapore",
+    "summary": "Full-stack engineer with six years shipping consumer products.",
+    "contact": [],
+    "education": [],
+    "projects": [],
+    "certifications": [],
+    "languages": [],
+    "sections": [],
+    "experience": [
+      {
+        "company": "Shopmatic",
+        "title": "Software Engineer",
+        "dates": "2018-2022",
+        "isCurrent": false,
+        "bullets": ["Built checkout and payments features for a consumer marketplace"]
+      },
+      {
+        "company": "Carousell",
+        "title": "Software Engineer",
+        "dates": "2022-Present",
+        "isCurrent": true,
+        "bullets": ["Owned the search ranking service", "Mentored two junior engineers"]
+      }
+    ],
+    "skills": [
+      { "label": "Backend", "items": ["Java", "Spring Boot", "MySQL"] }
+    ]
+  },
+  "jdFacts": {
+    "title": "Senior Software Engineer",
+    "seniority": "Senior",
+    "mustHaves": [
+      "At least 5 years of professional software engineering experience",
+      "At least 2 years in a tech lead or team lead role"
+    ],
+    "niceToHaves": ["Experience mentoring junior engineers"],
+    "responsibilities": ["Lead technical design for a product area"],
+    "redFlags": []
+  },
+  "expected": {
+    "rows": [
+      { "requirement": "At least 5 years of professional software engineering experience", "status": "met" },
+      { "requirement": "At least 2 years in a tech lead or team lead role", "status": "gap" },
+      { "requirement": "Experience mentoring junior engineers", "status": "met" },
+      { "requirement": "Lead technical design for a product area", "status": "gap" }
+    ]
+  }
+}

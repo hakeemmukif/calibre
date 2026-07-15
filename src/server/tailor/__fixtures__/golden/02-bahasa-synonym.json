@@ -1,0 +1,57 @@
+{
+  "id": "02-bahasa-synonym",
+  "category": "synthetic",
+  "resume": {
+    "storeVersion": 2,
+    "extractionPath": "text",
+    "name": "Farah Izzati",
+    "headline": "Cloud & Data Engineer",
+    "location": "Petaling Jaya",
+    "summary": "Data engineer specializing in cloud-native pipelines and relational databases.",
+    "contact": [],
+    "education": [],
+    "projects": [],
+    "certifications": [],
+    "languages": [],
+    "sections": [],
+    "experience": [
+      {
+        "company": "Grabtech Solutions",
+        "title": "Data Engineer",
+        "dates": "2020-2024",
+        "isCurrent": false,
+        "bullets": [
+          "Managed AWS infrastructure (EC2, S3, RDS) for microservice pipelines processing 2M events/day",
+          "Wrote production Python services for ETL jobs feeding a PostgreSQL warehouse",
+          "Maintained legacy Angular dashboards for internal analytics tooling"
+        ]
+      }
+    ],
+    "skills": [
+      { "label": "Languages", "items": ["Python", "SQL"] },
+      { "label": "Cloud", "items": ["AWS", "PostgreSQL"] }
+    ]
+  },
+  "jdFacts": {
+    "title": "Jurutera Data Kanan",
+    "mustHaves": [
+      "Pengalaman mengurus infrastruktur awan (cloud infrastructure)",
+      "Kefasihan dalam bahasa pengaturcaraan Python",
+      "Kemahiran dalam pangkalan data hubungan (relational database)"
+    ],
+    "niceToHaves": [
+      "Sedang berhijrah (migrating) daripada Angular ke rangka kerja moden"
+    ],
+    "responsibilities": ["Membina saluran paip data (data pipelines) berskala"],
+    "redFlags": []
+  },
+  "expected": {
+    "rows": [
+      { "requirement": "Pengalaman mengurus infrastruktur awan (cloud infrastructure)", "status": "met" },
+      { "requirement": "Kefasihan dalam bahasa pengaturcaraan Python", "status": "met" },
+      { "requirement": "Kemahiran dalam pangkalan data hubungan (relational database)", "status": "met" },
+      { "requirement": "Sedang berhijrah (migrating) daripada Angular ke rangka kerja moden", "status": "gap" },
+      { "requirement": "Membina saluran paip data (data pipelines) berskala", "status": "buried" }
+    ]
+  }
+}

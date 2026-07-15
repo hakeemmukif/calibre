@@ -17,6 +17,7 @@ import {
   correlationReportsRepo, type CorrelationReportRow,
 } from "@/server/persistence/repos/correlationReports";
 import { create, type RunHandle } from "@/server/runs/registry";
+import type { ResumeStore } from "@/server/resume/resume-store";
 import type { JdFacts } from "@/server/score/jdFacts";
 import { CorrelationReport, type CorrelationRow } from "@/types";
 import { atsSignal, semanticSignal, verifyEvidence } from "./correlate-metrics";
@@ -49,6 +50,52 @@ export const CorrelateResultSchema = z.object({
   })),
 });
 
+// Shared classify+verify core (DB-free): id-joins the classifier's response
+// back onto `requirements` (bijection guard — every requirement id must
+// appear exactly once, never dropped/duplicated/unknown), then runs the
+// deterministic verifyEvidence pass. Used by both `classifyAndVerify` (the
+// DB-free helper the live eval calls directly against a fixture) and
+// `runCorrelateJob` (which additionally needs `model`/`costUsd` for
+// persistence) — kept as one implementation so the two never drift.
+async function classifyRequirements(
+  jd: JdFacts, store: ResumeStore, llm: LlmClient,
+): Promise<{ rows: CorrelationRow[]; model: string; costUsd: number }> {
+  const requirements = buildRequirements(jd);
+  const result = await llm.complete({
+    task: "correlate",
+    messages: renderTemplate("correlate", {
+      requirements: JSON.stringify(requirements),
+      resume: JSON.stringify(store),
+    }),
+    responseSchema: CorrelateResultSchema,
+  });
+
+  const byId = new Map(requirements.map((r) => [r.id, r]));
+  const missing = requirements.filter((r) => !result.data.rows.some((o) => o.id === r.id));
+  if (missing.length > 0) {
+    throw new Error(`correlate: classifier dropped requirement id(s) ${missing.map((m) => m.id).join(",")}`);
+  }
+  if (result.data.rows.length !== requirements.length) {
+    throw new Error(`correlate: classifier returned ${result.data.rows.length} rows for ${requirements.length} requirements (duplicate or extra ids)`);
+  }
+  const classified: Omit<CorrelationRow, "atsPresent">[] = result.data.rows.map((o) => {
+    const req = byId.get(o.id);
+    if (!req) throw new Error(`correlate: classifier returned unknown id ${o.id}`);
+    return { requirement: req.text, term: o.term, kind: req.kind, status: o.status,
+      evidence: o.evidence, reason: o.reason, note: o.note };
+  });
+  return { rows: verifyEvidence(classified, store), model: result.model, costUsd: result.costUsd };
+}
+
+// DB-free classify+verify path — no persistence, no run handle. Exposed so
+// the live eval harness (eval.live.test.ts) can drive the real classifier
+// against a golden fixture's ResumeStore/JdFacts directly.
+export async function classifyAndVerify(
+  jd: JdFacts, store: ResumeStore, llm: LlmClient,
+): Promise<CorrelationRow[]> {
+  return (await classifyRequirements(jd, store, llm)).rows;
+}
+
 export interface CorrelateDeps { llm?: LlmClient; }
 
 export async function correlate(
@@ -76,41 +123,16 @@ async function runCorrelateJob(
 ): Promise<void> {
   await correlationReportsRepo.updateStatus(row.id, "running");
   handle.emit({ event: "progress", data: { stage: "extract", current: 0, total: 3, label: "Reading requirements…" } });
-
-  const requirements = buildRequirements(jd);
   handle.emit({ event: "progress", data: { stage: "classify", current: 1, total: 3, label: "Matching against your résumé…" } });
 
   const llm = deps.llm ?? getLlm();
-  const result = await llm.complete({
-    task: "correlate",
-    messages: renderTemplate("correlate", {
-      requirements: JSON.stringify(requirements),
-      resume: JSON.stringify(resumeRow.structured),
-    }),
-    responseSchema: CorrelateResultSchema,
-  });
+  const { rows: verified, model, costUsd } = await classifyRequirements(jd, resumeRow.structured, llm);
 
   handle.emit({ event: "progress", data: { stage: "verify", current: 2, total: 3, label: "Verifying evidence…" } });
 
-  const byId = new Map(requirements.map((r) => [r.id, r]));
-  const missing = requirements.filter((r) => !result.data.rows.some((o) => o.id === r.id));
-  if (missing.length > 0) {
-    throw new Error(`correlate: classifier dropped requirement id(s) ${missing.map((m) => m.id).join(",")}`);
-  }
-  if (result.data.rows.length !== requirements.length) {
-    throw new Error(`correlate: classifier returned ${result.data.rows.length} rows for ${requirements.length} requirements (duplicate or extra ids)`);
-  }
-  const classified: Omit<CorrelationRow, "atsPresent">[] = result.data.rows.map((o) => {
-    const req = byId.get(o.id);
-    if (!req) throw new Error(`correlate: classifier returned unknown id ${o.id}`);
-    return { requirement: req.text, term: o.term, kind: req.kind, status: o.status,
-      evidence: o.evidence, reason: o.reason, note: o.note };
-  });
-  const verified = verifyEvidence(classified, resumeRow.structured);
-
   const completed = await correlationReportsRepo.complete(row.id, {
     rows: verified, semantic: semanticSignal(verified), ats: atsSignal(verified),
-    model: result.model, costUsd: result.costUsd, completedAt: new Date(),
+    model, costUsd, completedAt: new Date(),
   });
   if (!completed) throw new Error(`correlation_reports row ${row.id} vanished before completion`);
   handle.emit({ event: "done", data: toCorrelationReport(completed) });
