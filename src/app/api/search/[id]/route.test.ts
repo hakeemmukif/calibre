@@ -212,6 +212,33 @@ describe("GET /api/search/:id", () => {
     expect(parsed.error.code).toBe("INTERNAL");
   });
 
+  it("GET /api/search/:id (JSON) returns ScanDetail with results[] for the owner", async () => {
+    const resume = await insertResume(state.testDb, { isActive: true });
+    const repo = (await import("@/server/persistence/repos/searchRuns")).createSearchRunsRepo(state.testDb);
+    const run = await repo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
+      resumeId: resume.id,
+      personas: ["remote"],
+      status: "completed",
+      stats: {
+        scanned: 5, matched: 3, scored: 2, worth: 1, ghosts: 1, perSource: [],
+        unscored: 0, capStopped: false, discoverMs: 100, scoreMs: 200, costUsd: 0.05, policyVersion: "v1",
+      },
+      results: [
+        { jobId: "job-1", title: "Backend Engineer", company: "Acme", source: "greenhouse", outcome: "scored", verdict: "Apply", fit: 4 },
+        { jobId: "job-2", title: "Platform Engineer", company: "Acme", source: "greenhouse", outcome: "unscored" },
+      ],
+      finishedAt: new Date(),
+    });
+
+    const res = await GET(getRequest(run.id, { accept: "application/json" }), { params: Promise.resolve({ id: run.id }) });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.results).toHaveLength(2);
+    expect(body.stats.costUsd).toBeDefined();
+    expect(body.resumeName).toBeDefined();
+  });
+
   it("SSE ownership (Fable design review): B cannot open A's run stream — 404 before the run handle is ever touched", async () => {
     const resume = await insertResume(state.testDb, { isActive: true });
     const repo = (await import("@/server/persistence/repos/searchRuns")).createSearchRunsRepo(state.testDb);
