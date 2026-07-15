@@ -1,11 +1,14 @@
-// Accepted-only merge (task-B8 brief §"Behaviour", reworked for the review
-// pass's Finding 2 fix): shared by finalizeTailor/renderTailorPdf (index.ts,
-// which validate + persist the accepted index set) and assemble.ts (which
-// recomputes the merged view on every read) — `structured` is never
-// overwritten in place, so re-finalize with a different accepted set is
-// always correct.
+// Bullet-addressable merge (task-9 brief): retires the whole-section-copy
+// approach — each diff entry carries its own `after` value plus a `target`
+// (role/skill-group index + bulletIndex), so accept/reject is per-bullet
+// granularity, not per-section. Shared by finalizeTailor/renderTailorPdf
+// (index.ts, which validate + persist the accepted index set) and
+// assemble.ts (which recomputes the merged view on every read) —
+// `base` is never overwritten in place, so re-finalize with a different
+// accepted set is always correct.
 import type { ResumeStore } from "@/server/resume/resume-store";
 import { TailoredResume } from "@/types";
+import type { TailorDiffEntry } from "@/types";
 import { z } from "zod";
 
 // Frozen TailoredResume.diff shape (src/types), reused verbatim so this
@@ -27,44 +30,67 @@ export class UnknownDiffSectionError extends Error {
   }
 }
 
-// Only top-level ResumeStore fields the accepted-only merge knows how to
-// apply per diff entry — a `section` outside this set fails loud rather
-// than silently no-op'ing (constraints: fail loud, no fallback).
-const MERGEABLE_SECTIONS = new Set<keyof ResumeStore>([
-  "name",
-  "headline",
-  "summary",
-  "contact",
-  "experience",
-  "education",
-  "skills",
-  "projects",
-  "certifications",
-  "languages",
-  "sections",
-]);
+export function applyEdits(base: ResumeStore, edits: TailorDiffEntry[]): ResumeStore {
+  const next = structuredClone(base);
+  for (const e of edits) applyOne(next, e);
+  return next;
+}
 
-// KNOWN LIMITATION (task-B8 review pass, Finding 1): `diff[]` is a frozen
-// string-only shape, and TailorResultSchema now enforces exactly one entry
-// per section — so accept/reject is whole-section granularity only.
-// Per-sub-item accept/reject (e.g. one bullet within `experience`) is not
-// expressible with this shape; a contract revision (e.g. stable per-item
-// ids) would be needed for finer granularity.
 export function applyAcceptedDiff(
   base: ResumeStore,
-  tailored: ResumeStore,
-  diff: DiffEntry[],
+  diff: TailorDiffEntry[],
   acceptedIndices: number[],
 ): ResumeStore {
-  const merged = structuredClone(base);
-  for (const index of acceptedIndices) {
-    const entry = diff[index];
-    if (!entry) throw new InvalidDiffIndexError(index, diff.length);
-    if (!MERGEABLE_SECTIONS.has(entry.section as keyof ResumeStore)) {
-      throw new UnknownDiffSectionError(entry.section);
+  const accepted = acceptedIndices.map((i) => {
+    if (i < 0 || i >= diff.length) throw new InvalidDiffIndexError(i, diff.length);
+    return diff[i];
+  });
+  return applyEdits(base, accepted);
+}
+
+function applyOne(store: ResumeStore, e: TailorDiffEntry): void {
+  switch (e.section) {
+    case "summary":
+      store.summary = e.after ?? undefined;
+      return;
+    case "headline":
+      store.headline = e.after ?? undefined;
+      return;
+    case "experience": {
+      const role = store.experience[e.target.index ?? -1];
+      if (!role) throw new InvalidDiffIndexError(e.target.index ?? -1, store.experience.length);
+      if (e.target.bulletIndex == null) return; // whole-role edits unsupported in v1
+      applyBullet(role.bullets, e);
+      return;
     }
-    const key = entry.section as keyof ResumeStore;
-    (merged as Record<string, unknown>)[key] = tailored[key];
+    case "projects": {
+      const proj = store.projects[e.target.index ?? -1];
+      if (!proj) throw new InvalidDiffIndexError(e.target.index ?? -1, store.projects.length);
+      if (e.target.bulletIndex == null) return;
+      applyBullet(proj.bullets, e);
+      return;
+    }
+    case "skills": {
+      const group = store.skills[e.target.index ?? -1];
+      if (!group) throw new InvalidDiffIndexError(e.target.index ?? -1, store.skills.length);
+      applyBullet(group.items, e);
+      return;
+    }
+    default:
+      throw new UnknownDiffSectionError(e.section);
   }
-  return merged;
+}
+
+function applyBullet(list: string[], e: TailorDiffEntry): void {
+  if (e.op === "add") {
+    if (e.after) list.push(e.after);
+    return;
+  }
+  const i = e.target.bulletIndex ?? -1;
+  if (i < 0 || i >= list.length) throw new InvalidDiffIndexError(i, list.length);
+  if (e.op === "remove") {
+    list.splice(i, 1);
+    return;
+  }
+  if (e.after) list[i] = e.after; // modify
 }
