@@ -17,7 +17,7 @@ describe("tailoredResumesRepo", () => {
       userId: BOOTSTRAP_ADMIN_ID,
       jobId: job.id,
       baseResumeId: resume.id,
-      diff: [{ section: "summary", op: "modify", before: "old", after: "new", reason: "tighter framing" }],
+      diff: [{ section: "summary", op: "modify", before: "old", after: "new", reason: "tighter framing", requirement: "summary relevance", target: { index: null, bulletIndex: null } }],
       status: "queued",
       model: "openai/gpt-4.1",
     });
@@ -77,7 +77,7 @@ describe("tailoredResumesRepo", () => {
     const completedAt = new Date();
     const completed = await repo.complete(inserted.id, {
       structured: resume.structured,
-      diff: [{ section: "summary", op: "modify", before: "old", after: "new", reason: "sharper framing" }],
+      diff: [{ section: "summary", op: "modify", before: "old", after: "new", reason: "sharper framing", requirement: "summary relevance", target: { index: null, bulletIndex: null } }],
       model: "mock",
       costUsd: 0.02,
       completedAt,
