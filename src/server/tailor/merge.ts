@@ -158,5 +158,14 @@ function applyBullet(list: string[], e: TailorDiffEntry): void {
   if (!e.after) {
     throw new MalformedDiffEditError(`modify edit for section "${e.section}" is missing "after".`);
   }
+  // `before` is the human-review anchor: a reviewer accepts an edit based on
+  // the shown before-text, so a stale/mismatched edit must never silently
+  // rewrite a different bullet. Modifies apply before removes within a group
+  // (see applyGroup), so `list[i]` is still the base bullet here.
+  if (e.before !== undefined && list[i] !== e.before) {
+    throw new MalformedDiffEditError(
+      `modify edit for section "${e.section}" bulletIndex ${i} expected before "${e.before}" but found "${list[i]}".`,
+    );
+  }
   list[i] = e.after;
 }

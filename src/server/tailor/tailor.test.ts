@@ -113,6 +113,18 @@ const GAP_DIFF = [
   },
 ];
 
+const INVENTED_REQUIREMENT_DIFF = [
+  {
+    section: "experience",
+    op: "modify" as const,
+    before: "Led distributed payments platform",
+    after: "Led distributed payments platform with advanced observability tooling",
+    reason: "invented capability not present as a met/buried row in the report",
+    requirement: "advanced observability tooling",
+    target: { index: 0, bulletIndex: 0 },
+  },
+];
+
 const TWO_EDIT_DIFF = [
   {
     section: "experience",
@@ -304,6 +316,53 @@ describe("startTailor", () => {
     const report = await insertCompletedReport(job.id, resume.id);
 
     const llm = makeMockLlm({ tailor: { diff: GAP_DIFF } });
+
+    const draft = await startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id, reportId: report.id }, { llm });
+    await waitForTerminal(draft.id);
+
+    const row = await tailoredResumesRepo.getById(draft.id, BOOTSTRAP_ADMIN_ID);
+    expect(row?.status).toBe("failed");
+  });
+
+  it("fails the run loudly (requirement allowlist) when an edit's requirement matches no met/buried row in the report (invented, not just an exact gap-string match)", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id);
+    const resume = await insertResume(state.testDb, { isActive: true, structured: BASE_STRUCTURED });
+    const report = await insertCompletedReport(job.id, resume.id);
+
+    const llm = makeMockLlm({ tailor: { diff: INVENTED_REQUIREMENT_DIFF } });
+
+    const draft = await startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id, reportId: report.id }, { llm });
+    await waitForTerminal(draft.id);
+
+    const row = await tailoredResumesRepo.getById(draft.id, BOOTSTRAP_ADMIN_ID);
+    expect(row?.status).toBe("failed");
+  });
+
+  it("fails the run loudly when the resolved report was computed for a different job than this run's", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id);
+    const otherJob = await insertJob(state.testDb, source.id);
+    const resume = await insertResume(state.testDb, { isActive: true, structured: BASE_STRUCTURED });
+    const report = await insertCompletedReport(otherJob.id, resume.id);
+
+    const llm = makeMockLlm({ tailor: { diff: TAILOR_DIFF } });
+
+    const draft = await startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id, reportId: report.id }, { llm });
+    await waitForTerminal(draft.id);
+
+    const row = await tailoredResumesRepo.getById(draft.id, BOOTSTRAP_ADMIN_ID);
+    expect(row?.status).toBe("failed");
+  });
+
+  it("fails the run loudly when the resolved report was computed against a different résumé than this run's base résumé (staleness guard)", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id);
+    const resume = await insertResume(state.testDb, { isActive: true, structured: BASE_STRUCTURED });
+    const staleResume = await insertResume(state.testDb, { isActive: false, structured: BASE_STRUCTURED });
+    const report = await insertCompletedReport(job.id, staleResume.id);
+
+    const llm = makeMockLlm({ tailor: { diff: TAILOR_DIFF } });
 
     const draft = await startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id, reportId: report.id }, { llm });
     await waitForTerminal(draft.id);

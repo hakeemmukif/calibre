@@ -123,7 +123,7 @@ async function failRun(id: string, handle: RunHandle, err: unknown): Promise<voi
 // minutes) — a shorter cap could abandon a correlate run that was always
 // going to finish.
 const CORRELATE_POLL_TIMEOUT_MS = 10 * 60 * 1000;
-const CORRELATE_POLL_INTERVAL_MS = 25;
+const CORRELATE_POLL_INTERVAL_MS = 250;
 
 async function pollCorrelationUntilTerminal(id: string, userId: string): Promise<CorrelationReportRow> {
   const deadline = Date.now() + CORRELATE_POLL_TIMEOUT_MS;
@@ -145,6 +145,24 @@ async function pollCorrelationUntilTerminal(id: string, userId: string): Promise
 // fresh against the SAME résumé it is about to rewrite (design §7 — this is
 // what kills the staleness bug: no reuse of another résumé's stale
 // artifact) and waits for it to land before continuing.
+// A report is only a valid rewrite constraint for THIS run if it was
+// computed against the SAME job and the SAME base résumé — a report for a
+// different job is simply wrong, and a report for a different/older résumé
+// reintroduces the exact staleness bug design §7 exists to kill (the report
+// would cite evidence/gaps against résumé content this run isn't rewriting).
+function assertReportMatchesRun(report: CorrelationReportRow, row: TailoredResumeRow): void {
+  if (report.jobId !== row.jobId) {
+    throw new Error(
+      `correlation report ${report.id} was computed for job ${report.jobId}, not this tailor run's job ${row.jobId}.`,
+    );
+  }
+  if (report.resumeId !== row.baseResumeId) {
+    throw new Error(
+      `correlation report ${report.id} was computed against résumé ${report.resumeId}, not this tailor run's base résumé ${row.baseResumeId} — refusing to rewrite from a stale report.`,
+    );
+  }
+}
+
 async function resolveReport(row: TailoredResumeRow, deps: CorrelateDeps): Promise<CorrelationReportRow> {
   if (row.reportId) {
     const report = await correlationReportsRepo.getById(row.reportId, row.userId);
@@ -154,11 +172,14 @@ async function resolveReport(row: TailoredResumeRow, deps: CorrelateDeps): Promi
         `correlation report ${row.reportId} is not completed (status: ${report.status}) — cannot tailor from an incomplete report.`,
       );
     }
+    assertReportMatchesRun(report, row);
     return report;
   }
 
   const started = await correlate(row.userId, { jobId: row.jobId }, deps);
-  return pollCorrelationUntilTerminal(started.id, row.userId);
+  const report = await pollCorrelationUntilTerminal(started.id, row.userId);
+  assertReportMatchesRun(report, row);
+  return report;
 }
 
 async function runTailorJob(
@@ -207,16 +228,20 @@ async function runTailorJob(
     throw new Error(`tailor: fabrication guard rejected the rewrite — ${fabrications.join("; ")}`);
   }
 
-  // Gap guard: a `gap` requirement must never be written into content — the
-  // résumé genuinely cannot support it (verified by correlate.ts's
-  // verifyEvidence), so an edit citing one is itself a fabrication risk the
-  // numeric-atom check above cannot catch (e.g. an invented qualitative
-  // claim with no number in it).
-  const gapRequirements = new Set(gaps);
-  const gapEdits = result.data.diff.filter((e) => gapRequirements.has(e.requirement));
-  if (gapEdits.length > 0) {
+  // Requirement allowlist guard (design §6 "rewrite CONSTRAINED TO the
+  // report"): every edit's `requirement` must name a `met`/`buried` row from
+  // THIS report — an exact-string blocklist against `gap` rows alone would
+  // let a paraphrased gap or an entirely invented requirement through (and,
+  // if its `after` has no digits, past the fabrication guard above too).
+  // The allowlist subsumes the old gap check (gap rows are never candidates)
+  // and closes that hole in one guard.
+  const candidateRequirements = new Set(
+    report.rows.filter((r) => r.status === "met" || r.status === "buried").map((r) => r.requirement),
+  );
+  const invalidEdits = result.data.diff.filter((e) => !candidateRequirements.has(e.requirement));
+  if (invalidEdits.length > 0) {
     throw new Error(
-      `tailor: rewrite wrote an edit for gap requirement(s) ${gapEdits.map((e) => `"${e.requirement}"`).join(", ")} — gaps must never be written into content.`,
+      `tailor: rewrite wrote an edit for requirement(s) not present as a met/buried row in the report — ${invalidEdits.map((e) => `"${e.requirement}"`).join(", ")}. The rewrite must stay constrained to the report.`,
     );
   }
 

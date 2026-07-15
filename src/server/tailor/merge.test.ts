@@ -182,6 +182,18 @@ describe("applyEdits", () => {
     ).toThrow(MalformedDiffEditError);
   });
 
+  it("throws MalformedDiffEditError for a modify whose `before` doesn't match the current bullet (stale review anchor)", () => {
+    expect(() =>
+      applyEdits(base, [
+        {
+          section: "experience", op: "modify", before: "not-actually-old0", after: "new0",
+          reason: "r", requirement: "x", target: { index: 0, bulletIndex: 0 },
+        },
+      ]),
+    ).toThrow(MalformedDiffEditError);
+    expect(base.experience[0].bullets[0]).toBe("old0");
+  });
+
   it("throws MalformedDiffEditError for a scalar modify with no after, and does not erase the field", () => {
     expect(() =>
       applyEdits(base, [
