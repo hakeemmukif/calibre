@@ -162,7 +162,15 @@ describe("GET /api/search/:id", () => {
 
     const events = await readAllSseEvents(res);
     expect(events.length).toBeGreaterThan(0);
-    expect(events.every((e) => e.event === "progress" || e.event === "done")).toBe(true);
+    // M2: discovery also emits `source`/`jobPhase` observability events
+    // alongside `progress`/`done`, and the route sends a `snapshot` (id 0)
+    // whenever `handle.frame` is already populated at subscribe time — this
+    // connector resolves near-instantly, so by the time the test subscribes
+    // the run's own progress/source events have often already fired (lost,
+    // no listener yet) and the frame is non-null, so a `snapshot` opens the
+    // stream. No postings means no job is ever scored, so `jobPhase` never
+    // actually fires, but the vocabulary check allows it.
+    expect(events.every((e) => ["progress", "source", "jobPhase", "snapshot", "done"].includes(e.event))).toBe(true);
     expect(events.some((e) => e.event === "job")).toBe(false);
     expect(events[events.length - 1].event).toBe("done");
 
@@ -195,9 +203,21 @@ describe("GET /api/search/:id", () => {
     const events = await readSseEvents(res, 2);
     expect(events[0].event).toBe("snapshot");
     expect(events[0].id).toBe(0);
-    expect(events[0].data).toEqual(frame);
-    expect(events[1].event).toBe("source");
-    expect(events[1].id).toBeGreaterThanOrEqual(1);
+    // The live engine now owns `handle.frame` and overwrites it with real
+    // source state before this subscriber attaches — the injected `frame`
+    // above only guarantees a non-null snapshot exists. Assert the shape
+    // instead of exact equality to the injected value.
+    expect(events[0].data).toMatchObject({
+      sources: expect.any(Array),
+      activeJobs: expect.any(Array),
+      counts: expect.any(Object),
+    });
+    // The engine's own concurrent emits make the exact event at index 1
+    // nondeterministic (could be its `progress`/`source` or the manually
+    // injected `source` below) — assert only that a live delta (id >= 1)
+    // was received after the snapshot.
+    const liveDelta = events.find((e) => e.id >= 1);
+    expect(liveDelta).toBeDefined();
 
     // Settle the hung run before afterEach truncates the tables under it.
     handle.abort("test cleanup");
