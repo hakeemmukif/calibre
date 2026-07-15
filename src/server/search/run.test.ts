@@ -674,4 +674,63 @@ describe("startSearch", () => {
     expect(finalRow.stats.unscored).toBe(1);
     expect(finalRow.stats.capStopped).toBe(false);
   });
+
+  it("persists a ScanResult per settled candidate incrementally + records stage durations and cost", async () => {
+    const runsRepo = createSearchRunsRepo(state.testDb);
+    await insertResume(state.testDb, { ...resumeFixture, isActive: true });
+    const good = await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
+    const postings: RawPosting[] = [
+      { sourceId: good.id, url: "https://example.com/jobs/a", title: "Data Engineer", company: "Acme", location: "Remote", description: "Build data pipelines with SQL." },
+      { sourceId: good.id, url: "https://example.com/jobs/b", title: "Data Engineer", company: "Beta", location: "Remote", description: "More SQL pipelines." },
+    ];
+    const run = await startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" }, { llm: costingLlm, connectorForSource: (s) => stubConnector(s, postings) });
+    const finalRow = await waitForTerminal(runsRepo, run.id);
+
+    expect(finalRow.status).toBe("completed");
+    expect(finalRow.results).toHaveLength(2);
+    expect(finalRow.results.every((r) => r.outcome === "scored")).toBe(true);
+    expect(finalRow.results[0]).toMatchObject({ company: expect.any(String), verdict: expect.any(String), source: good.id });
+    expect(typeof finalRow.results[0].scoredMs).toBe("number");
+    expect(finalRow.stats.discoverMs).toBeGreaterThanOrEqual(0);
+    expect(finalRow.stats.scoreMs).toBeGreaterThanOrEqual(0);
+    expect(finalRow.stats.costUsd).toBeCloseTo(0.04, 5); // costingLlm charges 0.02/job × 2
+    expect(typeof finalRow.stats.policyVersion).toBe("string");
+  });
+
+  it("failRun persists accumulated stats + partial results when the run crashes mid-scoring", async () => {
+    const runsRepo = createSearchRunsRepo(state.testDb);
+    await insertResume(state.testDb, { ...resumeFixture, isActive: true });
+    const good = await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
+    const postings: RawPosting[] = [
+      { sourceId: good.id, url: "https://example.com/jobs/a", title: "Data Engineer", company: "Acme", location: "Remote", description: "Build data pipelines with SQL." },
+    ];
+    // scoreOnceThenThrow: first job scores, then the repo write path is poisoned to force runFanOut into failRun.
+    const run = await startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" }, { llm: costingLlm, connectorForSource: (s) => stubConnector(s, postings), afterScoring: () => { throw new Error("boom"); } });
+    const finalRow = await waitForTerminal(runsRepo, run.id);
+
+    expect(finalRow.status).toBe("failed");
+    expect(finalRow.error).toContain("boom");
+    expect(finalRow.results).toHaveLength(1);           // the job that settled before the crash
+    expect(finalRow.stats.scored).toBe(1);              // accumulated, not zeroed
+  });
+
+  it("cap-hit run persists skipped:dailyCap result rows for the un-scored top candidates", async () => {
+    const runsRepo = createSearchRunsRepo(state.testDb);
+    await insertResume(state.testDb, { ...resumeFixture, isActive: true });
+    const good = await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
+    const postings: RawPosting[] = [1, 2, 3, 4].map((n) => ({
+      sourceId: good.id, url: `https://example.com/jobs/cap-${n}`, title: "Data Engineer",
+      company: `Co${n}`, location: "Remote", description: "Build data pipelines with SQL.",
+    }));
+    const run = await startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" },
+      { llm: costingLlm, dailyCapUsd: 0.025, scoreConcurrency: 1, connectorForSource: (s) => stubConnector(s, postings) });
+    const finalRow = await waitForTerminal(runsRepo, run.id);
+
+    expect(finalRow.status).toBe("completed");
+    expect(finalRow.stats.capStopped).toBe(true);
+    const scored = finalRow.results.filter((r) => r.outcome === "scored");
+    const skipped = finalRow.results.filter((r) => r.outcome === "skipped" && r.reason === "dailyCap");
+    expect(scored).toHaveLength(2);
+    expect(skipped).toHaveLength(2); // the 2 candidates the gate bailed on are recorded, not dropped
+  });
 });

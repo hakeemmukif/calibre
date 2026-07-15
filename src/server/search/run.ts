@@ -8,6 +8,7 @@
 import pLimit from "p-limit";
 import type { LlmClient } from "@/lib/llm/client";
 import { getLlm } from "@/lib/llm/client";
+import { policyVersion } from "@/lib/llm/templates";
 import { assembleJob } from "@/features/feed/assemble";
 import { jobsRepo, type JobRow } from "@/server/persistence/repos/jobs";
 import { jobScoresRepo } from "@/server/persistence/repos/jobScores";
@@ -84,6 +85,10 @@ export interface StartSearchDeps {
   // tests to force strictly-sequential scoring (scoreConcurrency: 1) so the
   // per-job cap gate is deterministic.
   scoreConcurrency?: number;
+  // Test-only seam: called once after scoreTopCandidates returns and before
+  // the completion writes — lets tests force a deterministic mid-run crash
+  // to exercise partial-fail persistence.
+  afterScoring?: () => void;
 }
 
 export async function startSearch(
@@ -198,18 +203,29 @@ async function runFanOut(
 
   const hardCapTimer = setTimeout(() => handle.abort("hard runtime cap exceeded"), hardRunTimeoutMs);
 
+  // Hoisted above the try so the partial-persist catch below can read the
+  // last known values when the run crashes mid-flight.
+  const perSource = new Map<string, { found: number; errors: number }>(
+    sources.map((s) => [s.id, { found: 0, errors: 0 }]),
+  );
+  const matchedPostings: { posting: RawPosting; source: SourceRow }[] = [];
+  let scanned = 0;
+  let discoverMs = 0;
+  let scoreMs = 0;
+  let scored = 0;
+  let worth = 0;
+  let ghosts = 0;
+  let unscored = 0;
+  let costUsd = 0;
+  let capStopped = false;
+
   try {
     const targets = deriveRoleTargets(resumeRow, persona);
     const limit = pLimit(concurrency);
     const totalSources = sources.length;
-
-    const perSource = new Map<string, { found: number; errors: number }>(
-      sources.map((s) => [s.id, { found: 0, errors: 0 }]),
-    );
-    const matchedPostings: { posting: RawPosting; source: SourceRow }[] = [];
-    let scanned = 0;
     let sourcesCompleted = 0;
 
+    const discoverStartedAt = Date.now();
     handle.emit({
       event: "progress",
       data: { stage: "sources", current: 0, total: totalSources, label: `Scanning ${totalSources} source(s)…` },
@@ -264,9 +280,11 @@ async function runFanOut(
     );
 
     await Promise.all(tasks);
+    discoverMs = Date.now() - discoverStartedAt;
 
     const upsertedJobs = await upsertMatchedPostings(userId, matchedPostings, persona, profile);
-    const { scored, worth, ghosts, unscored, capStopped } = await scoreTopCandidates(
+    const scoreStartedAt = Date.now();
+    ({ scored, worth, ghosts, unscored, capStopped, costUsd } = await scoreTopCandidates(
       userId,
       row,
       upsertedJobs,
@@ -275,7 +293,10 @@ async function runFanOut(
       profile,
       handle,
       deps,
-    );
+    ));
+    scoreMs = Date.now() - scoreStartedAt;
+
+    deps.afterScoring?.();
 
     const stats = {
       scanned,
@@ -286,6 +307,10 @@ async function runFanOut(
       perSource: [...perSource.entries()].map(([sourceId, s]) => ({ sourceId, found: s.found, errors: s.errors })),
       unscored,
       capStopped,
+      discoverMs,
+      scoreMs,
+      costUsd,
+      policyVersion: policyVersion("match-score"),
     };
     await searchRunsRepo.updateStats(row.id, stats);
     const finished = await searchRunsRepo.updateStatus(row.id, "completed", { finishedAt: new Date() });
@@ -294,6 +319,30 @@ async function runFanOut(
     const finalRow = finished ?? (await searchRunsRepo.getById(row.id, userId));
     if (!finalRow) throw new Error(`search_runs row ${row.id} vanished before completion could be recorded`);
     handle.emit({ event: "done", data: toSearchRun(finalRow) });
+  } catch (err) {
+    // Partial-run persistence (M1): write whatever counters accumulated before
+    // the crash so the failed run isn't zeroed. results[] was appended
+    // incrementally per job in scoreTopCandidates, so it already survives
+    // untouched.
+    try {
+      await searchRunsRepo.updateStats(row.id, {
+        scanned,
+        matched: matchedPostings.length,
+        scored,
+        worth,
+        ghosts,
+        perSource: [...perSource.entries()].map(([sourceId, s]) => ({ sourceId, found: s.found, errors: s.errors })),
+        unscored,
+        capStopped,
+        discoverMs,
+        scoreMs,
+        costUsd,
+        policyVersion: policyVersion("match-score"),
+      });
+    } catch (statsErr) {
+      console.error(`search run ${row.id}: failed to persist partial stats before failRun:`, statsErr);
+    }
+    throw err; // re-throw to the existing startSearch .catch → failRun (status+error+emit)
   } finally {
     // The timer now spans discovery AND scoring; the finally clears it on
     // every exit path (success, or a throw that propagates to startSearch's
@@ -416,7 +465,7 @@ async function scoreTopCandidates(
   profile: ProfileRow,
   handle: RunHandle,
   deps: StartSearchDeps,
-): Promise<{ scored: number; worth: number; ghosts: number; unscored: number; capStopped: boolean }> {
+): Promise<{ scored: number; worth: number; ghosts: number; unscored: number; capStopped: boolean; costUsd: number }> {
   // relocation "stay": provably-abroad postings don't consume scoring slots
   // (spec §5 scan hardening — persisted, just not scored). Likewise a stated
   // tz_band provably outside the schedule dial (spec §6 rider) — NULL band
@@ -433,8 +482,9 @@ async function scoreTopCandidates(
   let ghosts = 0;
   let unscored = 0;
   let capStopped = false;
+  let spentCost = 0;
 
-  if (topCandidates.length === 0) return { scored, worth, ghosts, unscored, capStopped };
+  if (topCandidates.length === 0) return { scored, worth, ghosts, unscored, capStopped, costUsd: spentCost };
 
   const isNewCutoff = await resolveIsNewCutoff(userId, persona);
   const llm = deps.llm ?? getLlm();
@@ -472,11 +522,20 @@ async function scoreTopCandidates(
           // Log once, on the first job that bails — matches the old batch loop's
           // single cap-reached diagnostic (dropped in the pool rewrite).
           if (!capStopped) {
-            console.error(`search run ${row.id}: daily LLM cost cap ($${dailyCapUsd}) reached — stopping further scoring`);
+            console.error(`search run ${row.id}: daily cost cap reached; skipping remaining candidates`);
           }
           capStopped = true;
+          await searchRunsRepo.appendResult(row.id, userId, {
+            jobId: job.id,
+            title: job.title,
+            company: job.company,
+            source: source.id,
+            outcome: "skipped",
+            reason: "dailyCap",
+          });
           return;
         }
+        const jobStartedAt = Date.now();
         try {
           const jobToScore = await ensureDescription(job, source).catch((err) => {
             console.error(`search run ${row.id}: detail fetch for job ${job.id} failed:`, err);
@@ -484,19 +543,47 @@ async function scoreTopCandidates(
           });
           const scoreRow = await scoreJob({ job: jobToScore, source, profile, resume, llm, signal: handle.signal });
           spentToday += scoreRow.costUsd;
+          spentCost += scoreRow.costUsd;
           scored += 1;
           if (scoreRow.verdict === "Apply" || scoreRow.verdict === "Consider") worth += 1;
           if (scoreRow.legitimacy.tier === "ghost") ghosts += 1;
 
           handle.emit({ event: "job", data: assembleJob({ job, score: scoreRow, source }, { isNewCutoff }) });
+          await searchRunsRepo.appendResult(row.id, userId, {
+            jobId: job.id,
+            title: jobToScore.title,
+            company: jobToScore.company,
+            source: source.id,
+            outcome: "scored",
+            verdict: scoreRow.verdict,
+            legitimacyTier: scoreRow.legitimacy.tier,
+            // NB: the numeric 0-5 fit is `score`; `scoreRow.fit` is a jsonb FitEntry[].
+            fit: scoreRow.score,
+            scoredMs: Date.now() - jobStartedAt,
+          });
         } catch (err) {
           if (err instanceof EmptyJobDescriptionError) {
             unscored += 1;
+            await searchRunsRepo.appendResult(row.id, userId, {
+              jobId: job.id,
+              title: job.title,
+              company: job.company,
+              source: source.id,
+              outcome: "unscored",
+            });
           } else {
             // A single job's scoring failure (LLM error, malformed response,
             // or an aborted call once the hard cap fires — Task 2) is tolerated
             // exactly like a connector failure: the run keeps going.
             console.error(`search run ${row.id}: scoring job ${job.id} failed:`, err);
+            await searchRunsRepo.appendResult(row.id, userId, {
+              jobId: job.id,
+              title: job.title,
+              company: job.company,
+              source: source.id,
+              outcome: "error",
+              error: err instanceof Error ? err.message : String(err),
+            });
           }
         } finally {
           doneCount += 1;
@@ -519,5 +606,5 @@ async function scoreTopCandidates(
     data: { stage: "legitimacy", current: topCandidates.length, total: topCandidates.length, label: "Legitimacy checks complete" },
   });
 
-  return { scored, worth, ghosts, unscored, capStopped };
+  return { scored, worth, ghosts, unscored, capStopped, costUsd: spentCost };
 }
