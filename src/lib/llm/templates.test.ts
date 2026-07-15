@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { TaskName } from "./client";
 import { policyVersion, renderTemplate } from "./templates";
-import { ApplicationAnswer, ApplicationQuestion, LegitimacyTier } from "@/types";
+import { ApplicationAnswer, ApplicationQuestion, LegitimacyTier, RequirementStatus } from "@/types";
 import { EvalScoresSchema } from "@/server/score/evalScores";
 import { DiffEntrySchema } from "@/server/tailor/merge";
 
@@ -117,6 +117,7 @@ const TEMPLATES: TaskName[] = [
   "question-extract",
   "question-answer",
   "tailor",
+  "correlate",
 ];
 
 function readTemplateFile(name: TaskName): string {
@@ -172,5 +173,12 @@ describe("template <-> schema seam (no LLM calls)", () => {
     expect(opGroup).not.toBeNull();
     const tokens = [...opGroup![1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
     expect(new Set(tokens)).toEqual(new Set(DiffEntrySchema.shape.op.options));
+  });
+
+  it("correlate.md status prose lists exactly the RequirementStatus tokens", () => {
+    const statusGroup = readTemplateFile("correlate").match(/`status`:([\s\S]*?)- `evidence`/);
+    expect(statusGroup).not.toBeNull();
+    const tokens = [...statusGroup![1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+    expect(new Set(tokens)).toEqual(new Set(RequirementStatus.options));
   });
 });
