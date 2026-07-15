@@ -3,8 +3,11 @@
 // (api-contract.md §3 "POST /api/search").
 import { NextRequest, NextResponse } from "next/server";
 import { z, ZodError } from "zod";
+import { InvalidCursorError } from "@/server/persistence/repos/cursor";
+import { searchRunsRepo } from "@/server/persistence/repos/searchRuns";
 import { UnauthorizedError } from "@/server/auth/errors";
 import { requireUser } from "@/server/auth/session";
+import { toSearchRunSummary } from "@/server/search/assemble-summary";
 import { ActiveRunConflictError, NoActiveResumeError, UnknownSourceIdsError, startSearch } from "@/server/search/run";
 import { ScanPersona, type ErrorEnvelope } from "@/types";
 
@@ -45,6 +48,25 @@ export async function POST(request: NextRequest) {
     if (err instanceof ActiveRunConflictError) {
       return errorResponse(409, "CONFLICT", err.message, { activeRunId: err.activeRunId });
     }
+    throw err;
+  }
+}
+
+export async function GET(request: NextRequest): Promise<NextResponse> {
+  try {
+    const session = await requireUser();
+    const url = new URL(request.url);
+    const limitRaw = url.searchParams.get("limit");
+    const limit = limitRaw ? Number.parseInt(limitRaw, 10) : undefined;
+    if (limitRaw !== null && (!Number.isInteger(limit) || limit! < 1)) {
+      return errorResponse(422, "VALIDATION_ERROR", "limit must be a positive integer");
+    }
+    const cursor = url.searchParams.get("cursor") ?? undefined;
+    const page = await searchRunsRepo.listByUser(session.id, { limit, cursor });
+    return NextResponse.json({ items: page.items.map(toSearchRunSummary), nextCursor: page.nextCursor }, { status: 200 });
+  } catch (err) {
+    if (err instanceof UnauthorizedError) return errorResponse(401, "UNAUTHORIZED", err.message);
+    if (err instanceof InvalidCursorError) return errorResponse(422, "VALIDATION_ERROR", err.message);
     throw err;
   }
 }

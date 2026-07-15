@@ -8,6 +8,7 @@ import { UnauthorizedError } from "@/server/auth/errors";
 import { requireUser } from "@/server/auth/session";
 import { searchRunsRepo } from "@/server/persistence/repos/searchRuns";
 import { toSearchRun } from "@/server/search/assemble-run";
+import { toScanDetail } from "@/server/search/assemble-summary";
 import type { ErrorEnvelope } from "@/types";
 
 function errorResponse(status: number, code: ErrorEnvelope["error"]["code"], message: string, details?: unknown) {
@@ -38,14 +39,14 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   // can't send headers, so the cookie session requireUser() just read is the
   // only auth. A foreign run id 404s here, same as an unknown one — the
   // RunHandle itself carries no owner field; the DB row's user_id is the gate.
-  const row = await searchRunsRepo.getById(id, session.id);
+  const row = await searchRunsRepo.getDetail(id, session.id);
   if (!row) {
     return errorResponse(404, "NOT_FOUND", `No search run with id "${id}".`);
   }
 
   const acceptsSse = (request.headers.get("accept") ?? "").includes("text/event-stream");
   if (!acceptsSse) {
-    return NextResponse.json(toSearchRun(row), { status: 200 });
+    return NextResponse.json(toScanDetail(row), { status: 200 });
   }
 
   const handle = getRunHandle(id);

@@ -39,7 +39,7 @@ function stubConnector(source: SourceRow): SourceConnector {
 }
 vi.mock("@/server/search/connectors", () => ({ connectorForSource: (source: SourceRow) => stubConnector(source) }));
 
-const { POST } = await import("./route");
+const { POST, GET } = await import("./route");
 const { __resetForTests, get: getRunHandle } = await import("@/server/runs/registry");
 
 async function waitForTerminal(id: string, timeoutMs = 2000): Promise<void> {
@@ -194,5 +194,65 @@ describe("POST /api/search", () => {
     const res = await POST(jsonRequest({ persona: "pasted" }));
     expect(res.status).toBe(422);
     expect((await res.json()).error.code).toBe("VALIDATION_ERROR");
+  });
+});
+
+describe("GET /api/search", () => {
+  beforeAll(async () => {
+    state.testDb = await createTestDb();
+    await insertProfile(state.testDb);
+  });
+
+  beforeEach(() => {
+    requireUser.mockReset();
+    requireUser.mockResolvedValue({ id: BOOTSTRAP_ADMIN_ID, email: "admin@example.com", role: "admin" });
+  });
+
+  afterEach(async () => {
+    await state.testDb.delete(jobs);
+    await state.testDb.delete(searchRuns);
+    await state.testDb.delete(sources);
+    await state.testDb.delete(resumes);
+  });
+
+  it("401s with UNAUTHORIZED when there is no session", async () => {
+    requireUser.mockRejectedValue(new UnauthorizedError());
+    const res = await GET(new NextRequest("http://localhost/api/search"));
+    expect(res.status).toBe(401);
+    expect((await res.json()).error.code).toBe("UNAUTHORIZED");
+  });
+
+  it("limit=0 returns 422 VALIDATION_ERROR (protects the repo's limit:0 edge)", async () => {
+    const res = await GET(new NextRequest("http://localhost/api/search?limit=0"));
+    expect(res.status).toBe(422);
+    expect((await res.json()).error.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("GET /api/search returns the caller's runs newest-first, paginated", async () => {
+    const resume = await insertResume(state.testDb, { isActive: true });
+    const repo = (await import("@/server/persistence/repos/searchRuns")).createSearchRunsRepo(state.testDb);
+    await repo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
+      resumeId: resume.id,
+      personas: ["remote"],
+      status: "completed",
+      stats: { scanned: 1, matched: 1, scored: 1, worth: 1, ghosts: 0, perSource: [], unscored: 0, capStopped: false },
+      finishedAt: new Date(),
+    });
+    await repo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
+      resumeId: resume.id,
+      personas: ["remote"],
+      status: "completed",
+      stats: { scanned: 2, matched: 2, scored: 2, worth: 2, ghosts: 0, perSource: [], unscored: 0, capStopped: false },
+      finishedAt: new Date(),
+    });
+
+    const res = await GET(new NextRequest("http://localhost/api/search?limit=1"));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.items).toHaveLength(1);
+    expect(body.items[0].resumeName).toBeDefined();
+    expect(body.nextCursor).not.toBeNull();
   });
 });
