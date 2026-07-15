@@ -22,6 +22,9 @@ const PHASE_LABEL: Record<"fetching" | "readingJD" | "scoring" | "rescoring", st
 // mirrors ScanProgress's honest-numbers convention. No fetching.
 export function ScanLanes({ activeJobs, counts }: ScanLanesProps) {
   const sorted = [...activeJobs].sort((a, b) => a.slot - b.slot);
+  // Queued is DERIVED for display (spec §4.4 "6/30 · 21 queued"): in-flight
+  // jobs are the visible lanes, not queue — scored + lanes + queued === total.
+  const derivedQueued = Math.max(0, counts.total - counts.scored - activeJobs.length);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -43,7 +46,7 @@ export function ScanLanes({ activeJobs, counts }: ScanLanesProps) {
         </Card>
       ))}
       <div style={{ font: "var(--type-caption)", color: "var(--text-muted)", fontVariantNumeric: "tabular-nums" }}>
-        {counts.scored}/{counts.total} · {counts.queued} queued
+        {counts.scored}/{counts.total} · {derivedQueued} queued
       </div>
     </div>
   );

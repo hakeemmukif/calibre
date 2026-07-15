@@ -177,6 +177,9 @@ export const ScanStats = z.object({
   scoreMs: z.number().int(),
   costUsd: z.number(),
   policyVersion: z.string(),
+  // Per-source discover breakdown (spec §4.3). Optional on the wire only for
+  // fixture convenience — the assemblers always supply it (`?? []` for legacy rows).
+  perSource: z.array(z.object({ sourceId: z.string(), found: z.number().int(), errors: z.number().int() })).optional(),
 });
 export type ScanStats = z.infer<typeof ScanStats>;
 

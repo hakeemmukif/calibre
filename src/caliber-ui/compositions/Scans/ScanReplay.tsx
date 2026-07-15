@@ -112,6 +112,24 @@ export function ScanReplay({ detail }: ScanReplayProps) {
           <span>·</span>
           <span>{formatSeconds(stats.discoverMs)}</span>
         </div>
+        {(stats.perSource ?? []).length > 0 && (
+          <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 4 }}>
+            {(stats.perSource ?? []).map((p) => (
+              <div
+                key={p.sourceId}
+                style={{ display: "flex", gap: 6, font: "var(--type-caption)", color: "var(--text-muted)" }}
+              >
+                <span>{p.sourceId}</span>
+                <span>·</span>
+                <span>{p.found} found</span>
+                <span>·</span>
+                <span>
+                  {p.errors} {p.errors === 1 ? "error" : "errors"}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
 
       <Card padding="lg">

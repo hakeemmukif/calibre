@@ -16,6 +16,7 @@ function statsOf(s: SearchRunRow["stats"]) {
     unscored: s.unscored ?? 0, capStopped: s.capStopped ?? false,
     discoverMs: s.discoverMs ?? 0, scoreMs: s.scoreMs ?? 0, costUsd: s.costUsd ?? 0,
     policyVersion: s.policyVersion ?? "legacy",
+    perSource: s.perSource ?? [],
   };
 }
 
