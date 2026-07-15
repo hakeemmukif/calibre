@@ -1394,6 +1394,250 @@
           {
             "properties": {
               "data": {
+                "properties": {
+                  "error": {
+                    "type": "string"
+                  },
+                  "found": {
+                    "type": "integer"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "sourceId": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "enum": [
+                      "fetching",
+                      "done",
+                      "error"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "sourceId",
+                  "name",
+                  "status"
+                ],
+                "type": "object"
+              },
+              "event": {
+                "enum": [
+                  "source"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "event",
+              "data"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "data": {
+                "properties": {
+                  "company": {
+                    "type": "string"
+                  },
+                  "fit": {
+                    "maximum": 5,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "jobId": {
+                    "type": "string"
+                  },
+                  "legitimacyTier": {
+                    "$ref": "#/components/schemas/LegitimacyTier"
+                  },
+                  "phase": {
+                    "enum": [
+                      "fetching",
+                      "readingJD",
+                      "scoring",
+                      "rescoring",
+                      "done",
+                      "error"
+                    ],
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "verdict": {
+                    "enum": [
+                      "Apply",
+                      "Consider",
+                      "Research first",
+                      "Skip"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "jobId",
+                  "title",
+                  "company",
+                  "source",
+                  "phase"
+                ],
+                "type": "object"
+              },
+              "event": {
+                "enum": [
+                  "jobPhase"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "event",
+              "data"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "data": {
+                "properties": {
+                  "activeJobs": {
+                    "items": {
+                      "properties": {
+                        "company": {
+                          "type": "string"
+                        },
+                        "fit": {
+                          "maximum": 5,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "jobId": {
+                          "type": "string"
+                        },
+                        "legitimacyTier": {
+                          "$ref": "#/components/schemas/LegitimacyTier"
+                        },
+                        "phase": {
+                          "enum": [
+                            "fetching",
+                            "readingJD",
+                            "scoring",
+                            "rescoring",
+                            "done",
+                            "error"
+                          ],
+                          "type": "string"
+                        },
+                        "source": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "verdict": {
+                          "enum": [
+                            "Apply",
+                            "Consider",
+                            "Research first",
+                            "Skip"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "jobId",
+                        "title",
+                        "company",
+                        "source",
+                        "phase"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "counts": {
+                    "properties": {
+                      "queued": {
+                        "type": "integer"
+                      },
+                      "scored": {
+                        "type": "integer"
+                      },
+                      "total": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "scored",
+                      "queued",
+                      "total"
+                    ],
+                    "type": "object"
+                  },
+                  "sources": {
+                    "items": {
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "found": {
+                          "type": "integer"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "sourceId": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "fetching",
+                            "done",
+                            "error"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "sourceId",
+                        "name",
+                        "status"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "sources",
+                  "activeJobs",
+                  "counts"
+                ],
+                "type": "object"
+              },
+              "event": {
+                "enum": [
+                  "snapshot"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "event",
+              "data"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "data": {
                 "anyOf": [
                   {
                     "$ref": "#/components/schemas/SearchRun"
