@@ -11,6 +11,7 @@ import { __resetChecksStore } from "@/features/url-check/checksStore";
 const routeFor: Record<string, string> = {
   matches: "/feed",
   applied: "/tracker",
+  scans: "/scans",
   resume: "/resume",
   sources: "/sources",
   profile: "/profile",
@@ -21,6 +22,7 @@ const routeFor: Record<string, string> = {
 function activeIdFor(pathname: string): string | undefined {
   if (pathname === "/feed" || pathname.startsWith("/jobs")) return "matches";
   if (pathname.startsWith("/tracker")) return "applied";
+  if (pathname.startsWith("/scans")) return "scans";
   if (pathname.startsWith("/resume")) return "resume";
   if (pathname.startsWith("/sources")) return "sources";
   if (pathname.startsWith("/profile")) return "profile";
