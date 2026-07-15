@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ResumeStore } from "@/server/resume/resume-store";
 import { atsSignal, fabricationViolations, flattenResumeText, semanticSignal, verifyEvidence } from "./correlate-metrics";
+import { CORRELATE_BASELINE, falseGapRate, statusAccuracy } from "./correlate-metrics";
 
 const store: ResumeStore = {
   storeVersion: 2, extractionPath: "text", name: "Aisha",
@@ -184,5 +185,32 @@ describe("fabricationViolations", () => {
       before: "Led distributed payments platform handling FX settlement",
       reason: "r", requirement: "trim", target: { index: 0, bulletIndex: 0 } }], base);
     expect(v).toEqual([]);
+  });
+});
+
+describe("eval scorers", () => {
+  const expected = [
+    { requirement: "a", status: "met" as const },
+    { requirement: "b", status: "buried" as const },
+    { requirement: "c", status: "gap" as const },
+  ];
+  it("statusAccuracy = fraction of matching statuses", () => {
+    const actual = [
+      { requirement: "a", status: "met" as const },
+      { requirement: "b", status: "gap" as const },   // wrong
+      { requirement: "c", status: "gap" as const },
+    ];
+    expect(statusAccuracy(expected, actual)).toBeCloseTo(2 / 3);
+  });
+  it("falseGapRate = expected-not-gap wrongly called gap", () => {
+    const actual = [
+      { requirement: "a", status: "gap" as const },    // false gap
+      { requirement: "b", status: "buried" as const },
+      { requirement: "c", status: "gap" as const },
+    ];
+    expect(falseGapRate(expected, actual)).toBeCloseTo(1 / 2); // 1 of 2 non-gap expected
+  });
+  it("exposes a calibrated baseline", () => {
+    expect(CORRELATE_BASELINE).toBeGreaterThan(0.5);
   });
 });

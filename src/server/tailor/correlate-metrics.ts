@@ -90,3 +90,27 @@ export function fabricationViolations(edits: TailorDiffEntry[], store: ResumeSto
   }
   return violations;
 }
+
+export const CORRELATE_BASELINE = 0.8;
+export const CORRELATE_EPSILON = 0.05;
+
+type StatusPair = { requirement: string; status: "met" | "buried" | "gap" };
+
+function byRequirement(rows: StatusPair[]): Map<string, StatusPair["status"]> {
+  return new Map(rows.map((r) => [r.requirement, r.status]));
+}
+
+export function statusAccuracy(expected: StatusPair[], actual: StatusPair[]): number {
+  if (expected.length === 0) return 1;
+  const a = byRequirement(actual);
+  const hits = expected.filter((e) => a.get(e.requirement) === e.status).length;
+  return hits / expected.length;
+}
+
+export function falseGapRate(expected: StatusPair[], actual: StatusPair[]): number {
+  const nonGap = expected.filter((e) => e.status !== "gap");
+  if (nonGap.length === 0) return 0;
+  const a = byRequirement(actual);
+  const falseGaps = nonGap.filter((e) => a.get(e.requirement) === "gap").length;
+  return falseGaps / nonGap.length;
+}
