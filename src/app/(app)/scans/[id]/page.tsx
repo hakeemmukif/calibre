@@ -19,7 +19,7 @@ export default function ScanDetailPage() {
   const [detail, setDetail] = React.useState<ScanDetail | null>(null);
   const [notFound, setNotFound] = React.useState(false);
   const [error, setError] = React.useState<string | undefined>();
-  const scanRun = useScanRun();
+  const scanRun = useScanRun({ onDone: () => void load() });
 
   const load = React.useCallback(async () => {
     setError(undefined);
@@ -27,7 +27,7 @@ export default function ScanDetailPage() {
     try {
       const fetched = await getScanDetail(id);
       setDetail(fetched);
-      if (fetched.status === "running") scanRun.subscribeTo(id);
+      if (fetched.status === "running" || fetched.status === "queued") scanRun.subscribeTo(id);
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) {
         setNotFound(true);
@@ -44,6 +44,13 @@ export default function ScanDetailPage() {
   React.useEffect(() => {
     void load();
   }, [load]);
+
+  // useScanRun has no onError option — the SSE `error` event only surfaces
+  // through scanRun.state.status. Refetch on that transition too, so a run
+  // that fails mid-flight also leaves the "running" view (mirrors onDone).
+  React.useEffect(() => {
+    if (scanRun.state.status === "error") void load();
+  }, [scanRun.state.status, load]);
 
   if (notFound) {
     return (
@@ -96,7 +103,7 @@ export default function ScanDetailPage() {
 
   if (!detail) return null;
 
-  if (detail.status === "running") {
+  if (detail.status === "running" || detail.status === "queued") {
     return (
       <div style={{ minHeight: "100vh", background: "var(--bg-app)", padding: 24, display: "flex", justifyContent: "center" }}>
         <ScanProgress

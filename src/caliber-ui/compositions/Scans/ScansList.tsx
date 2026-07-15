@@ -12,12 +12,11 @@ export interface ScansListProps {
 }
 
 function StatusIndicator({ run }: { run: SearchRunSummary }) {
+  if (run.status === "failed") return <Tag tone="danger">Failed</Tag>;
   if (run.stats.capStopped) return <Tag tone="warn">Partial</Tag>;
   switch (run.status) {
     case "completed":
       return <Tag tone="good">Completed</Tag>;
-    case "failed":
-      return <Tag tone="danger">Failed</Tag>;
     case "running":
       return <Icon name="refresh-cw" size={14} style={{ color: "var(--accent-ink)", animation: "caliber-spin 1s linear infinite" }} />;
     case "queued":

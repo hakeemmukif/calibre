@@ -142,6 +142,10 @@ export async function startSearch(
         perSource: scopedSources.map((s) => ({ sourceId: s.id, found: 0, errors: 0 })),
         unscored: 0,
         capStopped: false,
+        discoverMs: 0,
+        scoreMs: 0,
+        costUsd: 0,
+        policyVersion: policyVersion("match-score"),
       },
     });
 
