@@ -61,6 +61,28 @@ describe('ScanReplay score list sorting', () => {
   });
 });
 
+describe('ScanReplay discover per-source breakdown', () => {
+  it('renders a row per source with found/error counts', () => {
+    const detail: ScanDetail = {
+      ...detailFixture,
+      stats: {
+        ...detailFixture.stats,
+        perSource: [
+          { sourceId: 'greenhouse', found: 5, errors: 0 },
+          { sourceId: 'lever', found: 2, errors: 1 },
+        ],
+      },
+    };
+    render(<ScanReplay detail={detail} />);
+    expect(screen.getByText('greenhouse')).toBeInTheDocument();
+    expect(screen.getByText('5 found')).toBeInTheDocument();
+    expect(screen.getByText('0 errors')).toBeInTheDocument();
+    expect(screen.getByText('lever')).toBeInTheDocument();
+    expect(screen.getByText('2 found')).toBeInTheDocument();
+    expect(screen.getByText('1 error')).toBeInTheDocument();
+  });
+});
+
 describe('ScanReplay legitimacy aggregate', () => {
   it('aggregates results by legitimacy tier', () => {
     render(<ScanReplay detail={detailFixture} />);

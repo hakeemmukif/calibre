@@ -588,7 +588,10 @@ async function scoreTopCandidates(
         // emit also refreshing the frame with scoreTopCandidates' own counts
         // — the whole reason `frame` is passed in. Declared AFTER the
         // abort/cap guards so a bailed candidate never enters the active set.
-        const counts = () => ({ scored, queued: Math.max(0, topCandidates.length - doneCount), total: topCandidates.length });
+        // `scored` in the frame is the SETTLED count (doneCount) — matching the
+        // coarse `progress` event's `current`, so the snapshot and progress
+        // hydration paths agree (successfully-scored lives in stats.scored).
+        const counts = () => ({ scored: doneCount, queued: Math.max(0, topCandidates.length - doneCount), total: topCandidates.length });
         const emitPhase = (phase: JobPhaseData["phase"], extra?: Partial<JobPhaseData>) => {
           const data: JobPhaseData = { jobId: job.id, title: job.title, company: job.company, source: source.id, phase, ...extra };
           frame.setJob(data);

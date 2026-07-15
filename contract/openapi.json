@@ -962,6 +962,28 @@
               "matched": {
                 "type": "integer"
               },
+              "perSource": {
+                "items": {
+                  "properties": {
+                    "errors": {
+                      "type": "integer"
+                    },
+                    "found": {
+                      "type": "integer"
+                    },
+                    "sourceId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "sourceId",
+                    "found",
+                    "errors"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "policyVersion": {
                 "type": "string"
               },
@@ -1136,6 +1158,28 @@
               "matched": {
                 "type": "integer"
               },
+              "perSource": {
+                "items": {
+                  "properties": {
+                    "errors": {
+                      "type": "integer"
+                    },
+                    "found": {
+                      "type": "integer"
+                    },
+                    "sourceId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "sourceId",
+                    "found",
+                    "errors"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "policyVersion": {
                 "type": "string"
               },
@@ -1225,6 +1269,28 @@
               },
               "matched": {
                 "type": "integer"
+              },
+              "perSource": {
+                "items": {
+                  "properties": {
+                    "errors": {
+                      "type": "integer"
+                    },
+                    "found": {
+                      "type": "integer"
+                    },
+                    "sourceId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "sourceId",
+                    "found",
+                    "errors"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
               },
               "policyVersion": {
                 "type": "string"
