@@ -422,7 +422,7 @@ registry.registerPath({
     body: {
       content: {
         "application/json": {
-          schema: z.object({ jobId: z.string() }),
+          schema: z.object({ jobId: z.string(), reportId: z.string().optional() }),
         },
       },
     },
@@ -482,7 +482,7 @@ registry.registerPath({
   request: { params: z.object({ id: z.string() }) },
   responses: {
     200: {
-      description: "JSON snapshot, or an SSE stream of progress/done/error (stages analyze -> render -> done)",
+      description: "JSON snapshot, or an SSE stream of progress/done/error (stages extract -> classify -> verify -> done)",
       content: {
         "application/json": { schema: CorrelationReport },
         "text/event-stream": { schema: SseEvent },

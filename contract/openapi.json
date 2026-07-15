@@ -3888,6 +3888,9 @@
                 "properties": {
                   "jobId": {
                     "type": "string"
+                  },
+                  "reportId": {
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -4043,7 +4046,7 @@
                 }
               }
             },
-            "description": "JSON snapshot, or an SSE stream of progress/done/error (stages analyze -> render -> done)"
+            "description": "JSON snapshot, or an SSE stream of progress/done/error (stages extract -> classify -> verify -> done)"
           },
           "401": {
             "content": {

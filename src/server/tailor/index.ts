@@ -59,8 +59,28 @@ export { InvalidDiffIndexError, UnknownDiffSectionError } from "./merge";
 // `target.bulletIndex`, so the one-entry-per-section constraint (a
 // `merge.ts` same-section merge hazard that no longer exists post-Task-9)
 // is retired.
+// `before` is optional on the wire-level DiffEntrySchema (shared with
+// `remove`, which carries no `before`/`after`), but for a MODEL-EMITTED
+// `modify` it is the WYSIWYG anchor a reviewer's accept/reject decision is
+// based on — an omitted `before` would bypass `merge.ts`'s before-mismatch
+// guard entirely (undefined skips the check) and risk silently rewriting
+// the wrong bullet, which gpt-oss-120b's known habit of omitting optional
+// json_schema fields makes a real hazard, not a hypothetical one. So this
+// schema (used only to validate the LLM's own response, not the wire
+// contract) fails loud instead: every `modify` entry must carry BOTH a
+// non-empty `before` and `after`.
 export const TailorResultSchema = z.object({
   diff: z.array(DiffEntrySchema),
+}).superRefine((val, ctx) => {
+  val.diff.forEach((entry, i) => {
+    if (entry.op !== "modify") return;
+    if (!entry.before) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["diff", i, "before"], message: `diff[${i}]: a "modify" edit must include a non-empty "before" (the WYSIWYG anchor) — omitting it risks silently rewriting the wrong bullet.` });
+    }
+    if (!entry.after) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["diff", i, "after"], message: `diff[${i}]: a "modify" edit must include a non-empty "after".` });
+    }
+  });
 });
 export type TailorResult = z.infer<typeof TailorResultSchema>;
 
@@ -83,16 +103,23 @@ export async function startTailor(
   const resumeRow = await resumesRepo.getActive(userId);
   if (!resumeRow) throw new NoActiveResumeError();
 
-  // Existence/ownership of a caller-supplied reportId is checked SYNCHRONOUSLY
-  // here, before the tailored_resumes row is even inserted — an unknown or
-  // foreign-owned reportId is a client request error (404), not something
-  // that should silently insert a doomed row and fail async. Whether the
-  // report has reached "completed" status is a different, run-dependent
-  // question that resolveReport still answers asynchronously (it may still
-  // be running at request time), so that check stays there.
+  // Existence/ownership AND job/résumé identity of a caller-supplied
+  // reportId are checked SYNCHRONOUSLY here, before the tailored_resumes row
+  // is even inserted — an unknown, foreign-owned, or wrong-job/résumé
+  // reportId is a client request error (404/400), not something that should
+  // silently insert a doomed row referencing another job's report (which
+  // would FK-block deleting that other job even after it's tailored) and
+  // fail async. Whether the report has reached "completed" status is a
+  // different, run-dependent question that resolveReport still answers
+  // asynchronously (it may still be running at request time), so that check
+  // stays there. resolveReport's own assertReportMatchesRun call is now
+  // redundant for this supplied-reportId path (already checked here) but is
+  // kept — it is the only identity check for the no-reportId path, where
+  // `correlate` resolves the report after this point.
   if (input.reportId) {
     const report = await correlationReportsRepo.getById(input.reportId, userId);
     if (!report) throw new UnknownReportError(input.reportId);
+    assertReportMatchesRun(report, { jobId: input.jobId, baseResumeId: resumeRow.id });
   }
 
   const inserted = await tailoredResumesRepo.insert({
@@ -162,15 +189,15 @@ async function pollCorrelationUntilTerminal(id: string, userId: string): Promise
 // different job is simply wrong, and a report for a different/older résumé
 // reintroduces the exact staleness bug design §7 exists to kill (the report
 // would cite evidence/gaps against résumé content this run isn't rewriting).
-function assertReportMatchesRun(report: CorrelationReportRow, row: TailoredResumeRow): void {
-  if (report.jobId !== row.jobId) {
+function assertReportMatchesRun(report: CorrelationReportRow, run: { jobId: string; baseResumeId: string }): void {
+  if (report.jobId !== run.jobId) {
     throw new Error(
-      `correlation report ${report.id} was computed for job ${report.jobId}, not this tailor run's job ${row.jobId}.`,
+      `correlation report ${report.id} was computed for job ${report.jobId}, not this tailor run's job ${run.jobId}.`,
     );
   }
-  if (report.resumeId !== row.baseResumeId) {
+  if (report.resumeId !== run.baseResumeId) {
     throw new Error(
-      `correlation report ${report.id} was computed against résumé ${report.resumeId}, not this tailor run's base résumé ${row.baseResumeId} — refusing to rewrite from a stale report.`,
+      `correlation report ${report.id} was computed against résumé ${report.resumeId}, not this tailor run's base résumé ${run.baseResumeId} — refusing to rewrite from a stale report.`,
     );
   }
 }

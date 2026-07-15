@@ -197,6 +197,8 @@ The `verify` step is pure code over `(rows, résumé)` — the primary unit-test
   one-entry-per-section hack and makes accept/reject genuinely per-edit.
 - Re-run the deterministic **literal-ATS check** on the merged (accepted-all) résumé → the
   before→after `ats.present` delta is the stable, non-LLM measure that the rewrite worked.
+  **Post-merge status: DEFERRED to Phase 2** — `index.ts` does not yet recompute this delta;
+  Task 12's eval harness covers ATS non-regression in the interim.
 
 Finalize / PDF paths are unchanged except that the merge is finer-grained.
 

@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { makeMockLlm } from "@/lib/llm/mock";
 import { insertJob, insertJobScore, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
@@ -121,6 +122,21 @@ const INVENTED_REQUIREMENT_DIFF = [
     after: "Led distributed payments platform with advanced observability tooling",
     reason: "invented capability not present as a met/buried row in the report",
     requirement: "advanced observability tooling",
+    target: { index: 0, bulletIndex: 0 },
+  },
+];
+
+// `before` omitted on a `modify` — the model-output schema (TailorResultSchema's
+// superRefine) must reject this outright; gpt-oss-120b is known to omit
+// optional json_schema fields, and a missing anchor risks silently rewriting
+// the wrong bullet.
+const MISSING_BEFORE_DIFF = [
+  {
+    section: "experience",
+    op: "modify" as const,
+    after: "Led distributed payments platform spanning a distributed systems architecture",
+    reason: "surface distributed systems experience",
+    requirement: "distributed systems experience",
     target: { index: 0, bulletIndex: 0 },
   },
 ];
@@ -339,14 +355,13 @@ describe("startTailor", () => {
     expect(row?.status).toBe("failed");
   });
 
-  it("fails the run loudly when the resolved report was computed for a different job than this run's", async () => {
+  it("fails the run loudly (schema) when a modify edit omits `before` — the mandatory WYSIWYG anchor", async () => {
     const source = await insertSource(state.testDb);
     const job = await insertJob(state.testDb, source.id);
-    const otherJob = await insertJob(state.testDb, source.id);
     const resume = await insertResume(state.testDb, { isActive: true, structured: BASE_STRUCTURED });
-    const report = await insertCompletedReport(otherJob.id, resume.id);
+    const report = await insertCompletedReport(job.id, resume.id);
 
-    const llm = makeMockLlm({ tailor: { diff: TAILOR_DIFF } });
+    const llm = makeMockLlm({ tailor: { diff: MISSING_BEFORE_DIFF } });
 
     const draft = await startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id, reportId: report.id }, { llm });
     await waitForTerminal(draft.id);
@@ -355,7 +370,28 @@ describe("startTailor", () => {
     expect(row?.status).toBe("failed");
   });
 
-  it("fails the run loudly when the resolved report was computed against a different résumé than this run's base résumé (staleness guard)", async () => {
+  it("throws synchronously (no tailored_resumes row inserted) when a supplied reportId was computed for a different job than this run's", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id);
+    const otherJob = await insertJob(state.testDb, source.id);
+    const resume = await insertResume(state.testDb, { isActive: true, structured: BASE_STRUCTURED });
+    const report = await insertCompletedReport(otherJob.id, resume.id);
+
+    const llm = makeMockLlm({ tailor: { diff: TAILOR_DIFF } });
+
+    // startTailor's synchronous identity check (index.ts) now catches a
+    // wrong-job reportId BEFORE any tailored_resumes row is inserted — a
+    // row referencing another job's report would otherwise FK-block
+    // deleting that other job even after Fix 1's cascade.
+    await expect(
+      startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id, reportId: report.id }, { llm }),
+    ).rejects.toThrow(/not this tailor run's job/);
+
+    const rows = await state.testDb.select().from(tailoredResumes).where(eq(tailoredResumes.jobId, job.id));
+    expect(rows).toHaveLength(0);
+  });
+
+  it("throws synchronously (no tailored_resumes row inserted) when a supplied reportId was computed against a different résumé than this run's base résumé (staleness guard)", async () => {
     const source = await insertSource(state.testDb);
     const job = await insertJob(state.testDb, source.id);
     const resume = await insertResume(state.testDb, { isActive: true, structured: BASE_STRUCTURED });
@@ -364,11 +400,12 @@ describe("startTailor", () => {
 
     const llm = makeMockLlm({ tailor: { diff: TAILOR_DIFF } });
 
-    const draft = await startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id, reportId: report.id }, { llm });
-    await waitForTerminal(draft.id);
+    await expect(
+      startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id, reportId: report.id }, { llm }),
+    ).rejects.toThrow(/refusing to rewrite from a stale report/);
 
-    const row = await tailoredResumesRepo.getById(draft.id, BOOTSTRAP_ADMIN_ID);
-    expect(row?.status).toBe("failed");
+    const rows = await state.testDb.select().from(tailoredResumes).where(eq(tailoredResumes.jobId, job.id));
+    expect(rows).toHaveLength(0);
   });
 
   it("404s (UnknownReportError) synchronously when reportId belongs to a different user (no existence leak, no tailored_resumes row inserted)", async () => {

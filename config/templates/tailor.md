@@ -33,8 +33,12 @@ Each edit must have:
   that section's array (e.g. which `experience[]` role) and `bulletIndex`
   is the position within that entry's bullets/items (`null` for `add`,
   which appends).
-- `before` / `after`: the exact existing text and its replacement (`before`
-  is omitted for `add`; `after` is omitted for `remove`).
+- `before` / `after`: the exact existing text and its replacement. For a
+  `modify` edit, `before` is **REQUIRED** — the exact current text,
+  verbatim, character-for-character as it appears in the résumé — and
+  `after` is also required; an edit that omits either will be rejected
+  outright. `before` is omitted for `add` (there is no existing text);
+  `after` is omitted for `remove`.
 - `reason`: one short line tying the edit to the requirement.
 - `requirement`: the exact requirement text (verbatim from the report) this
   edit serves.

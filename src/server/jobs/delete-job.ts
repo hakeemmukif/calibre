@@ -2,15 +2,26 @@
 // order is load-bearing — 404 unknown, then 409 not-pasted, then 409
 // application-exists — the lifelong-tracker promise wins over deletion, so
 // the application check must run BEFORE any row is touched. Every FK onto
-// `jobs` from application_answers/tailored_resumes/job_scores/applications
-// is the drizzle default (NO ACTION == RESTRICT in Postgres — schema.ts sets
-// no `onDelete` on any of them), so those dependents must be removed, in
-// that order, before the `jobs` row itself. `url_checks.job_id` is the one
-// exception (`ON DELETE SET NULL`) — it needs no explicit cleanup here.
+// `jobs` from application_answers/tailored_resumes/correlation_reports/
+// job_scores/applications is the drizzle default (NO ACTION == RESTRICT in
+// Postgres — schema.ts sets no `onDelete` on any of them), so those
+// dependents must be removed, in that order, before the `jobs` row itself.
+// `correlation_reports` must be deleted AFTER `tailored_resumes` —
+// `tailored_resumes.report_id` FKs `correlation_reports.id`, so a report row
+// still referenced by a not-yet-deleted tailored_resumes row would itself
+// hit the same RESTRICT. `url_checks.job_id` is the one exception (`ON
+// DELETE SET NULL`) — it needs no explicit cleanup here.
 import { eq } from "drizzle-orm";
 import { getDb } from "@/server/persistence/db";
 import { jobsRepo } from "@/server/persistence/repos/jobs";
-import { applicationAnswers, applications, jobScores, jobs, tailoredResumes } from "@/server/persistence/schema";
+import {
+  applicationAnswers,
+  applications,
+  correlationReports,
+  jobScores,
+  jobs,
+  tailoredResumes,
+} from "@/server/persistence/schema";
 
 export class UnknownJobError extends Error {
   constructor(jobId: string) {
@@ -49,6 +60,7 @@ export async function deletePastedJob(jobId: string, userId: string): Promise<vo
   await db.transaction(async (tx) => {
     await tx.delete(applicationAnswers).where(eq(applicationAnswers.jobId, jobId));
     await tx.delete(tailoredResumes).where(eq(tailoredResumes.jobId, jobId));
+    await tx.delete(correlationReports).where(eq(correlationReports.jobId, jobId));
     await tx.delete(jobScores).where(eq(jobScores.jobId, jobId));
     await tx.delete(jobs).where(eq(jobs.id, jobId));
   });

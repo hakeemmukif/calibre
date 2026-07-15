@@ -8,10 +8,11 @@
 //
 // Rule: for every exported repo method (a property of the object literal
 // returned from `createXRepo(db)`), if that method's body performs a
-// `.select(`/`.update(`/`.delete(` query AGAINST ONE OF THE 9 PER-USER-OWNED
+// `.select(`/`.update(`/`.delete(` query AGAINST ONE OF THE 10 PER-USER-OWNED
 // TABLES (profile, resumes, searchRuns, jobs, jobScores, applicationAnswers,
-// tailoredResumes, urlChecks, applications — detected from the table passed
-// to `.from(`/`.update(`/`.delete(`/`.insert(` in the method body), its own
+// tailoredResumes, urlChecks, applications, correlationReports — detected
+// from the table passed to `.from(`/`.update(`/`.delete(`/`.insert(` in the
+// method body), its own
 // text must contain EITHER the literal `userId` OR a `// GLOBAL-BY-DECISION:`
 // comment — REGARDLESS of whether it has a `.where(` clause. A where-less
 // query against a per-user table (e.g. a hypothetical `db.select().from(
@@ -64,7 +65,7 @@ const WHERE_RE = /\.where\(/;
 const GLOBAL_DECISION_RE = /GLOBAL-BY-DECISION/;
 const USERID_RE = /userId/;
 
-// The 9 tables that hold per-user-owned rows (schema.ts). Any of these
+// The 10 tables that hold per-user-owned rows (schema.ts). Any of these
 // touched by a select/update/delete method must be scoped regardless of
 // `.where(` presence — see the where-less rule above. `sources`, `users`,
 // and `sessions` are deliberately excluded: they are global/shared tables,
@@ -79,6 +80,7 @@ const OWNING_TABLES = new Set([
   "tailoredResumes",
   "urlChecks",
   "applications",
+  "correlationReports",
 ]);
 
 const TARGET_TABLE_RE = /\.(?:from|update|delete|insert)\(\s*([A-Za-z_$][\w$]*)/g;

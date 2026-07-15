@@ -86,6 +86,13 @@ function applyScalar(store: ResumeStore, e: TailorDiffEntry): void {
   if (!e.after) {
     throw new MalformedDiffEditError(`${e.op} edit for section "${e.section}" is missing "after".`);
   }
+  // `before` is the human-review anchor (see applyBullet below) — a
+  // `modify` that omits it bypasses that anchor entirely, so this is
+  // defense in depth against a caller that skipped TailorResultSchema's own
+  // (stricter) mandatory-`before` check.
+  if (e.op === "modify" && e.before === undefined) {
+    throw new MalformedDiffEditError(`modify edit for section "${e.section}" is missing "before" (the anchor a reviewer's accept/reject decision is based on) — refusing to blindly rewrite.`);
+  }
   store[field] = e.after;
 }
 
@@ -160,9 +167,17 @@ function applyBullet(list: string[], e: TailorDiffEntry): void {
   }
   // `before` is the human-review anchor: a reviewer accepts an edit based on
   // the shown before-text, so a stale/mismatched edit must never silently
-  // rewrite a different bullet. Modifies apply before removes within a group
-  // (see applyGroup), so `list[i]` is still the base bullet here.
-  if (e.before !== undefined && list[i] !== e.before) {
+  // rewrite a different bullet. An absent `before` is defense in depth
+  // against a caller that skipped TailorResultSchema's own (stricter)
+  // mandatory-`before` check — it must fail loud, not be treated as "no
+  // anchor to check". Modifies apply before removes within a group (see
+  // applyGroup), so `list[i]` is still the base bullet here.
+  if (e.before === undefined) {
+    throw new MalformedDiffEditError(
+      `modify edit for section "${e.section}" bulletIndex ${i} is missing "before" (the anchor a reviewer's accept/reject decision is based on) — refusing to blindly rewrite.`,
+    );
+  }
+  if (list[i] !== e.before) {
     throw new MalformedDiffEditError(
       `modify edit for section "${e.section}" bulletIndex ${i} expected before "${e.before}" but found "${list[i]}".`,
     );

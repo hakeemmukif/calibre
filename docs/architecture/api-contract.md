@@ -361,7 +361,7 @@ Boundary rule everywhere: `Schema.parse(body)` at the route handler; `ZodError` 
 
 **GET /api/jobs/check/:id** — → `200 UrlCheck` | `404`. Poll ~1.5s; `UrlCheck.stage` is an open string (`fetching|searching|extracting|persisting|ghost-check|scoring`). Kept for deep links — the batched `?ids=`/`?active=1` routes above are what the feed/dock actually poll on a shared interval.
 
-**DELETE /api/jobs/:id** — → `204` | `404` unknown job | `409 CONFLICT` `persona !== 'pasted'` | `409 CONFLICT` a tracked `applications` row exists ("tracked application — deletion blocked" — the lifelong-tracker promise wins over deletion). One transaction deletes `application_answers` → `tailored_resumes` → `job_scores` for the job, then the `jobs` row; `url_checks.job_id` nulls via `ON DELETE SET NULL` (spec §10).
+**DELETE /api/jobs/:id** — → `204` | `404` unknown job | `409 CONFLICT` `persona !== 'pasted'` | `409 CONFLICT` a tracked `applications` row exists ("tracked application — deletion blocked" — the lifelong-tracker promise wins over deletion). One transaction deletes `application_answers` → `tailored_resumes` → `correlation_reports` → `job_scores` for the job, then the `jobs` row (`correlation_reports` runs after `tailored_resumes` since `tailored_resumes.report_id` FKs it); `url_checks.job_id` nulls via `ON DELETE SET NULL` (spec §10).
 
 ## 4. Streaming (SSE)
 

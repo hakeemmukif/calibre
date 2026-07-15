@@ -1405,3 +1405,5 @@ git commit -m "test(tailor): e2e for correlate→rewrite; finalize contract stag
 **Type consistency:** `CorrelationRow` fields identical across Tasks 1/3/7/12. `TailorDiffEntry` (Task 1) used consistently in 4,9,10. `applyAcceptedDiff` new signature `(base, diff, acceptedIndices)` consistent in 9,10,11. `verifyEvidence(Omit<CorrelationRow,"atsPresent">[], store)` consistent in 3,7,12. `correlate`/`classifyAndVerify` consistent in 7,8,12.
 
 **Known follow-through:** Tasks 10–11 touch existing tailor tests broadly (largest-risk tasks) — the two-stage review should scrutinize the `applyAcceptedDiff` signature change fan-out and the removal of the full-store emission.
+
+**Post-merge deferral (final whole-branch review):** the design spec §6 before→after literal-ATS delta (re-running the deterministic ATS check on the merged résumé) is NOT implemented in `index.ts` as shipped — DEFERRED to Phase 2; Task 12's eval harness covers ATS non-regression meanwhile, so this divergence from the spec is on the record rather than silently dropped.
