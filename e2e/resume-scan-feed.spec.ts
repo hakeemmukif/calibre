@@ -1,31 +1,18 @@
 import { expect, test } from "@playwright/test";
 
-// Journey F1->F2: paste-text résumé ingest auto-fires the dual-persona scan
-// (src/app/resume/page.tsx's `startSearches`) and hands the remote run off
-// to /feed via sessionStorage (features/search/scanHandoff.ts). >=100 raw
-// chars (POST /api/resume's `PasteBody` schema) — trimmed length is what
-// ResumeUpload's "Use this text" button gates on, so pad well past it.
+// Journey F1 -> /scans (D7): paste-text résumé ingest auto-fires the
+// dual-persona scan (src/app/(app)/resume/page.tsx's `startSearches`) and
+// navigates to /scans, where BOTH runs are visible (the retention win — the
+// old sessionStorage handoff -> /feed overlay round-trip is retired). Once a
+// run reaches a terminal state, its /scans/:id detail replays the persisted
+// results (ScanReplay) with the scored fixture job. No EventSource is opened
+// on this path (a terminal run's detail is a plain JSON fetch), so the old
+// SSE route warm-up request is no longer needed. >=100 raw chars (POST
+// /api/resume's `PasteBody` schema) — trimmed length is what ResumeUpload's
+// "Use this text" button gates on, so pad well past it.
 const SAMPLE_RESUME = "Jane Doe\nSenior Backend Engineer\nPayments, Node.js, Postgres\n" + "x".repeat(120);
 
-test("paste résumé -> dual-persona scan handoff -> feed shows a scored, legitimacy-tagged job", async ({ page, request }) => {
-  // Next.js dev server compiles each route.ts on-demand on its first hit.
-  // Reproduced directly with curl against a freshly-booted `next dev`
-  // (doubles mode): a search run's SSE subscription (GET /api/search/:id
-  // with Accept: text/event-stream) made before this dynamic route has EVER
-  // been hit gets a synthetic "not streamable" error even though the run
-  // was just created seconds earlier by the already-compiled POST
-  // /api/search route — the run's in-memory registry handle (a module-level
-  // singleton, src/server/runs/registry.ts) isn't visible until this route
-  // has compiled once. Every subsequent request in the same `next dev`
-  // process works correctly (confirmed empirically). This spec is the only
-  // one in the suite that opens a real EventSource (via useScanRun's SSE
-  // subscription), so warm the route with one throwaway request before the
-  // real flow below is the only way to make it deterministic — not a
-  // product bug, purely a `next dev` on-demand-compilation artifact.
-  await request.get("/api/search/00000000-0000-0000-0000-000000000000", {
-    headers: { accept: "text/event-stream" },
-  });
-
+test("paste résumé -> dual-persona scan -> /scans list -> completed run replays a scored job", async ({ page }) => {
   await page.goto("/resume");
 
   // The DB is shared across spec files within one `test:e2e` invocation (only
@@ -41,24 +28,31 @@ test("paste résumé -> dual-persona scan handoff -> feed shows a scored, legiti
   await page.getByPlaceholder(/paste the plain text of your résumé/i).fill(SAMPLE_RESUME);
   await page.getByRole("button", { name: "Use this text" }).click();
 
-  await page.waitForURL("**/feed");
+  await page.waitForURL("**/scans");
 
-  // ScanProgress overlay attaches to the remote-persona run via the handoff.
-  await expect(page.getByText("Scanning the market for you")).toBeVisible();
-  const viewMatches = page.getByRole("button", { name: "View your matches" });
-  await expect(viewMatches).toBeVisible({ timeout: 30_000 });
-  await viewMatches.click();
+  // Both just-started persona runs land in the list as clickable run cards
+  // (ScansList Cards carry role="button" and a "N worth · N ghost · N scored"
+  // stats line; the "Scan now · …" launcher buttons don't). Prior specs may
+  // have left older runs behind in the shared DB, so assert at-least-two.
+  const runCards = page.getByRole("button").filter({ hasText: /\d+ worth · \d+ ghost · \d+ scored/ });
+  await runCards.first().waitFor();
+  expect(await runCards.count()).toBeGreaterThanOrEqual(2);
 
-  // Dismissed — the row underneath must be a real JobRow with a fit score
-  // ring and a legitimacy tag, not just any text on the page. Score is
-  // deterministic (MATCH_SCORE fixture -> 4.2), but the legitimacy TIER is
-  // not: src/server/score/legitimacy.ts overlays a real (non-doubles-gated)
-  // liveness HTTP probe against the fixture posting's actual `applyUrl`
-  // (src/server/score/liveness.ts) on top of the mocked LLM's "clear"
-  // verdict, forcing "ghost" if that live network call reports the posting
-  // 404s/410s — accept whichever of the 5 tiers actually rendered rather
-  // than pin one, so this assertion doesn't ride on that network call's result.
+  // The list fetches once on mount (no polling), so reload until a run shows
+  // a terminal tag — "Completed", or "Partial" when the daily cap stopped it.
+  await expect(async () => {
+    await page.reload();
+    await expect(runCards.filter({ hasText: /Completed|Partial/ }).first()).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 30_000 });
+
+  await runCards.filter({ hasText: /Completed|Partial/ }).first().click();
+  await page.waitForURL(/\/scans\/[^/]+$/);
+
+  // ScanReplay's Score section lists the fixture posting as a scored row.
+  // Score is deterministic (MATCH_SCORE fixture -> 4.2); the legitimacy TIER
+  // is not — src/server/score/legitimacy.ts overlays a real liveness HTTP
+  // probe against the fixture posting's `applyUrl` — so assert title + score
+  // only, not a pinned tier.
   await expect(page.getByText("Senior Backend Engineer, Payments").first()).toBeVisible();
   await expect(page.getByText("4.2").first()).toBeVisible();
-  await expect(page.getByText(/^(Verified|Clear|Suspicious|Ghost|Likely scam)$/).first()).toBeVisible();
 });
