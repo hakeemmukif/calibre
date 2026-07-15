@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ResumeStore } from "@/server/resume/resume-store";
-import { atsSignal, flattenResumeText, semanticSignal, verifyEvidence } from "./correlate-metrics";
+import { atsSignal, fabricationViolations, flattenResumeText, semanticSignal, verifyEvidence } from "./correlate-metrics";
 
 const store: ResumeStore = {
   storeVersion: 2, extractionPath: "text", name: "Aisha",
@@ -131,5 +131,31 @@ describe("flattenResumeText", () => {
     ]) {
       expect(text).toContain(expected);
     }
+  });
+});
+
+describe("fabricationViolations", () => {
+  const base = store; // reuse the fixture above
+  it("flags a rewrite that invents a metric", () => {
+    const v = fabricationViolations([{ section: "experience", op: "modify",
+      before: "Led distributed payments platform",
+      after: "Led distributed payments platform, cutting latency by 40%",
+      reason: "r", requirement: "performance", target: { index: 0, bulletIndex: 0 } }], base);
+    expect(v).toHaveLength(1);
+    expect(v[0]).toContain("40");
+  });
+  it("allows a reword with no new numbers", () => {
+    const v = fabricationViolations([{ section: "experience", op: "modify",
+      before: "Led distributed payments platform handling FX settlement",
+      after: "Architected distributed payment systems for FX settlement",
+      reason: "r", requirement: "distributed systems", target: { index: 0, bulletIndex: 0 } }], base);
+    expect(v).toEqual([]);
+  });
+  it("allows a number that already exists in the résumé", () => {
+    const withNum: ResumeStore = { ...base, summary: "10 years building payment systems" };
+    const v = fabricationViolations([{ section: "summary", op: "modify",
+      before: "Built payment systems", after: "10 years building payment platforms",
+      reason: "r", requirement: "seniority", target: { index: null, bulletIndex: null } }], withNum);
+    expect(v).toEqual([]);
   });
 });

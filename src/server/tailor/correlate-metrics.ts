@@ -1,6 +1,6 @@
 import { fuzzyContains } from "@/server/resume/eval-metrics";
 import type { ResumeStore } from "@/server/resume/resume-store";
-import type { CorrelationRow } from "@/types";
+import type { CorrelationRow, TailorDiffEntry } from "@/types";
 
 export function flattenResumeText(store: ResumeStore): string {
   const parts: string[] = [store.name, store.headline ?? "", store.location ?? "", store.summary ?? ""];
@@ -62,4 +62,25 @@ export function atsSignal(rows: CorrelationRow[]) {
   const present = rows.filter((r) => r.atsPresent).length;
   const missing = rows.filter((r) => !r.atsPresent).map((r) => r.term);
   return { present, total: rows.length, missing };
+}
+
+const NUMERIC_ATOM = /\d[\d,.]*%?/g; // 40, 40%, 1,200, 3.5, 2024
+
+function numericAtoms(text: string): string[] {
+  return (text.match(NUMERIC_ATOM) ?? []).map((s) => s.replace(/[,.]$/, ""));
+}
+
+export function fabricationViolations(edits: TailorDiffEntry[], store: ResumeStore): string[] {
+  const baseNums = new Set(numericAtoms(flattenResumeText(store)));
+  const violations: string[] = [];
+  for (const e of edits) {
+    if (!e.after) continue;
+    for (const atom of numericAtoms(e.after)) {
+      if (!baseNums.has(atom)) {
+        violations.push(
+          `edit for "${e.requirement}" introduces number "${atom}" absent from the base résumé`);
+      }
+    }
+  }
+  return violations;
 }
