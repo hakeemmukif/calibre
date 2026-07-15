@@ -177,6 +177,9 @@ export const ScanStats = z.object({
   scoreMs: z.number().int(),
   costUsd: z.number(),
   policyVersion: z.string(),
+  // Per-source discover breakdown (spec §4.3). Optional on the wire only for
+  // fixture convenience — the assemblers always supply it (`?? []` for legacy rows).
+  perSource: z.array(z.object({ sourceId: z.string(), found: z.number().int(), errors: z.number().int() })).optional(),
 });
 export type ScanStats = z.infer<typeof ScanStats>;
 
@@ -347,13 +350,45 @@ export const ErrorEnvelope = z.object({
 });
 export type ErrorEnvelope = z.infer<typeof ErrorEnvelope>;
 
+export const SourceEventData = z.object({
+  sourceId: z.string(),
+  name: z.string(),
+  status: z.enum(["fetching", "done", "error"]),
+  found: z.number().int().optional(),
+  error: z.string().optional(),
+});
+export type SourceEventData = z.infer<typeof SourceEventData>;
+
+export const JobPhaseData = z.object({
+  jobId: z.string(),
+  title: z.string(),
+  company: z.string(),
+  source: z.string(),
+  phase: z.enum(["fetching", "readingJD", "scoring", "rescoring", "done", "error"]),
+  verdict: z.enum(["Apply", "Consider", "Research first", "Skip"]).optional(),
+  legitimacyTier: LegitimacyTier.optional(),
+  fit: z.number().min(0).max(5).optional(),
+});
+export type JobPhaseData = z.infer<typeof JobPhaseData>;
+
+export const ScanFrame = z.object({
+  sources: z.array(SourceEventData),
+  activeJobs: z.array(JobPhaseData),
+  counts: z.object({ scored: z.number().int(), queued: z.number().int(), total: z.number().int() }),
+});
+export type ScanFrame = z.infer<typeof ScanFrame>;
+
 // SSE envelope for the two run endpoints (api-contract.md §4). Verbatim
 // discriminated union: `progress` streams as the run advances, `job` is
 // search-only (a scored job — not emitted by B5's discovery-only slice),
-// `done`/`error` are terminal (stream closes after either).
+// `source`/`jobPhase`/`snapshot` are M2 concurrency-lane observability
+// events, `done`/`error` are terminal (stream closes after either).
 export const SseEvent = z.discriminatedUnion("event", [
   z.object({ event: z.literal("progress"), data: Progress }),
   z.object({ event: z.literal("job"), data: Job }),
+  z.object({ event: z.literal("source"), data: SourceEventData }),
+  z.object({ event: z.literal("jobPhase"), data: JobPhaseData }),
+  z.object({ event: z.literal("snapshot"), data: ScanFrame }),
   z.object({ event: z.literal("done"), data: z.union([SearchRun, TailoredResume]) }),
   z.object({ event: z.literal("error"), data: ErrorEnvelope }),
 ]);

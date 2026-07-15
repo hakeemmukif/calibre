@@ -18,7 +18,7 @@ import { searchRunsRepo, type SearchRunRow } from "@/server/persistence/repos/se
 import { sourcesRepo, type SourceRow } from "@/server/persistence/repos/sources";
 import { create, release, getActiveRunForPersona, type RunHandle } from "@/server/runs/registry";
 import { EmptyJobDescriptionError, scoreJob } from "@/server/score";
-import type { ErrorEnvelope, ScanPersona, SearchRun } from "@/types";
+import type { ErrorEnvelope, JobPhaseData, ScanFrame, ScanPersona, SearchRun, SourceEventData } from "@/types";
 import { toSearchRun } from "./assemble-run";
 import type { RawPosting, SourceConnector } from "./connector";
 import { connectorForSource } from "./connectors";
@@ -142,6 +142,10 @@ export async function startSearch(
         perSource: scopedSources.map((s) => ({ sourceId: s.id, found: 0, errors: 0 })),
         unscored: 0,
         capStopped: false,
+        discoverMs: 0,
+        scoreMs: 0,
+        costUsd: 0,
+        policyVersion: policyVersion("match-score"),
       },
     });
 
@@ -184,6 +188,34 @@ async function failRun(
   release(runId, userId, persona);
 }
 
+// M2 live-view frame builder: owns the source-state + active-job Maps and
+// pushes an ABSOLUTE (idempotent) frame onto the handle on every emit. The
+// counts (`scored`/`doneCount`/top-N `total`) live inside scoreTopCandidates
+// — a different function from runFanOut, where the source states live — so
+// `pushFrame` takes counts as an argument and the builder is passed INTO
+// scoreTopCandidates rather than reading cross-function locals.
+type ScanFrameBuilder = {
+  setSource(s: SourceEventData): void;
+  setJob(j: JobPhaseData): void; // done/error self-remove from the active set
+  pushFrame(counts: ScanFrame["counts"]): void;
+};
+
+function createScanFrameBuilder(handle: RunHandle): ScanFrameBuilder {
+  const sources = new Map<string, SourceEventData>();
+  const active = new Map<string, JobPhaseData>();
+  const push = (counts: ScanFrame["counts"]) =>
+    handle.setFrame({
+      sources: [...sources.values()],
+      activeJobs: [...active.values()].filter((j) => j.phase !== "done" && j.phase !== "error"),
+      counts,
+    } satisfies ScanFrame);
+  return {
+    setSource(s) { sources.set(s.sourceId, s); },
+    setJob(j) { if (j.phase === "done" || j.phase === "error") active.delete(j.jobId); else active.set(j.jobId, j); },
+    pushFrame: push,
+  };
+}
+
 async function runFanOut(
   userId: string,
   row: SearchRunRow,
@@ -219,6 +251,8 @@ async function runFanOut(
   let costUsd = 0;
   let capStopped = false;
 
+  const frame = createScanFrameBuilder(handle);
+
   try {
     const targets = deriveRoleTargets(resumeRow, persona);
     const limit = pLimit(concurrency);
@@ -238,6 +272,16 @@ async function runFanOut(
         const timer = setTimeout(() => timeoutController.abort(), connectorTimeoutMs);
         const signal = AbortSignal.any([handle.signal, timeoutController.signal]);
         const stat = perSource.get(source.id)!;
+        // M2 source delta: absolute state per source (fetching → done|error),
+        // mirrored into the frame on every emit. Discovery-time frames carry
+        // zero counts — the strip is source-focused then; the counts fill in
+        // once scoring starts. Display column is sources.name (NOT NULL).
+        const emitSource = (data: SourceEventData) => {
+          frame.setSource(data);
+          handle.emit({ event: "source", data });
+          frame.pushFrame({ scored: 0, queued: 0, total: 0 });
+        };
+        emitSource({ sourceId: source.id, name: source.name, status: "fetching" });
 
         try {
           for await (const posting of connector.discover({
@@ -261,6 +305,7 @@ async function runFanOut(
               matchedPostings.push({ posting, source });
             }
           }
+          emitSource({ sourceId: source.id, name: source.name, status: "done", found: stat.found });
         } catch (err) {
           // Connector-level failure — TOLERATED (system-architecture.md §3
           // "partial failure tolerated into stats.perSource"): recorded, the
@@ -268,6 +313,7 @@ async function runFanOut(
           // surfaced on the run's `stats.perSource[].errors`.
           stat.errors += 1;
           console.error(`search run ${row.id}: connector "${source.id}" failed:`, err);
+          emitSource({ sourceId: source.id, name: source.name, status: "error", error: err instanceof Error ? err.message : String(err) });
         } finally {
           clearTimeout(timer);
           sourcesCompleted += 1;
@@ -293,6 +339,7 @@ async function runFanOut(
       profile,
       handle,
       deps,
+      frame,
     ));
     scoreMs = Date.now() - scoreStartedAt;
 
@@ -465,6 +512,7 @@ async function scoreTopCandidates(
   profile: ProfileRow,
   handle: RunHandle,
   deps: StartSearchDeps,
+  frame: ScanFrameBuilder,
 ): Promise<{ scored: number; worth: number; ghosts: number; unscored: number; capStopped: boolean; costUsd: number }> {
   // relocation "stay": provably-abroad postings don't consume scoring slots
   // (spec §5 scan hardening — persisted, just not scored). Likewise a stated
@@ -535,19 +583,38 @@ async function scoreTopCandidates(
           });
           return;
         }
+        // M2 jobPhase delta: absolute per-job state at each real sub-step
+        // (fetching → readingJD → scoring → [rescoring] → done|error), each
+        // emit also refreshing the frame with scoreTopCandidates' own counts
+        // — the whole reason `frame` is passed in. Declared AFTER the
+        // abort/cap guards so a bailed candidate never enters the active set.
+        // `scored` in the frame is the SETTLED count (doneCount) — matching the
+        // coarse `progress` event's `current`, so the snapshot and progress
+        // hydration paths agree (successfully-scored lives in stats.scored).
+        const counts = () => ({ scored: doneCount, queued: Math.max(0, topCandidates.length - doneCount), total: topCandidates.length });
+        const emitPhase = (phase: JobPhaseData["phase"], extra?: Partial<JobPhaseData>) => {
+          const data: JobPhaseData = { jobId: job.id, title: job.title, company: job.company, source: source.id, phase, ...extra };
+          frame.setJob(data);
+          handle.emit({ event: "jobPhase", data });
+          frame.pushFrame(counts());
+        };
+        emitPhase("fetching");
         const jobStartedAt = Date.now();
         try {
           const jobToScore = await ensureDescription(job, source).catch((err) => {
             console.error(`search run ${row.id}: detail fetch for job ${job.id} failed:`, err);
             return job; // scoreJob will throw EmptyJobDescriptionError -> counted unscored
           });
-          const scoreRow = await scoreJob({ job: jobToScore, source, profile, resume, llm, signal: handle.signal });
+          const scoreRow = await scoreJob({ job: jobToScore, source, profile, resume, llm, signal: handle.signal, onPhase: (p) => emitPhase(p) });
           spentToday += scoreRow.costUsd;
           spentCost += scoreRow.costUsd;
           scored += 1;
           if (scoreRow.verdict === "Apply" || scoreRow.verdict === "Consider") worth += 1;
           if (scoreRow.legitimacy.tier === "ghost") ghosts += 1;
 
+          // Legitimacy folds into `done` with the tier; numeric fit is
+          // scoreRow.score (scoreRow.fit is the jsonb FitEntry[]).
+          emitPhase("done", { verdict: scoreRow.verdict, legitimacyTier: scoreRow.legitimacy.tier, fit: scoreRow.score });
           handle.emit({ event: "job", data: assembleJob({ job, score: scoreRow, source }, { isNewCutoff }) });
           await searchRunsRepo.appendResult(row.id, userId, {
             jobId: job.id,
@@ -562,6 +629,9 @@ async function scoreTopCandidates(
             scoredMs: Date.now() - jobStartedAt,
           });
         } catch (err) {
+          // Either catch branch settles the job — `error` removes it from the
+          // active lanes (frame.setJob deletes done/error jobs).
+          emitPhase("error");
           if (err instanceof EmptyJobDescriptionError) {
             unscored += 1;
             await searchRunsRepo.appendResult(row.id, userId, {
@@ -587,6 +657,10 @@ async function scoreTopCandidates(
           }
         } finally {
           doneCount += 1;
+          // Refresh the frame's counts now that this job is counted done —
+          // without this the LAST job's done/error push (doneCount not yet
+          // incremented) would leave a terminal frame claiming queued: 1.
+          frame.pushFrame(counts());
           handle.emit({
             event: "progress",
             data: {

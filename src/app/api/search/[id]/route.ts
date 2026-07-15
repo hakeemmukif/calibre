@@ -96,6 +96,16 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         return;
       }
 
+      // Hydration snapshot for late/reconnecting subscribers — enqueued in
+      // the SAME synchronous block as the subscribe below (no await between
+      // them), so no delta is lost or double-applied. Event id 0 marks the
+      // pre-subscription frame; live deltas use the registry's monotonic
+      // ids ≥1. `source`/`jobPhase` deltas are absolute state-setters, so a
+      // delta also received live after the snapshot just re-sets the same
+      // state — no replay needed.
+      if (handle.frame) {
+        controller.enqueue(encoder.encode(sseLine("snapshot", handle.frame, 0)));
+      }
       const unsubscribe = handle.subscribe((event, eventId) => {
         if (closed) return;
         controller.enqueue(encoder.encode(sseLine(event.event, event.data, eventId)));

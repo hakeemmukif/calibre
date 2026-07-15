@@ -35,6 +35,7 @@ export function toSearchRun(row: SearchRunRow): SearchRun {
       scoreMs: row.stats.scoreMs ?? 0,
       costUsd: row.stats.costUsd ?? 0,
       policyVersion: row.stats.policyVersion ?? "legacy",
+      perSource: row.stats.perSource ?? [],
     },
     startedAt: row.startedAt.toISOString(),
     finishedAt: row.finishedAt ? row.finishedAt.toISOString() : null,

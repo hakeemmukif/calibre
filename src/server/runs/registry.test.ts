@@ -83,6 +83,13 @@ describe("run registry", () => {
     expect(handle.signal.aborted).toBe(true);
   });
 
+  it("carries an opaque frame slot the engine sets and readers get", () => {
+    const handle = create("search", "run-frame", "user-a", "remote");
+    expect(handle.frame).toBeNull();
+    handle.setFrame({ sources: [], activeJobs: [], counts: { scored: 0, queued: 2, total: 2 } });
+    expect((handle.frame as { counts: { queued: number } }).counts.queued).toBe(2);
+  });
+
   it("markStaleRunningOnBoot flips a leftover 'running' row to 'failed' and leaves others untouched", async () => {
     const repo = createSearchRunsRepo(state.testDb);
     const resume = await insertResume(state.testDb);

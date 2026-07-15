@@ -9,6 +9,7 @@ import type { SourceRow } from "@/server/persistence/repos/sources";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import type { RawPosting, SourceConnector } from "./connector";
 import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
+import { ScanFrame, type JobPhaseData, type SourceEventData } from "@/types";
 
 // Scoring is wired into the run (B6) — every startSearch() call that
 // actually upserts a matched job reaches scoreTopCandidates, which needs an
@@ -609,6 +610,49 @@ describe("startSearch", () => {
     const jobEvent = events.find((e) => e.event === "job")!;
     expect((jobEvent.data as { verdict: string }).verdict).toBe("Apply");
     expect((jobEvent.data as { legitimacy: { tier: string } }).legitimacy.tier).toBe("clear");
+  });
+
+  it("emits source + jobPhase deltas and leaves a coherent final frame (M2)", async () => {
+    const runsRepo = createSearchRunsRepo(state.testDb);
+    await insertResume(state.testDb, { ...resumeFixture, isActive: true });
+    const good = await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
+    const posting: RawPosting = {
+      sourceId: good.id,
+      url: "https://example.com/jobs/a",
+      title: "Data Engineer",
+      company: "Acme",
+      location: "Remote",
+      description: "Build data pipelines with SQL.",
+    };
+
+    const runPromise = startSearch(BOOTSTRAP_ADMIN_ID,
+      { persona: "remote" },
+      { llm: costingLlm, connectorForSource: (s) => stubConnector(s, [posting]) },
+    );
+    // Registry lets a test grab the handle synchronously via the reserved
+    // persona slot (same pattern as the B6 integration test above) — no
+    // test-only onHandle seam needed.
+    const reservedId = getActiveRunForPersona(BOOTSTRAP_ADMIN_ID, "remote")!;
+    const handle = getRunHandle(reservedId)!;
+    const events: { event: string; data: unknown }[] = [];
+    handle.subscribe((event) => events.push({ event: event.event, data: event.data }));
+
+    const run = await runPromise;
+    await waitForTerminal(runsRepo, run.id);
+
+    const sourceEvents = events.filter((e) => e.event === "source");
+    expect(sourceEvents.map((e) => (e.data as SourceEventData).status)).toContain("done");
+    const phases = events
+      .filter((e) => e.event === "jobPhase" && (e.data as JobPhaseData).jobId)
+      .map((e) => (e.data as JobPhaseData).phase);
+    expect(phases).toEqual(expect.arrayContaining(["readingJD", "scoring", "done"]));
+
+    // Final frame is absolute + coherent: the source settled 'done', the
+    // scored job left the active set, and the counts add up.
+    const frame = ScanFrame.parse(handle.frame);
+    expect(frame.sources).toEqual([{ sourceId: "src-good", name: "Test Source", status: "done", found: 1 }]);
+    expect(frame.activeJobs).toEqual([]);
+    expect(frame.counts).toEqual({ scored: 1, queued: 0, total: 1 });
   });
 
   it("daily cost cap: per-job gate stops scoring once dailyCapUsd is crossed (rolling pool, single slot), still completes", async () => {

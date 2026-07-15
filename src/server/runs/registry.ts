@@ -15,6 +15,9 @@ export type RunKind = "search" | "tailor" | "correlate";
 export type RunEvent =
   | { event: "progress"; data: unknown }
   | { event: "job"; data: unknown } // search only — B6's scored `Job` (api-contract.md §4)
+  | { event: "source"; data: unknown }
+  | { event: "jobPhase"; data: unknown }
+  | { event: "snapshot"; data: unknown }
   | { event: "done"; data: unknown }
   | { event: "error"; data: unknown };
 
@@ -32,6 +35,9 @@ export interface RunHandle {
   abort(reason: string): void;
   /** True once a terminal event ('done' | 'error') has been emitted. */
   readonly isTerminal: boolean;
+  /** Opaque live-view frame; engine-owned, route-read. */
+  readonly frame: unknown;
+  setFrame(frame: unknown): void;
 }
 
 function createRunHandle(kind: RunKind, id: string): RunHandle {
@@ -39,6 +45,7 @@ function createRunHandle(kind: RunKind, id: string): RunHandle {
   const listeners = new Set<Listener>();
   let nextEventId = 1;
   let terminal = false;
+  let frame: unknown = null;
 
   return {
     id,
@@ -46,6 +53,12 @@ function createRunHandle(kind: RunKind, id: string): RunHandle {
     signal: controller.signal,
     get isTerminal() {
       return terminal;
+    },
+    get frame() {
+      return frame;
+    },
+    setFrame(next) {
+      frame = next;
     },
     emit(event) {
       const eventId = nextEventId;

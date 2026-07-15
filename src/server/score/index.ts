@@ -48,13 +48,20 @@ export async function scoreJob(args: {
   // Run-scoped cancellation (server/search/run.ts hard cap). Forwarded to the
   // jd-extract + match-score LLM calls so a fired cap actually cancels them.
   signal?: AbortSignal;
+  // M2 live-view sub-step notifications (server/search/run.ts jobPhase
+  // emits): pure callbacks before each internal step — liveness=fetching,
+  // jdFacts=readingJD, matchScore=scoring, escalation=rescoring. Optional;
+  // the url-check path passes nothing. No behaviour change.
+  onPhase?: (phase: "fetching" | "readingJD" | "scoring" | "rescoring") => void;
 }): Promise<JobScoreRow> {
   const { job, source, profile, resume, llm } = args;
 
   if (!job.description) throw new EmptyJobDescriptionError(job.id);
 
+  args.onPhase?.("fetching");
   const liveness = args.livenessOverride ?? (await probeLivenessDeep(job.applyUrl ?? job.url));
 
+  args.onPhase?.("readingJD");
   const jdFactsResult = args.precomputedJdFacts
     ? { data: args.precomputedJdFacts, model: "precomputed", costUsd: 0 }
     : await extractJdFacts(llm, job.description, args.signal);
@@ -77,6 +84,7 @@ export async function scoreJob(args: {
   await jobsRepo.updateRemoteFit(job.id, job.userId, tz?.band ?? null, jdFactsResult.data.hiringStructure ?? null);
 
   const metrics = computeResumeMetrics(resume.structured);
+  args.onPhase?.("scoring");
   const cheap = await scoreMatch(llm, { jdFacts: jdFactsResult.data, resume: resume.structured, metrics }, undefined, args.signal);
 
   let final = cheap;
@@ -84,6 +92,7 @@ export async function scoreJob(args: {
   if (cheap.data.lowConfidence) {
     const escalateModel = escalateModelFor("match-score");
     if (escalateModel) {
+      args.onPhase?.("rescoring");
       const strong = await scoreMatch(llm, { jdFacts: jdFactsResult.data, resume: resume.structured, metrics }, escalateModel, args.signal);
       final = strong;
       escalated = true;

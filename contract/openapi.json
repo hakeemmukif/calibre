@@ -1078,6 +1078,192 @@
         ],
         "type": "string"
       },
+      "ScanDetail": {
+        "properties": {
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "finishedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "persona": {
+            "$ref": "#/components/schemas/Persona"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/ScanResult"
+            },
+            "type": "array"
+          },
+          "resumeName": {
+            "type": "string"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "stats": {
+            "properties": {
+              "capStopped": {
+                "type": "boolean"
+              },
+              "costUsd": {
+                "type": "number"
+              },
+              "discoverMs": {
+                "type": "integer"
+              },
+              "ghosts": {
+                "type": "integer"
+              },
+              "matched": {
+                "type": "integer"
+              },
+              "perSource": {
+                "items": {
+                  "properties": {
+                    "errors": {
+                      "type": "integer"
+                    },
+                    "found": {
+                      "type": "integer"
+                    },
+                    "sourceId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "sourceId",
+                    "found",
+                    "errors"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "policyVersion": {
+                "type": "string"
+              },
+              "scanned": {
+                "type": "integer"
+              },
+              "scoreMs": {
+                "type": "integer"
+              },
+              "scored": {
+                "type": "integer"
+              },
+              "unscored": {
+                "type": "integer"
+              },
+              "worth": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "scanned",
+              "matched",
+              "scored",
+              "worth",
+              "ghosts",
+              "unscored",
+              "capStopped",
+              "discoverMs",
+              "scoreMs",
+              "costUsd",
+              "policyVersion"
+            ],
+            "type": "object"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RunStatus"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "persona",
+          "resumeName",
+          "startedAt",
+          "finishedAt",
+          "stats",
+          "error",
+          "results"
+        ],
+        "type": "object"
+      },
+      "ScanResult": {
+        "properties": {
+          "company": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "fit": {
+            "maximum": 5,
+            "minimum": 0,
+            "type": "number"
+          },
+          "jobId": {
+            "type": "string"
+          },
+          "legitimacyTier": {
+            "$ref": "#/components/schemas/LegitimacyTier"
+          },
+          "outcome": {
+            "enum": [
+              "scored",
+              "unscored",
+              "error",
+              "skipped"
+            ],
+            "type": "string"
+          },
+          "reason": {
+            "enum": [
+              "dailyCap"
+            ],
+            "type": "string"
+          },
+          "scoredMs": {
+            "type": "integer"
+          },
+          "source": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "verdict": {
+            "enum": [
+              "Apply",
+              "Consider",
+              "Research first",
+              "Skip"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "jobId",
+          "title",
+          "company",
+          "source",
+          "outcome"
+        ],
+        "type": "object"
+      },
       "SearchRun": {
         "properties": {
           "error": {
@@ -1139,6 +1325,28 @@
               "matched": {
                 "type": "integer"
               },
+              "perSource": {
+                "items": {
+                  "properties": {
+                    "errors": {
+                      "type": "integer"
+                    },
+                    "found": {
+                      "type": "integer"
+                    },
+                    "sourceId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "sourceId",
+                    "found",
+                    "errors"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "policyVersion": {
                 "type": "string"
               },
@@ -1187,6 +1395,116 @@
           "startedAt",
           "finishedAt",
           "error"
+        ],
+        "type": "object"
+      },
+      "SearchRunSummary": {
+        "properties": {
+          "finishedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "persona": {
+            "$ref": "#/components/schemas/Persona"
+          },
+          "resumeName": {
+            "type": "string"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "stats": {
+            "properties": {
+              "capStopped": {
+                "type": "boolean"
+              },
+              "costUsd": {
+                "type": "number"
+              },
+              "discoverMs": {
+                "type": "integer"
+              },
+              "ghosts": {
+                "type": "integer"
+              },
+              "matched": {
+                "type": "integer"
+              },
+              "perSource": {
+                "items": {
+                  "properties": {
+                    "errors": {
+                      "type": "integer"
+                    },
+                    "found": {
+                      "type": "integer"
+                    },
+                    "sourceId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "sourceId",
+                    "found",
+                    "errors"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "policyVersion": {
+                "type": "string"
+              },
+              "scanned": {
+                "type": "integer"
+              },
+              "scoreMs": {
+                "type": "integer"
+              },
+              "scored": {
+                "type": "integer"
+              },
+              "unscored": {
+                "type": "integer"
+              },
+              "worth": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "scanned",
+              "matched",
+              "scored",
+              "worth",
+              "ghosts",
+              "unscored",
+              "capStopped",
+              "discoverMs",
+              "scoreMs",
+              "costUsd",
+              "policyVersion"
+            ],
+            "type": "object"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RunStatus"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "persona",
+          "resumeName",
+          "startedAt",
+          "finishedAt",
+          "stats"
         ],
         "type": "object"
       },
@@ -1296,6 +1614,250 @@
               "event": {
                 "enum": [
                   "job"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "event",
+              "data"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "data": {
+                "properties": {
+                  "error": {
+                    "type": "string"
+                  },
+                  "found": {
+                    "type": "integer"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "sourceId": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "enum": [
+                      "fetching",
+                      "done",
+                      "error"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "sourceId",
+                  "name",
+                  "status"
+                ],
+                "type": "object"
+              },
+              "event": {
+                "enum": [
+                  "source"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "event",
+              "data"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "data": {
+                "properties": {
+                  "company": {
+                    "type": "string"
+                  },
+                  "fit": {
+                    "maximum": 5,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "jobId": {
+                    "type": "string"
+                  },
+                  "legitimacyTier": {
+                    "$ref": "#/components/schemas/LegitimacyTier"
+                  },
+                  "phase": {
+                    "enum": [
+                      "fetching",
+                      "readingJD",
+                      "scoring",
+                      "rescoring",
+                      "done",
+                      "error"
+                    ],
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "verdict": {
+                    "enum": [
+                      "Apply",
+                      "Consider",
+                      "Research first",
+                      "Skip"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "jobId",
+                  "title",
+                  "company",
+                  "source",
+                  "phase"
+                ],
+                "type": "object"
+              },
+              "event": {
+                "enum": [
+                  "jobPhase"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "event",
+              "data"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "data": {
+                "properties": {
+                  "activeJobs": {
+                    "items": {
+                      "properties": {
+                        "company": {
+                          "type": "string"
+                        },
+                        "fit": {
+                          "maximum": 5,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "jobId": {
+                          "type": "string"
+                        },
+                        "legitimacyTier": {
+                          "$ref": "#/components/schemas/LegitimacyTier"
+                        },
+                        "phase": {
+                          "enum": [
+                            "fetching",
+                            "readingJD",
+                            "scoring",
+                            "rescoring",
+                            "done",
+                            "error"
+                          ],
+                          "type": "string"
+                        },
+                        "source": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "verdict": {
+                          "enum": [
+                            "Apply",
+                            "Consider",
+                            "Research first",
+                            "Skip"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "jobId",
+                        "title",
+                        "company",
+                        "source",
+                        "phase"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "counts": {
+                    "properties": {
+                      "queued": {
+                        "type": "integer"
+                      },
+                      "scored": {
+                        "type": "integer"
+                      },
+                      "total": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "scored",
+                      "queued",
+                      "total"
+                    ],
+                    "type": "object"
+                  },
+                  "sources": {
+                    "items": {
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "found": {
+                          "type": "integer"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "sourceId": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "fetching",
+                            "done",
+                            "error"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "sourceId",
+                        "name",
+                        "status"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "sources",
+                  "activeJobs",
+                  "counts"
+                ],
+                "type": "object"
+              },
+              "event": {
+                "enum": [
+                  "snapshot"
                 ],
                 "type": "string"
               }
@@ -3634,6 +4196,81 @@
       }
     },
     "/api/search": {
+      "get": {
+        "parameters": [
+          {
+            "description": "Positive integer, max 50 (default 20)",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "description": "Positive integer, max 50 (default 20)",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Opaque keyset cursor from a prior page's nextCursor",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "description": "Opaque keyset cursor from a prior page's nextCursor",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "items": {
+                      "items": {
+                        "$ref": "#/components/schemas/SearchRunSummary"
+                      },
+                      "type": "array"
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "nextCursor"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "A page of the caller's scan runs"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Invalid limit or malformed cursor"
+          }
+        },
+        "summary": "List the caller's past scans — paginated, newest-first (Scans tab)"
+      },
       "post": {
         "requestBody": {
           "content": {
@@ -3722,7 +4359,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SearchRun"
+                  "$ref": "#/components/schemas/ScanDetail"
                 }
               },
               "text/event-stream": {
@@ -3731,7 +4368,7 @@
                 }
               }
             },
-            "description": "JSON snapshot, or an SSE stream of progress/job/done/error (search scores top-N candidates and streams each as a `job` event — B6)"
+            "description": "ScanDetail JSON snapshot (persisted per-job results + widened stats), or an SSE stream of progress/job/done/error (B6)"
           },
           "401": {
             "content": {
@@ -3754,7 +4391,7 @@
             "description": "Unknown run id (incl. a foreign-owned one — no existence leak)"
           }
         },
-        "summary": "Run status — JSON snapshot by default; SSE via Accept: text/event-stream"
+        "summary": "Run status — JSON snapshot (ScanDetail) by default; SSE via Accept: text/event-stream"
       }
     },
     "/api/sources": {
