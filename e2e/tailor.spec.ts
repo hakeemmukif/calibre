@@ -26,8 +26,34 @@ async function bootstrapRemoteJob(request: APIRequestContext): Promise<{ id: str
   throw new Error("bootstrapRemoteJob: GET /api/jobs?persona=remote stayed empty after 20s");
 }
 
-test("tailor: generate -> diff review -> save finalizes -> real Chromium PDF", async ({ page, request }) => {
+test("tailor: correlate report -> generate rewrite -> diff review -> save finalizes -> real Chromium PDF", async ({
+  page,
+  request,
+}) => {
+  // bootstrapRemoteJob's /api/search scan scores the job as a side effect
+  // (server/score/index.ts persists `jdFacts` on every job_scores upsert) —
+  // no separate seeding call is needed before correlate.
   const job = await bootstrapRemoteJob(request);
+
+  // Correlate step (server/tailor/correlate.ts, POST /api/tailor/correlate):
+  // its own run, own `correlation_reports` row, independent of the tailor
+  // run started below. Drive it directly and assert the report's rows —
+  // there is no UI surface for CorrelationReport, so this is API-only.
+  const correlateStart = await request.post("/api/tailor/correlate", { data: { jobId: job.id } });
+  expect(correlateStart.status()).toBe(202);
+  const correlateRun = (await correlateStart.json()) as { id: string };
+
+  let report: { status: string; rows: { requirement: string; status: string }[] } | undefined;
+  const correlateDeadline = Date.now() + 20_000;
+  while (Date.now() < correlateDeadline) {
+    const reportRes = await request.get(`/api/tailor/correlate/${correlateRun.id}`);
+    expect(reportRes.ok()).toBeTruthy();
+    report = await reportRes.json();
+    if (report?.status === "completed" || report?.status === "failed") break;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  expect(report?.status).toBe("completed");
+  expect(report?.rows.length).toBeGreaterThan(0);
 
   await page.goto(`/jobs/${job.id}`);
   await page.getByRole("button", { name: "Tailor résumé" }).click();
@@ -35,6 +61,10 @@ test("tailor: generate -> diff review -> save finalizes -> real Chromium PDF", a
 
   // Capture the started run's id straight off the POST /api/tailor response
   // — there's no list-by-job route, and the id isn't otherwise rendered.
+  // The page's "Generate" button drives the full correlate -> rewrite ->
+  // render pipeline server-side in one call (no reportId supplied, so
+  // startTailor runs its own internal correlate) — the report checked above
+  // proves the underlying correlate step independently.
   const [tailorResponse] = await Promise.all([
     page.waitForResponse(
       (res) => res.request().method() === "POST" && new URL(res.url()).pathname === "/api/tailor",
@@ -47,6 +77,15 @@ test("tailor: generate -> diff review -> save finalizes -> real Chromium PDF", a
   // ChangeCard, already accepted by default (tailor/page.tsx seeds `accepted`
   // all-true on completion) — this IS the accept-all state for a 1-entry diff.
   await expect(page.getByText("Rewrote")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("1 of 1 changes accepted")).toBeVisible();
+
+  // Per-edit accept/reject: each ChangeCard's Accept/Reject chips are
+  // addressed by the diff entry's own index (page.tsx's onToggle(index,
+  // accept)), and now tie back to a correlation row via `diff[].target` —
+  // exercise the toggle both ways before leaving the single entry accepted.
+  await page.getByRole("button", { name: "Reject" }).click();
+  await expect(page.getByText("All changes rejected — exporting keeps your original résumé.")).toBeVisible();
+  await page.getByRole("button", { name: "Accept" }).click();
   await expect(page.getByText("1 of 1 changes accepted")).toBeVisible();
 
   // "Save copy" finalizes the run server-side (server/tailor's finalizeTailor

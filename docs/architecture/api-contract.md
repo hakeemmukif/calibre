@@ -380,7 +380,7 @@ export const SseEvent = z.discriminatedUnion('event', [
 ]);
 ```
 
-`stage` values — search: `sources → fetch → score → legitimacy → done`; tailor: `analyze → rewrite → render → done`. Donor `JobProgress` shape, so ScanProgress binds unchanged.
+`stage` values — search: `sources → fetch → score → legitimacy → done`; tailor: `correlate → rewrite → render → done`; correlate: `extract → classify → verify → done`. Donor `JobProgress` shape, so ScanProgress binds unchanged.
 
 ## 5. OpenAPI & typed client
 
