@@ -12,6 +12,7 @@ export const SIDEBAR_ITEMS: NavItem[] = [
   { section: "Pipeline" },
   { id: "matches", label: "Matches", icon: "target" },
   { id: "applied", label: "Applied", icon: "circle-check" },
+  { id: "scans", label: "Scans", icon: "activity" },
   { id: "interviews", label: "Interviews", icon: "users" },
   { section: "Documents" },
   { id: "resume", label: "My resume", icon: "file-text" },
@@ -30,7 +31,7 @@ export const ADMIN_SIDEBAR_ITEMS: NavItem[] = [
   { id: "admin-users", label: "Users", icon: "users" },
 ];
 
-export const DEFAULT_ENABLED = new Set(["matches", "applied", "resume", "sources", "profile"]);
+export const DEFAULT_ENABLED = new Set(["matches", "applied", "scans", "resume", "sources", "profile"]);
 
 // Drop disabled rows, then drop any section header left with no row beneath it.
 function visibleItems(items: NavItem[], enabled: Set<string>): NavItem[] {

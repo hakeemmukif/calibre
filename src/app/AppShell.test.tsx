@@ -72,6 +72,24 @@ describe("AppShell", () => {
     expect(push).toHaveBeenCalledWith("/admin");
   });
 
+  it("renders the Scans nav row", () => {
+    render(<AppShell user={user}>content</AppShell>);
+    expect(screen.getByText("Scans")).toBeInTheDocument();
+  });
+
+  it("navigates to /scans when the Scans row is clicked", () => {
+    render(<AppShell user={user}>content</AppShell>);
+    fireEvent.click(screen.getByText("Scans"));
+    expect(push).toHaveBeenCalledWith("/scans");
+  });
+
+  it("lights up the scans nav row when the route is under /scans", () => {
+    pathname = "/scans";
+    render(<AppShell user={user}>content</AppShell>);
+    const scansRow = screen.getByText("Scans").closest("button");
+    expect(scansRow).toHaveTextContent("Scans");
+  });
+
   it("clicking logout calls logout(), resets the checks store, then redirects to /login", async () => {
     render(<AppShell user={user}>content</AppShell>);
     fireEvent.click(screen.getByRole("button", { name: "Log out" }));
