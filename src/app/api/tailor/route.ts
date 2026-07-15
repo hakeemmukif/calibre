@@ -6,10 +6,10 @@ import { z, ZodError } from "zod";
 import { UuidParam } from "@/server/http/params";
 import { UnauthorizedError } from "@/server/auth/errors";
 import { requireUser } from "@/server/auth/session";
-import { NoActiveResumeError, UnknownJobError, startTailor } from "@/server/tailor";
+import { NoActiveResumeError, UnknownJobError, UnknownReportError, startTailor } from "@/server/tailor";
 import type { ErrorEnvelope } from "@/types";
 
-const RequestBody = z.object({ jobId: UuidParam });
+const RequestBody = z.object({ jobId: UuidParam, reportId: UuidParam.optional() });
 
 function errorResponse(status: number, code: ErrorEnvelope["error"]["code"], message: string, details?: unknown) {
   const body: ErrorEnvelope = { error: { code, message, ...(details !== undefined ? { details } : {}) } };
@@ -35,6 +35,9 @@ export async function POST(request: NextRequest) {
       return errorResponse(422, "VALIDATION_ERROR", "Invalid tailor request.", err.issues);
     }
     if (err instanceof UnknownJobError) {
+      return errorResponse(404, "NOT_FOUND", err.message);
+    }
+    if (err instanceof UnknownReportError) {
       return errorResponse(404, "NOT_FOUND", err.message);
     }
     if (err instanceof NoActiveResumeError) {

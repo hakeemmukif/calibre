@@ -2,8 +2,8 @@ import { NextRequest } from "next/server";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { readAllSseEvents } from "@/app/api/__test-utils__/sse";
 import { makeMockLlm } from "@/lib/llm/mock";
-import { insertJob, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
-import { jobs, resumes, sources, tailoredResumes, users } from "@/server/persistence/schema";
+import { insertJob, insertJobScore, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
+import { correlationReports, jobs, jobScores, resumes, sources, tailoredResumes, users } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import { ErrorEnvelope } from "@/types";
 import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
@@ -40,31 +40,50 @@ function postRequest(body: unknown): NextRequest {
   });
 }
 
-// Mock "tailor" LLM response — validates against ResumeStoreEmitSchema
-// (every field required, scalars nullable), same as scripted-fixtures.ts's
-// TAILOR_RESULT.
-const TAILOR_RESULT = {
-  resume: {
-    storeVersion: 2,
-    name: "Jane Doe",
-    headline: null,
-    location: null,
-    summary: "Tailored summary.",
-    contact: [
-      { label: "email", value: "jane@example.com" },
-      { label: "location", value: "Kuala Lumpur, Malaysia" },
-      { label: "headline", value: "Backend Engineer" },
-    ],
-    experience: [],
-    education: [],
-    skills: [],
-    projects: [],
-    certifications: [],
-    languages: [],
-    sections: [],
-  },
-  diff: [],
+// Mock "tailor" LLM response — the model now emits EDITS ONLY (diff[]);
+// `structured` is always derived server-side (server/tailor/index.ts).
+const TAILOR_RESULT = { diff: [] };
+
+// No reportId is passed in these tests' POST bodies, so startTailor computes
+// its own correlation report first (server/tailor/index.ts's resolveReport)
+// — that requires the job to already have scored jdFacts and a scripted
+// "correlate" LLM response for them (server/tailor/correlate.ts).
+const JD_FACTS = {
+  title: "Backend Engineer",
+  mustHaves: ["backend engineering experience"],
+  niceToHaves: [],
+  responsibilities: [],
+  redFlags: [],
 };
+const CORRELATE_RESULT = {
+  rows: [{ id: 0, term: "backend", status: "buried" as const, evidence: "Backend engineer.", reason: "buried in summary", note: null }],
+};
+
+// A run that completes now goes all the way through toResumeSummaryView
+// (assemble.ts), which derives headline/location from the résumé
+// (server/resume/derive-view.ts) — insertResume's bare default fixture has
+// neither, so these SSE-to-completion tests need a résumé both fields can
+// be derived from.
+const RESUME_STRUCTURED = {
+  storeVersion: 2 as const,
+  extractionPath: "text" as const,
+  name: "Jane Doe",
+  headline: "Backend Engineer",
+  location: "Remote",
+  contact: [{ label: "email", value: "jane@example.com" }],
+  summary: "Backend engineer.",
+  experience: [],
+  education: [],
+  skills: [],
+  projects: [],
+  certifications: [],
+  languages: [],
+  sections: [],
+};
+
+async function seedJdFacts(jobId: string, resumeId: string): Promise<void> {
+  await insertJobScore(state.testDb, jobId, resumeId, { jdFacts: JD_FACTS });
+}
 
 describe("GET /api/tailor/:id", () => {
   beforeAll(async () => {
@@ -80,6 +99,8 @@ describe("GET /api/tailor/:id", () => {
     llm.scripted = {};
     __resetForTests();
     await state.testDb.delete(tailoredResumes);
+    await state.testDb.delete(correlationReports);
+    await state.testDb.delete(jobScores);
     await state.testDb.delete(jobs);
     await state.testDb.delete(resumes);
     await state.testDb.delete(sources);
@@ -132,11 +153,12 @@ describe("GET /api/tailor/:id", () => {
     }
   });
 
-  it("SSE: emits ordered analyze -> rewrite -> render -> done", async () => {
+  it("SSE: emits ordered correlate -> rewrite -> render -> done", async () => {
     const source = await insertSource(state.testDb);
     const job = await insertJob(state.testDb, source.id);
-    await insertResume(state.testDb, { isActive: true });
-    llm.scripted = { tailor: TAILOR_RESULT };
+    const resume = await insertResume(state.testDb, { isActive: true, structured: RESUME_STRUCTURED });
+    await seedJdFacts(job.id, resume.id);
+    llm.scripted = { tailor: TAILOR_RESULT, correlate: CORRELATE_RESULT };
 
     const created = await POST(postRequest({ jobId: job.id }));
     const run = await created.json();
@@ -150,11 +172,11 @@ describe("GET /api/tailor/:id", () => {
     expect(events.every((e) => e.event === "progress" || e.event === "done")).toBe(true);
     // A subscriber attaching after the route's own `await POST(...)` may miss
     // whichever progress events already fired (no event buffering/replay —
-    // server/tailor/tailor.test.ts asserts the full analyze->rewrite->render
+    // server/tailor/tailor.test.ts asserts the full correlate->rewrite->render
     // order by subscribing synchronously right after startTailor resolves,
     // which this route-boundary test can't guarantee). Whatever subset of
     // stages IS observed here must still be in the canonical order.
-    const CANONICAL_STAGES = ["analyze", "rewrite", "render"];
+    const CANONICAL_STAGES = ["correlate", "rewrite", "render"];
     const stages = events.filter((e) => e.event === "progress").map((e) => (e.data as { stage: string }).stage);
     const stageIndices = stages.map((s) => CANONICAL_STAGES.indexOf(s));
     expect(stageIndices.every((i) => i >= 0)).toBe(true);
@@ -172,8 +194,9 @@ describe("GET /api/tailor/:id", () => {
   it("SSE: falls back to a synthetic terminal event when no live handle exists for a completed run", async () => {
     const source = await insertSource(state.testDb);
     const job = await insertJob(state.testDb, source.id);
-    await insertResume(state.testDb, { isActive: true });
-    llm.scripted = { tailor: TAILOR_RESULT };
+    const resume = await insertResume(state.testDb, { isActive: true, structured: RESUME_STRUCTURED });
+    await seedJdFacts(job.id, resume.id);
+    llm.scripted = { tailor: TAILOR_RESULT, correlate: CORRELATE_RESULT };
 
     const created = await POST(postRequest({ jobId: job.id }));
     const run = await created.json();

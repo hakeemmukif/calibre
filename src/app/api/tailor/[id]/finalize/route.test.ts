@@ -38,7 +38,13 @@ const BASE_STORE = {
 
 const TAILORED_STORE = { ...BASE_STORE, summary: "Backend engineer specializing in payments." };
 
-const DIFF = [{ section: "summary", op: "modify" as const, before: BASE_STORE.summary, after: TAILORED_STORE.summary, reason: "sharper framing" }];
+const DIFF = [
+  {
+    section: "summary", op: "modify" as const, before: BASE_STORE.summary, after: TAILORED_STORE.summary,
+    reason: "sharper framing", requirement: "payments framing",
+    target: { index: null, bulletIndex: null },
+  },
+];
 
 function postRequest(id: string, body: unknown): NextRequest {
   return new NextRequest(`http://localhost/api/tailor/${id}/finalize`, {

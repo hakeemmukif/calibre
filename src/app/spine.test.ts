@@ -15,12 +15,13 @@ import { NextRequest } from "next/server";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { waitFor } from "@/app/api/__test-utils__/poll";
 import { makeMockLlm } from "@/lib/llm/mock";
-import { JD_FACTS, MATCH_SCORE, QUESTION_ANSWER, QUESTION_EXTRACT, RESUME_STORE, TAILOR_RESULT } from "@/lib/llm/scripted-fixtures";
+import { CORRELATE_RESULT, JD_FACTS, MATCH_SCORE, QUESTION_ANSWER, QUESTION_EXTRACT, RESUME_STORE, TAILOR_RESULT } from "@/lib/llm/scripted-fixtures";
 import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 import { insertProfile, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
 import {
   applicationAnswers,
   applications,
+  correlationReports,
   jobs,
   jobScores,
   resumes,
@@ -158,6 +159,7 @@ describe("F1–F6 spine (route-level, mocked externals)", () => {
     await state.testDb.delete(applications);
     await state.testDb.delete(applicationAnswers);
     await state.testDb.delete(tailoredResumes);
+    await state.testDb.delete(correlationReports);
     await state.testDb.delete(jobScores);
     await state.testDb.delete(jobs);
     await state.testDb.delete(searchRuns);
@@ -249,6 +251,9 @@ describe("F1–F6 spine (route-level, mocked externals)", () => {
     expect(updated.note).toBe("Recruiter screen booked.");
 
     // --- F6: tailor -> finalize -> pdf ---
+    // No reportId supplied, so startTailor computes its own correlation
+    // report fresh (server/tailor/index.ts's resolveReport) before rewriting.
+    llm.scripted.correlate = CORRELATE_RESULT;
     const tailorDraft = await startTailor({ jobId: job.id });
     expect(tailorDraft.status).toBe("queued");
     const tailorDone = await waitFor(() => getTailor(tailorDraft.id), (r) => r.status === "completed" || r.status === "failed");
@@ -256,7 +261,7 @@ describe("F1–F6 spine (route-level, mocked externals)", () => {
     expect(tailorDone.diff).toHaveLength(1);
 
     const finalized = await finalizeTailor(tailorDone.id, [0]);
-    expect(finalized.resume?.summary).toBe(TAILOR_RESULT.resume.summary);
+    expect(finalized.resume?.summary).toBe(TAILOR_RESULT.diff[0].after);
 
     const pdfRes = await fetch(tailorPdfUrl(finalized.id));
     expect(pdfRes.status).toBe(200);

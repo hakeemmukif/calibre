@@ -379,6 +379,7 @@ export const tailored: TailoredResume = TailoredResume.parse({
   resumeId: "resume-1",
   status: "completed",
   progress: null,
+  reportId: null,
   model: "openrouter/deepseek-v3.1",
   createdAt: "2026-07-08T05:40:00Z",
   completedAt: "2026-07-08T05:41:30Z",
@@ -417,26 +418,32 @@ export const tailored: TailoredResume = TailoredResume.parse({
   },
   diff: [
     {
-      section: "Headline",
+      section: "headline",
       op: "modify",
       before: "Senior Backend Engineer · Payments & Distributed Systems",
       after: "Senior Backend Engineer · Payments, Kafka & Distributed Ledgers",
       reason: "Surfaces Kafka explicitly — it's named in Grab's job description.",
+      requirement: "Kafka experience",
+      target: { index: null, bulletIndex: null },
     },
     {
-      section: "Summary",
+      section: "summary",
       op: "modify",
       before: "Comfortable owning a service end to end: schema, API, on-call.",
       after: "the same event-driven discipline Grab's payments platform runs on.",
       reason: "Ties the reconciliation win directly to Grab's stated stack.",
+      requirement: "event-driven payments processing",
+      target: { index: null, bulletIndex: null },
     },
     {
-      section: "Experience · Fave",
+      section: "experience",
       op: "modify",
       before: "Rebuilt the merchant settlement pipeline on Kafka + Postgres, reducing reconciliation latency from 6h to 4min.",
       after:
         "Rebuilt the merchant settlement pipeline on Kafka + Postgres, reducing reconciliation latency from 6h to 4min at ~2M transactions/day.",
       reason: "Adds the throughput number so it reads at Grab's scale, not just the time saved.",
+      requirement: "high-throughput payments processing",
+      target: { index: 0, bulletIndex: 0 },
     },
   ],
 });

@@ -149,8 +149,30 @@ const TAILORED_RESUME_EMIT = {
   sections: [],
 };
 
+// The mock "correlate" task response — every JD_FACTS requirement id (built
+// by server/tailor/correlate.ts's buildRequirements: mustHaves then
+// niceToHaves then responsibilities, in that order) must appear exactly
+// once. Only the responsibility row is `buried` (the résumé's Kubernetes
+// bullet is infra work, not the payments-ledger ownership named in the JD) —
+// that's the one requirement TAILOR_RESULT's diff is allowed to rewrite
+// (server/tailor/index.ts's allowlist guard rejects edits against `gap` rows).
+export const CORRELATE_RESULT = {
+  rows: [
+    { id: 0, term: "Node.js", status: "gap" as const, evidence: null, reason: "no Node.js evidence on résumé", note: null },
+    { id: 1, term: "Postgres", status: "gap" as const, evidence: null, reason: "no Postgres evidence on résumé", note: null },
+    { id: 2, term: "Kafka", status: "gap" as const, evidence: null, reason: "no Kafka evidence on résumé", note: null },
+    {
+      id: 3,
+      term: "payments ledger service",
+      status: "buried" as const,
+      evidence: "Led migration to Kubernetes",
+      reason: "infra ownership is present but not framed as owning the payments ledger service",
+      note: null,
+    },
+  ],
+};
+
 export const TAILOR_RESULT = {
-  resume: TAILORED_RESUME_EMIT,
   diff: [
     {
       section: "summary",
@@ -158,6 +180,8 @@ export const TAILOR_RESULT = {
       before: RESUME_STORE.summary,
       after: TAILORED_RESUME_EMIT.summary,
       reason: "Ties the summary to the payments domain named in the posting.",
+      requirement: "Own the payments ledger service",
+      target: { index: null, bulletIndex: null },
     },
   ],
 };
@@ -187,5 +211,6 @@ export const scriptedFixtures: Partial<Record<TaskName, unknown>> = {
   "match-score": MATCH_SCORE,
   "question-extract": QUESTION_EXTRACT,
   "question-answer": QUESTION_ANSWER,
+  correlate: CORRELATE_RESULT,
   tailor: TAILOR_RESULT,
 };

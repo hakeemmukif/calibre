@@ -4,6 +4,7 @@ import { jobs, resumes, sources, tailoredResumes, users } from "@/server/persist
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import { computeAtsScore } from "@/server/resume/atsScore";
 import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
+import type { TailorDiffEntry } from "@/types";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
@@ -35,13 +36,19 @@ const TAILORED_STORE = {
   ...BASE_STORE,
   summary: "Backend engineer specializing in payments infrastructure.",
   skills: [{ label: "Languages", items: ["TypeScript", "Go"] }],
-  sections: [{ heading: "Additional Info", items: ["Speaks English and Malay"] }],
 };
 
-const DIFF = [
-  { section: "summary", op: "modify" as const, before: BASE_STORE.summary, after: TAILORED_STORE.summary, reason: "emphasize payments" },
-  { section: "skills", op: "modify" as const, before: "TypeScript", after: "TypeScript, Go", reason: "surface Go experience" },
-  { section: "sections", op: "add" as const, after: "Speaks English and Malay", reason: "language requirement in JD" },
+const DIFF: TailorDiffEntry[] = [
+  {
+    section: "summary", op: "modify", before: BASE_STORE.summary, after: TAILORED_STORE.summary,
+    reason: "emphasize payments", requirement: "payments infrastructure experience",
+    target: { index: null, bulletIndex: null },
+  },
+  {
+    section: "skills", op: "add", after: "Go",
+    reason: "surface Go experience", requirement: "Go experience",
+    target: { index: 0, bulletIndex: null },
+  },
 ];
 
 describe("finalizeTailor", () => {
@@ -199,7 +206,7 @@ describe("finalizeTailor", () => {
       completedAt: new Date(),
     });
 
-    const result = await finalizeTailor(draft.id, BOOTSTRAP_ADMIN_ID, [0, 1, 2]);
+    const result = await finalizeTailor(draft.id, BOOTSTRAP_ADMIN_ID, [0, 1]);
     expect(result.resume?.skills).toEqual(["TypeScript", "Go"]);
   });
 });

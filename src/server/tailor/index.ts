@@ -83,6 +83,18 @@ export async function startTailor(
   const resumeRow = await resumesRepo.getActive(userId);
   if (!resumeRow) throw new NoActiveResumeError();
 
+  // Existence/ownership of a caller-supplied reportId is checked SYNCHRONOUSLY
+  // here, before the tailored_resumes row is even inserted — an unknown or
+  // foreign-owned reportId is a client request error (404), not something
+  // that should silently insert a doomed row and fail async. Whether the
+  // report has reached "completed" status is a different, run-dependent
+  // question that resolveReport still answers asynchronously (it may still
+  // be running at request time), so that check stays there.
+  if (input.reportId) {
+    const report = await correlationReportsRepo.getById(input.reportId, userId);
+    if (!report) throw new UnknownReportError(input.reportId);
+  }
+
   const inserted = await tailoredResumesRepo.insert({
     userId,
     jobId: input.jobId,

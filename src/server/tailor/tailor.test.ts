@@ -8,7 +8,7 @@ import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
 
-const { startTailor, UnknownJobError, NoActiveResumeError } = await import("./index");
+const { startTailor, UnknownJobError, NoActiveResumeError, UnknownReportError } = await import("./index");
 const { tailoredResumesRepo } = await import("@/server/persistence/repos/tailoredResumes");
 const { applyEdits } = await import("./merge");
 const { get: getRunHandle, __resetForTests } = await import("@/server/runs/registry");
@@ -371,7 +371,7 @@ describe("startTailor", () => {
     expect(row?.status).toBe("failed");
   });
 
-  it("fails the run loudly when reportId belongs to a different user (UnknownReportError, no existence leak)", async () => {
+  it("404s (UnknownReportError) synchronously when reportId belongs to a different user (no existence leak, no tailored_resumes row inserted)", async () => {
     const source = await insertSource(state.testDb);
     const job = await insertJob(state.testDb, source.id);
     const resume = await insertResume(state.testDb, { isActive: true, structured: BASE_STRUCTURED });
@@ -394,11 +394,13 @@ describe("startTailor", () => {
 
     const llm = makeMockLlm({ tailor: { diff: TAILOR_DIFF } });
 
-    const draft = await startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id, reportId: foreignReport.id }, { llm });
-    await waitForTerminal(draft.id);
-
-    const row = await tailoredResumesRepo.getById(draft.id, BOOTSTRAP_ADMIN_ID);
-    expect(row?.status).toBe("failed");
+    // Existence/ownership of a caller-supplied reportId is now checked
+    // SYNCHRONOUSLY in startTailor (index.ts), before the tailored_resumes
+    // row is even inserted — a foreign-owned reportId rejects the request
+    // outright rather than inserting a doomed row that fails async.
+    await expect(
+      startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id, reportId: foreignReport.id }, { llm }),
+    ).rejects.toBeInstanceOf(UnknownReportError);
   });
 
   it("fails the run loudly when reportId points to a report that has not completed yet", async () => {
