@@ -39,6 +39,9 @@ import {
   RunStatus,
   Progress,
   SearchRun,
+  ScanResult,
+  SearchRunSummary,
+  ScanDetail,
   Application,
   ApplicationQuestion,
   ApplicationAnswer,
@@ -74,6 +77,9 @@ const entitySchemas: Record<string, z.ZodType> = {
   RunStatus,
   Progress,
   SearchRun,
+  ScanResult,
+  SearchRunSummary,
+  ScanDetail,
   Application,
   ApplicationQuestion,
   ApplicationAnswer,
@@ -209,15 +215,39 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
+  path: "/api/search",
+  summary: "List the caller's past scans — paginated, newest-first (Scans tab)",
+  request: {
+    query: z.object({
+      limit: z.string().optional().describe("Positive integer, max 50 (default 20)"),
+      cursor: z.string().optional().describe("Opaque keyset cursor from a prior page's nextCursor"),
+    }),
+  },
+  responses: {
+    200: {
+      description: "A page of the caller's scan runs",
+      content: {
+        "application/json": {
+          schema: z.object({ items: z.array(SearchRunSummary), nextCursor: z.string().nullable() }),
+        },
+      },
+    },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    422: { description: "Invalid limit or malformed cursor", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "get",
   path: "/api/search/{id}",
-  summary: "Run status — JSON snapshot by default; SSE via Accept: text/event-stream",
+  summary: "Run status — JSON snapshot (ScanDetail) by default; SSE via Accept: text/event-stream",
   request: { params: z.object({ id: z.string() }) },
   responses: {
     200: {
       description:
-        "JSON snapshot, or an SSE stream of progress/job/done/error (search scores top-N candidates and streams each as a `job` event — B6)",
+        "ScanDetail JSON snapshot (persisted per-job results + widened stats), or an SSE stream of progress/job/done/error (B6)",
       content: {
-        "application/json": { schema: SearchRun },
+        "application/json": { schema: ScanDetail },
         "text/event-stream": { schema: SseEvent },
       },
     },
