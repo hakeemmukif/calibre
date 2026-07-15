@@ -1,11 +1,10 @@
 // @vitest-environment jsdom
-// M1 whole-branch-review fix: the page fetched getScanDetail once at mount
-// and rendered the running bridge (useScanRun + ScanProgress) while
-// detail.status === "running", but useScanRun() was wired with no
-// onDone/onError — so when the SSE done/error event arrived the page never
-// refetched and stayed stuck on "running" forever. Asserts the fixed
-// transition: a run mounted as "running", once useScanRun's onDone fires,
-// refetches getScanDetail and renders the terminal ScanReplay.
+// M2 T7: the running branch now renders the live concurrency-lane view
+// (SourceStrip + ScanLanes fed by useScanLive) instead of the M1 coarse
+// ScanProgress bridge. Asserts: (1) a running run renders lanes, not the
+// coarse "Discovering postings" bar; (2) once useScanLive's SSE stream
+// reaches "done", the page refetches getScanDetail and renders the terminal
+// ScanReplay.
 import "@testing-library/jest-dom/vitest";
 import * as React from "react";
 import { render, screen, cleanup, waitFor, act } from "@testing-library/react";
@@ -14,8 +13,9 @@ import type { ScanDetail, SearchRun, SseEvent } from "@/types";
 
 afterEach(cleanup);
 
+let currentParamsId = "run-1";
 vi.mock("next/navigation", () => ({
-  useParams: () => ({ id: "run-1" }),
+  useParams: () => ({ id: currentParamsId }),
 }));
 
 let capturedOnEvent: ((event: SseEvent) => void) | null = null;
@@ -28,9 +28,9 @@ vi.mock("@/features/search/client", () => ({ getScanDetail, subscribeSearch, sta
 
 import ScanDetailPage from "./page";
 
-function runningDetail(): ScanDetail {
+function runningDetail(id = "run-1"): ScanDetail {
   return {
-    id: "run-1",
+    id,
     status: "running",
     persona: "remote",
     resumeName: "jane_v2.pdf",
@@ -71,6 +71,7 @@ function finishedSearchRun(): SearchRun {
 }
 
 beforeEach(() => {
+  currentParamsId = "run-1";
   capturedOnEvent = null;
   getScanDetail.mockReset();
   subscribeSearch.mockReset();
@@ -81,13 +82,31 @@ beforeEach(() => {
   });
 });
 
-describe("/scans/:id — running-to-terminal transition", () => {
-  it("refetches and renders ScanReplay once useScanRun's onDone fires", async () => {
+describe("/scans/:id — live lanes view", () => {
+  it("renders SourceStrip + ScanLanes for a running run, not the coarse bar", async () => {
     getScanDetail.mockResolvedValueOnce(runningDetail());
     render(<ScanDetailPage />);
 
     await waitFor(() => expect(subscribeSearch).toHaveBeenCalledWith("run-1", expect.any(Function)));
-    expect(screen.getByText("Discovering postings")).toBeInTheDocument();
+
+    act(() => {
+      capturedOnEvent!({ event: "source", data: { sourceId: "s1", name: "Greenhouse", status: "fetching" } });
+      capturedOnEvent!({
+        event: "jobPhase",
+        data: { jobId: "j1", title: "Data Engineer", company: "Acme", source: "s1", phase: "scoring" },
+      });
+    });
+
+    expect(await screen.findByText("Greenhouse")).toBeInTheDocument();
+    expect(screen.getByText("Data Engineer")).toBeInTheDocument();
+    expect(screen.queryByText("Discovering postings")).not.toBeInTheDocument();
+  });
+
+  it("refetches and renders ScanReplay once the live stream's done event fires", async () => {
+    getScanDetail.mockResolvedValueOnce(runningDetail());
+    render(<ScanDetailPage />);
+
+    await waitFor(() => expect(subscribeSearch).toHaveBeenCalledWith("run-1", expect.any(Function)));
 
     getScanDetail.mockResolvedValueOnce(terminalDetail());
     act(() => {
@@ -97,5 +116,44 @@ describe("/scans/:id — running-to-terminal transition", () => {
     await waitFor(() => expect(getScanDetail).toHaveBeenCalledTimes(2));
     expect(await screen.findByText("Discover")).toBeInTheDocument();
     expect(screen.queryByText("Discovering postings")).not.toBeInTheDocument();
+  });
+
+  it("resets live lane state when navigating from one running run to another (M2 T7 review fix)", async () => {
+    getScanDetail.mockResolvedValueOnce(runningDetail("run-1"));
+    const { rerender } = render(<ScanDetailPage />);
+
+    await waitFor(() => expect(subscribeSearch).toHaveBeenCalledWith("run-1", expect.any(Function)));
+    act(() => {
+      capturedOnEvent!({ event: "source", data: { sourceId: "s1", name: "Greenhouse", status: "fetching" } });
+      capturedOnEvent!({
+        event: "jobPhase",
+        data: { jobId: "j1", title: "Data Engineer", company: "Acme", source: "s1", phase: "scoring" },
+      });
+    });
+    expect(await screen.findByText("Greenhouse")).toBeInTheDocument();
+    expect(screen.getByText("Data Engineer")).toBeInTheDocument();
+
+    // Navigate: params now resolve to run-2, and the page rerenders — the
+    // component keyed by `id` remounts, so useScanLive's reducer state
+    // (and any run-1 lane content) must not survive the transition.
+    currentParamsId = "run-2";
+    getScanDetail.mockResolvedValueOnce(runningDetail("run-2"));
+    rerender(<ScanDetailPage />);
+
+    await waitFor(() => expect(subscribeSearch).toHaveBeenCalledWith("run-2", expect.any(Function)));
+    expect(screen.queryByText("Greenhouse")).not.toBeInTheDocument();
+    expect(screen.queryByText("Data Engineer")).not.toBeInTheDocument();
+
+    act(() => {
+      capturedOnEvent!({ event: "source", data: { sourceId: "s2", name: "Lever", status: "fetching" } });
+      capturedOnEvent!({
+        event: "jobPhase",
+        data: { jobId: "j2", title: "Backend Engineer", company: "Beta", source: "s2", phase: "scoring" },
+      });
+    });
+    expect(await screen.findByText("Lever")).toBeInTheDocument();
+    expect(screen.getByText("Backend Engineer")).toBeInTheDocument();
+    expect(screen.queryByText("Greenhouse")).not.toBeInTheDocument();
+    expect(screen.queryByText("Data Engineer")).not.toBeInTheDocument();
   });
 });
