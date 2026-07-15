@@ -132,3 +132,165 @@ describe("ingestResume — vision routing for image-only/near-textless PDFs", ()
     expect(complete).not.toHaveBeenCalled();
   });
 });
+
+describe("ingestResume — extraction telemetry", () => {
+  let logSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    state.insertReplacingActive.mockReset();
+    state.insertReplacingActive.mockImplementation(async (row: { structured: unknown }) =>
+      fakeRow(row.structured),
+    );
+    logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    logSpy.mockRestore();
+  });
+
+  function llmFor(task: string, data: unknown): LlmClient {
+    const complete = vi.fn(async ({ task: gotTask }: { task: string }) => {
+      if (gotTask !== task) throw new Error(`unexpected task "${gotTask}"`);
+      return { data, model: "mock", costUsd: 0 };
+    });
+    return { complete } as unknown as LlmClient;
+  }
+
+  const ALL_PRESENT_EMIT = {
+    storeVersion: 2,
+    name: "Jane Doe",
+    headline: "Senior Backend Engineer",
+    location: "Kuala Lumpur, Malaysia",
+    summary: "Backend engineer with experience in backend systems.",
+    contact: [{ label: "email", value: "jane@example.com" }],
+    experience: [
+      {
+        company: "Acme Co",
+        title: "Senior Backend Engineer",
+        dates: "2022–Present",
+        start: "2022-01",
+        end: null,
+        location: null,
+        bullets: ["Led migration to Kubernetes"],
+      },
+    ],
+    education: [],
+    skills: [{ label: "Domain", items: ["Payments"] }],
+    projects: [],
+    certifications: [],
+    languages: [],
+    sections: [
+      { heading: "Volunteer Work", items: ["Habitat for Humanity"] },
+      { heading: "Awards", items: ["Employee of the year"] },
+    ],
+  };
+
+  const ABSENT_SCALARS_EMIT = {
+    storeVersion: 2,
+    name: "Jane Doe",
+    headline: null,
+    location: null,
+    summary: null,
+    contact: [{ label: "location", value: "Kuala Lumpur, Malaysia" }],
+    experience: [
+      {
+        company: "Acme Co",
+        title: "Senior Backend Engineer",
+        dates: "2022–Present",
+        start: "2022-01",
+        end: null,
+        location: null,
+        bullets: ["Led migration to Kubernetes"],
+      },
+    ],
+    education: [],
+    skills: [{ label: "Domain", items: ["Payments"] }],
+    projects: [],
+    certifications: [],
+    languages: [],
+    sections: [],
+  };
+
+  const DATE_MISS_EMIT = {
+    storeVersion: 2,
+    name: "Jane Doe",
+    headline: "Senior Backend Engineer",
+    location: "Kuala Lumpur, Malaysia",
+    summary: "Backend engineer with experience in backend systems.",
+    contact: [{ label: "email", value: "jane@example.com" }],
+    experience: [
+      {
+        company: "Acme Co",
+        title: "Senior Backend Engineer",
+        dates: "2022–Present",
+        start: "2022-01",
+        end: null,
+        location: null,
+        bullets: ["Led migration to Kubernetes"],
+      },
+      {
+        company: "Beta Inc",
+        title: "Backend Engineer",
+        dates: "Summer 2019",
+        start: null,
+        end: null,
+        location: null,
+        bullets: ["Built API"],
+      },
+    ],
+    education: [],
+    skills: [{ label: "Domain", items: ["Payments"] }],
+    projects: [],
+    certifications: [],
+    languages: [],
+    sections: [],
+  };
+
+  function telemetryFromSpy(): Record<string, unknown> {
+    expect(logSpy).toHaveBeenCalledTimes(1);
+    const [prefix, telemetry] = logSpy.mock.calls[0];
+    expect(prefix).toBe("resume ingest: extraction telemetry");
+    return telemetry as Record<string, unknown>;
+  }
+
+  it("logs one telemetry line for the text path with an empty absent-list, section headings, and zero date-misses", async () => {
+    const llm = llmFor("resume-extract", ALL_PRESENT_EMIT);
+    await ingestResume("user-1", { text: "Backend engineer with experience in systems." }, { llm });
+
+    const telemetry = telemetryFromSpy();
+    expect(telemetry).toMatchObject({
+      extractionPath: "text",
+      absentOptionalFields: [],
+      sections: ["Volunteer Work", "Awards"],
+      dateMissCount: 0,
+    });
+  });
+
+  it("lists absent optional scalar fields when headline/location/summary come back null", async () => {
+    const llm = llmFor("resume-extract", ABSENT_SCALARS_EMIT);
+    await ingestResume("user-1", { text: "Backend engineer with experience in systems." }, { llm });
+
+    const telemetry = telemetryFromSpy();
+    expect(telemetry).toMatchObject({
+      extractionPath: "text",
+      absentOptionalFields: ["headline", "location", "summary"],
+    });
+  });
+
+  it("counts a date-miss when an experience entry has a non-empty dates string but no parsed start/end atom", async () => {
+    const llm = llmFor("resume-extract", DATE_MISS_EMIT);
+    await ingestResume("user-1", { text: "Backend engineer with experience in systems." }, { llm });
+
+    const telemetry = telemetryFromSpy();
+    expect(telemetry).toMatchObject({ dateMissCount: 1 });
+  });
+
+  it("logs extractionPath: \"vision\" exactly once for the vision routing path", async () => {
+    const llm = llmFor("resume-extract-vision", RESUME_STORE_VISION);
+    const bytes = readFileSync(join(FIXTURES, "tiny.pdf"));
+    await ingestResume("user-1", { file: { bytes, mime: "application/pdf" } }, { llm });
+
+    const telemetry = telemetryFromSpy();
+    expect(telemetry).toMatchObject({ extractionPath: "vision" });
+  });
+});

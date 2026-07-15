@@ -45,6 +45,27 @@ function concatStoreText(store: ResumeStore): string {
     .join(" ");
 }
 
+const OPTIONAL_SCALAR_FIELDS = ["headline", "location", "summary"] as const;
+
+// One structured log line per extraction — the drift radar + concept-
+// promotion signal. absentOptionalFields flags a template regression before
+// it silently starts dropping a field; sections lists the "other section"
+// headings the LLM captured outside the known concepts (a heading recurring
+// across extractions is a candidate to promote to a first-class field);
+// dateMissCount counts experience entries where coerceMonth (resume-store.ts)
+// couldn't parse either atom from a non-empty `dates` string. Education has
+// no start/end atoms to inspect, so it never contributes a miss.
+function buildExtractionTelemetry(store: ResumeStore) {
+  return {
+    extractionPath: store.extractionPath,
+    absentOptionalFields: OPTIONAL_SCALAR_FIELDS.filter((field) => store[field] === undefined),
+    sections: store.sections.map((s) => s.heading),
+    dateMissCount: store.experience.filter(
+      (e) => e.dates.trim().length > 0 && e.start === undefined && e.end === undefined,
+    ).length,
+  };
+}
+
 // Wraps LLM client construction + the completion call so a construction
 // failure (e.g. a missing OPENROUTER_API_KEY) or a completion failure both
 // map to ParseFailedError → 502, like any other LLM failure, instead of
@@ -122,6 +143,8 @@ export async function ingestResume(
     );
     structured = emitToStore(result.data, "text");
   }
+
+  console.log("resume ingest: extraction telemetry", buildExtractionTelemetry(structured));
 
   // Fail loud before any side effect: a résumé the LLM structured
   // "successfully" but that yields no derivable location/headline must
