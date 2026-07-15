@@ -158,4 +158,31 @@ describe("fabricationViolations", () => {
       reason: "r", requirement: "seniority", target: { index: null, bulletIndex: null } }], withNum);
     expect(v).toEqual([]);
   });
+  it("does not flag a cosmetic thousands-separator reformat ($1,200 -> $1200)", () => {
+    const withComma: ResumeStore = { ...base, summary: "Managed a $1,200 monthly budget" };
+    const v = fabricationViolations([{ section: "summary", op: "modify",
+      before: "Managed a $1,200 monthly budget", after: "Managed a $1200 monthly budget",
+      reason: "r", requirement: "budget", target: { index: null, bulletIndex: null } }], withComma);
+    expect(v).toEqual([]);
+  });
+  it("does not flag the reverse thousands-separator reformat ($1200 -> $1,200)", () => {
+    const withoutComma: ResumeStore = { ...base, summary: "Managed a $1200 monthly budget" };
+    const v = fabricationViolations([{ section: "summary", op: "modify",
+      before: "Managed a $1200 monthly budget", after: "Managed a $1,200 monthly budget",
+      reason: "r", requirement: "budget", target: { index: null, bulletIndex: null } }], withoutComma);
+    expect(v).toEqual([]);
+  });
+  it("still flags a genuinely invented number", () => {
+    const v = fabricationViolations([{ section: "summary", op: "modify",
+      before: "Built payment systems", after: "Built payment systems worth $1,999",
+      reason: "r", requirement: "impact", target: { index: null, bulletIndex: null } }], base);
+    expect(v).toHaveLength(1);
+    expect(v[0]).toContain("1,999");
+  });
+  it("does not crash on a remove edit with no after", () => {
+    const v = fabricationViolations([{ section: "experience", op: "remove",
+      before: "Led distributed payments platform handling FX settlement",
+      reason: "r", requirement: "trim", target: { index: 0, bulletIndex: 0 } }], base);
+    expect(v).toEqual([]);
+  });
 });

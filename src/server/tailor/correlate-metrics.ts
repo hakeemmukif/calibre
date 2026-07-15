@@ -70,13 +70,19 @@ function numericAtoms(text: string): string[] {
   return (text.match(NUMERIC_ATOM) ?? []).map((s) => s.replace(/[,.]$/, ""));
 }
 
+// Strips grouping commas so "1,200" and "1200" compare equal; decimal points
+// and "%" are preserved since those distinguish genuinely different values.
+function normalizeAtom(atom: string): string {
+  return atom.replace(/,/g, "");
+}
+
 export function fabricationViolations(edits: TailorDiffEntry[], store: ResumeStore): string[] {
-  const baseNums = new Set(numericAtoms(flattenResumeText(store)));
+  const baseNums = new Set(numericAtoms(flattenResumeText(store)).map(normalizeAtom));
   const violations: string[] = [];
   for (const e of edits) {
     if (!e.after) continue;
     for (const atom of numericAtoms(e.after)) {
-      if (!baseNums.has(atom)) {
+      if (!baseNums.has(normalizeAtom(atom))) {
         violations.push(
           `edit for "${e.requirement}" introduces number "${atom}" absent from the base résumé`);
       }
