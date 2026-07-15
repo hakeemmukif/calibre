@@ -185,6 +185,7 @@ export async function ingestResume(
     rawText,
     structured,
     originalPath,
+    label: input.file?.filename ?? structured.headline ?? null,
     sourceKind,
     atsScore,
     isActive: true,

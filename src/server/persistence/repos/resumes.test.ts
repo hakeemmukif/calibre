@@ -36,6 +36,37 @@ describe("resumesRepo", () => {
     expect(active?.rawText).toBe("raw text");
   });
 
+  it("persists label on create", async () => {
+    const db = await createTestDb();
+    const repo = createResumesRepo(db);
+
+    const inserted = await repo.insertReplacingActive({
+      userId: BOOTSTRAP_ADMIN_ID,
+      rawText: "raw text",
+      structured: {
+        storeVersion: 2,
+        extractionPath: "text",
+        name: "Jane Doe",
+        contact: [],
+        summary: "summary",
+        experience: [],
+        education: [],
+        skills: [],
+        projects: [],
+        certifications: [],
+        languages: [],
+        sections: [],
+      },
+      label: "jane-doe-resume.pdf",
+      sourceKind: "pdf",
+      isActive: true,
+    });
+
+    expect(inserted.label).toBe("jane-doe-resume.pdf");
+    const active = await repo.getActive(BOOTSTRAP_ADMIN_ID);
+    expect(active?.label).toBe("jane-doe-resume.pdf");
+  });
+
   it("supersedes the previously-active résumé", async () => {
     const db = await createTestDb();
     const repo = createResumesRepo(db);
