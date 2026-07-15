@@ -3,5 +3,10 @@ import { resolve } from "node:path";
 
 export default defineConfig({
   resolve: { alias: { "@": resolve(__dirname, "src") } },
-  test: { environment: "node", include: ["src/**/*.smoke.test.ts"], setupFiles: ["src/smoke/setup.ts"], testTimeout: 120000 },
+  test: {
+    environment: "node",
+    include: ["src/**/*.smoke.test.ts", "src/**/*.live.test.ts"],
+    setupFiles: ["src/smoke/setup.ts"],
+    testTimeout: 120000,
+  },
 });

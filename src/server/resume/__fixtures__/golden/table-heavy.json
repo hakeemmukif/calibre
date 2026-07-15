@@ -1,0 +1,16 @@
+{
+  "id": "table-heavy",
+  "category": "synthetic",
+  "rawText": "Daniel Chong Kuala Lumpur, Malaysia daniel.chong@example.com SKILLS Frontend React TypeScript Tailwind Backend Node.js PostgreSQL Redis DevOps Docker AWS GitHub Actions WORKING EXPERIENCE Backend Engineer Tenteram Digital Kuala Lumpur March 2020 - PRESENT Reduced API p95 latency by 42% by introducing Redis caching on the pricing endpoint. Migrated the monolith's payments module to a standalone service handling 1.2M transactions per month. Led a team of three engineers on the checkout redesign.",
+  "expected": {
+    "name": "Daniel Chong",
+    "location": "Kuala Lumpur, Malaysia",
+    "certifications": [],
+    "languages": [],
+    "projects": [],
+    "skillsMin": 8,
+    "roles": [
+      { "company": "Tenteram Digital", "start": "2020-03", "end": null, "isCurrent": true }
+    ]
+  }
+}

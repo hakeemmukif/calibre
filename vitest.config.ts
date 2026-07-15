@@ -9,7 +9,7 @@ export default defineConfig({
     environment: 'node',
     setupFiles: ['./vitest.setup.ts'],
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
-    exclude: ['src/**/*.smoke.test.ts', 'node_modules/**'],
+    exclude: ['src/**/*.smoke.test.ts', 'src/**/*.live.test.ts', 'node_modules/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],
