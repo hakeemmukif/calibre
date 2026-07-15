@@ -73,6 +73,12 @@ type TailoredResumeDiffEntry = {
   reason: string;
 };
 
+type CorrelationReportRowJson = {
+  requirement: string; term: string; kind: "must" | "nice" | "responsibility";
+  status: "met" | "buried" | "gap"; evidence: string | null; atsPresent: boolean;
+  reason: string; note: string | null;
+};
+
 // ---- tables ----
 
 export const sources = pgTable("sources", {
@@ -212,6 +218,7 @@ export const tailoredResumes = pgTable("tailored_resumes", {
   userId: uuid("user_id").notNull().references(() => users.id),
   jobId: uuid("job_id").notNull().references(() => jobs.id),
   baseResumeId: uuid("base_resume_id").notNull().references(() => resumes.id),
+  reportId: uuid("report_id").references(() => correlationReports.id),
   structured: jsonb("structured").$type<ResumeStore>(), // null until completed (mirrors src/types TailoredResume.resume)
   diff: jsonb("diff").$type<TailoredResumeDiffEntry[]>().notNull(), // reconciliation 3 shape
   html: text("html"),
@@ -236,6 +243,21 @@ export const tailoredResumes = pgTable("tailored_resumes", {
   costUsd: numeric("cost_usd", { precision: 8, scale: 4, mode: "number" }), // null until the run completes
   createdAt: timestamp("created_at").notNull().defaultNow(),
   completedAt: timestamp("completed_at"), // B8: frozen `TailoredResume.completedAt` — set when analyze/rewrite/render finishes, distinct from `finalizedAt` (the later accept-subset action)
+});
+
+export const correlationReports = pgTable("correlation_reports", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id),
+  jobId: uuid("job_id").notNull().references(() => jobs.id),
+  resumeId: uuid("resume_id").notNull().references(() => resumes.id),
+  rows: jsonb("rows").$type<CorrelationReportRowJson[]>().notNull(),
+  semantic: jsonb("semantic").$type<{ met: number; buried: number; gap: number; total: number }>(),
+  ats: jsonb("ats").$type<{ present: number; total: number; missing: string[] }>(),
+  status: text("status", { enum: ["queued", "running", "completed", "failed"] }).notNull(),
+  model: text("model").notNull(),
+  costUsd: numeric("cost_usd", { precision: 8, scale: 4, mode: "number" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  completedAt: timestamp("completed_at"),
 });
 
 // Spec 2026-07-12-pasted-job-ingestion-design.md §10: async paste-a-URL
