@@ -5,6 +5,8 @@ import { insertResume } from "./__fixtures__/helpers";
 import { createSearchRunsRepo } from "./searchRuns";
 import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
+const baseStatsFixture = { scanned: 0, matched: 0, scored: 0, worth: 0, ghosts: 0, perSource: [] as { sourceId: string; found: number; errors: number }[] };
+
 describe("searchRunsRepo", () => {
   it("round-trips insert/getById and updates status + stats", async () => {
     const db = await createTestDb();
@@ -142,5 +144,53 @@ describe("searchRunsRepo", () => {
     expect(latestRemote?.id).toBe(older.id);
 
     expect(await repo.getLatestCompleted(BOOTSTRAP_ADMIN_ID, "local")).toMatchObject({ id: newer.id });
+  });
+
+  it("appendResult accumulates under interleaved concurrent writes (status-fenced)", async () => {
+    const db = await createTestDb();
+    const repo = createSearchRunsRepo(db);
+    const resume = await insertResume(db, { isActive: true });
+    const run = await repo.insert({
+      userId: BOOTSTRAP_ADMIN_ID, resumeId: resume.id, personas: ["remote"],
+      status: "running", stats: baseStatsFixture, results: [],
+    });
+    const mk = (n: number) => ({ jobId: `j${n}`, title: `T${n}`, company: `C${n}`, source: "s", outcome: "scored" as const, verdict: "Apply" as const, fit: 4, scoredMs: 1000 });
+    await Promise.all([1, 2, 3, 4, 5].map((n) => repo.appendResult(run.id, BOOTSTRAP_ADMIN_ID, mk(n))));
+    const detail = await repo.getDetail(run.id, BOOTSTRAP_ADMIN_ID);
+    expect(detail?.results).toHaveLength(5);
+    expect(new Set(detail!.results.map((r) => r.jobId))).toEqual(new Set(["j1", "j2", "j3", "j4", "j5"]));
+  });
+
+  it("appendResult is a no-op once the run is terminal (status fence)", async () => {
+    const db = await createTestDb();
+    const repo = createSearchRunsRepo(db);
+    const resume = await insertResume(db, { isActive: true });
+    const run = await repo.insert({ userId: BOOTSTRAP_ADMIN_ID, resumeId: resume.id, personas: ["remote"], status: "completed", stats: baseStatsFixture, results: [] });
+    await repo.appendResult(run.id, BOOTSTRAP_ADMIN_ID, { jobId: "late", title: "t", company: "c", source: "s", outcome: "scored" });
+    const detail = await repo.getDetail(run.id, BOOTSTRAP_ADMIN_ID);
+    expect(detail?.results).toHaveLength(0);
+  });
+
+  it("listByUser paginates newest-first, scopes to the user, and joins the résumé label", async () => {
+    const db = await createTestDb();
+    const repo = createSearchRunsRepo(db);
+    // FK: search_runs.user_id → users.id (PGlite enforces it) — insert the other user first.
+    const [userB] = await db
+      .insert(users)
+      .values({ email: "user-b-searchruns-list@example.com", passwordHash: "h", role: "user" })
+      .returning();
+    const mine = await insertResume(db, { isActive: true, label: "mine.pdf" });
+    for (let i = 0; i < 3; i++) {
+      await repo.insert({ userId: BOOTSTRAP_ADMIN_ID, resumeId: mine.id, personas: ["remote"], status: "completed", stats: baseStatsFixture, results: [], startedAt: new Date(2026, 0, i + 1) });
+    }
+    await repo.insert({ userId: userB.id, resumeId: mine.id, personas: ["remote"], status: "completed", stats: baseStatsFixture, results: [], startedAt: new Date(2026, 0, 9) });
+
+    const page1 = await repo.listByUser(BOOTSTRAP_ADMIN_ID, { limit: 2 });
+    expect(page1.items).toHaveLength(2);
+    expect(page1.items[0].resumeName).toBe("mine.pdf");
+    expect(page1.nextCursor).not.toBeNull();
+    const page2 = await repo.listByUser(BOOTSTRAP_ADMIN_ID, { limit: 2, cursor: page1.nextCursor! });
+    expect(page2.items).toHaveLength(1); // 3 mine total, other user's row excluded
+    expect(page2.nextCursor).toBeNull();
   });
 });

@@ -1,11 +1,12 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
-import type { ScanPersona } from "@/types";
+import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
+import type { ScanPersona, ScanResult } from "@/types";
 import { getDb } from "../db";
-import { searchRuns } from "../schema";
+import { resumes, searchRuns } from "../schema";
 import type { Db } from "./db";
 
 export type NewSearchRun = typeof searchRuns.$inferInsert;
 export type SearchRunRow = typeof searchRuns.$inferSelect;
+export type SearchRunSummaryRow = Pick<SearchRunRow, "id" | "status" | "personas" | "stats" | "startedAt" | "finishedAt" | "error"> & { resumeName: string };
 
 export function createSearchRunsRepo(db: Db) {
   return {
@@ -72,6 +73,51 @@ export function createSearchRunsRepo(db: Db) {
         .where(inArray(searchRuns.status, ["queued", "running"]))
         .returning();
     },
+    // Append one settled ScanResult to results[] via a jsonb concat, fenced on
+    // status='running' so a terminal run can never grow. Postgres row-locks the
+    // UPDATE, serializing the concurrent pool tasks — no lost writes. User-scoped.
+    async appendResult(runId: string, userId: string, result: ScanResult): Promise<void> {
+      await db
+        .update(searchRuns)
+        .set({ results: sql`${searchRuns.results} || ${JSON.stringify([result])}::jsonb` })
+        .where(and(eq(searchRuns.id, runId), eq(searchRuns.userId, userId), eq(searchRuns.status, "running")));
+    },
+    async listByUser(
+      userId: string,
+      opts?: { limit?: number; cursor?: string },
+    ): Promise<{ items: SearchRunSummaryRow[]; nextCursor: string | null }> {
+      const limit = Math.min(opts?.limit ?? 20, 50);
+      const rows = await db
+        .select({
+          id: searchRuns.id, status: searchRuns.status, personas: searchRuns.personas,
+          stats: searchRuns.stats, startedAt: searchRuns.startedAt, finishedAt: searchRuns.finishedAt,
+          error: searchRuns.error,
+          // resumes.label is backfilled + written-on-create (Task 2); coalesce to the
+          // parsed headline only as a belt-and-braces guard so the string is never null.
+          resumeName: sql<string>`COALESCE(${resumes.label}, ${resumes.structured} ->> 'headline', 'Résumé')`,
+        })
+        .from(searchRuns)
+        .innerJoin(resumes, eq(searchRuns.resumeId, resumes.id))
+        .where(
+          opts?.cursor
+            ? and(eq(searchRuns.userId, userId), lt(searchRuns.startedAt, new Date(opts.cursor)))
+            : eq(searchRuns.userId, userId),
+        )
+        .orderBy(desc(searchRuns.startedAt))
+        .limit(limit + 1);
+      const items = rows.slice(0, limit);
+      const nextCursor = rows.length > limit ? items[items.length - 1].startedAt.toISOString() : null;
+      return { items, nextCursor };
+    },
+    async getDetail(id: string, userId: string): Promise<(SearchRunRow & { resumeName: string }) | null> {
+      const [row] = await db
+        .select({ run: searchRuns, resumeName: sql<string>`COALESCE(${resumes.label}, ${resumes.structured} ->> 'headline', 'Résumé')` })
+        .from(searchRuns)
+        .innerJoin(resumes, eq(searchRuns.resumeId, resumes.id))
+        .where(and(eq(searchRuns.id, id), eq(searchRuns.userId, userId)))
+        .limit(1);
+      return row ? { ...row.run, resumeName: row.resumeName } : null;
+    },
   };
 }
 
@@ -83,4 +129,7 @@ export const searchRunsRepo: ReturnType<typeof createSearchRunsRepo> = {
   updateStats: (id, stats) => createSearchRunsRepo(getDb()).updateStats(id, stats),
   markAllUnfinishedAsFailed: (errorMessage) =>
     createSearchRunsRepo(getDb()).markAllUnfinishedAsFailed(errorMessage),
+  appendResult: (runId, userId, result) => createSearchRunsRepo(getDb()).appendResult(runId, userId, result),
+  listByUser: (userId, opts) => createSearchRunsRepo(getDb()).listByUser(userId, opts),
+  getDetail: (id, userId) => createSearchRunsRepo(getDb()).getDetail(id, userId),
 };
