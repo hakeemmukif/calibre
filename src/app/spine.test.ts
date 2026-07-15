@@ -138,7 +138,7 @@ async function fakeFetch(input: string | URL, init: RequestInit = {}): Promise<R
 vi.stubGlobal("fetch", fakeFetch);
 
 const { uploadResume, getResume } = await import("@/features/resume/client");
-const { startSearch, getSearchRun } = await import("@/features/search/client");
+const { startSearch, getScanDetail } = await import("@/features/search/client");
 const { getJobs, getJob } = await import("@/features/feed/client");
 const { extractQuestions, draftAnswers, patchAnswers } = await import("@/features/apply/client");
 const { markApplied, listApplications, patchApplication } = await import("@/features/applied/client");
@@ -193,8 +193,8 @@ describe("F1–F6 spine (route-level, mocked externals)", () => {
     expect(localRun.persona).toBe("local");
     expect(remoteRun.id).not.toBe(localRun.id);
 
-    const remoteDone = await waitFor(() => getSearchRun(remoteRun.id), (r) => r.status === "completed" || r.status === "failed");
-    const localDone = await waitFor(() => getSearchRun(localRun.id), (r) => r.status === "completed" || r.status === "failed");
+    const remoteDone = await waitFor(() => getScanDetail(remoteRun.id), (r) => r.status === "completed" || r.status === "failed");
+    const localDone = await waitFor(() => getScanDetail(localRun.id), (r) => r.status === "completed" || r.status === "failed");
     expect(remoteDone.status).toBe("completed");
     expect(localDone.status).toBe("completed");
     expect(remoteDone.stats.worth).toBeGreaterThanOrEqual(1);

@@ -18,10 +18,6 @@ export async function startSearch(input: StartSearchInput): Promise<SearchRun> {
   );
 }
 
-export async function getSearchRun(id: string): Promise<SearchRun> {
-  return requestJson(`/api/search/${id}`, undefined, SearchRun);
-}
-
 const ListScansResponse = z.object({ items: SearchRunSummary.array(), nextCursor: z.string().nullable() });
 export type ListScansResponse = z.infer<typeof ListScansResponse>;
 
