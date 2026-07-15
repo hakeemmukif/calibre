@@ -21,7 +21,21 @@ export function toSearchRun(row: SearchRunRow): SearchRun {
     persona,
     sources: row.stats.perSource.map((p) => p.sourceId),
     progress: null,
-    stats: { scanned: row.stats.scanned, worth: row.stats.worth, ghosts: row.stats.ghosts },
+    // Every ScanStats field is supplied; the `??` defaults exist ONLY for
+    // legacy rows that predate M1 (historical DB rows, not live values).
+    stats: {
+      scanned: row.stats.scanned,
+      matched: row.stats.matched,
+      scored: row.stats.scored,
+      worth: row.stats.worth,
+      ghosts: row.stats.ghosts,
+      unscored: row.stats.unscored ?? 0,
+      capStopped: row.stats.capStopped ?? false,
+      discoverMs: row.stats.discoverMs ?? 0,
+      scoreMs: row.stats.scoreMs ?? 0,
+      costUsd: row.stats.costUsd ?? 0,
+      policyVersion: row.stats.policyVersion ?? "legacy",
+    },
     startedAt: row.startedAt.toISOString(),
     finishedAt: row.finishedAt ? row.finishedAt.toISOString() : null,
     error: row.error ?? null,
