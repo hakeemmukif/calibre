@@ -22,14 +22,27 @@ function tokenize(s: string): string[] {
 }
 
 function significantTokens(s: string): string[] {
-  return tokenize(s).filter((t) => t.length > 1 && !STOPWORDS.has(t));
+  return tokenize(s).filter((t) => (t.length > 1 || /^\d$/.test(t)) && !STOPWORDS.has(t));
 }
 
+// PDF text extraction sometimes fragments words with stray intra-word spaces
+// (e.g. rawText "D esigned Web 3.0" for "Designed Web 3.0"), and the v2
+// extractor correctly repairs these — so a faithful repaired token can fail
+// exact whole-token membership against rawText's fragmented tokens. The
+// alphanumeric blob substring fallback tolerates that split without
+// loosening hallucination detection: it's gated to alphabetic tokens of
+// length >= 4, so digits and short tokens (which would false-positive as a
+// substring of nearly anything) still require exact token membership.
 export function fuzzyContains(haystack: string, needle: string): boolean {
   const needleTokens = significantTokens(needle);
   if (needleTokens.length === 0) return true; // nothing significant to violate
   const haystackTokens = new Set(tokenize(haystack));
-  return needleTokens.every((t) => haystackTokens.has(t));
+  const haystackBlob = haystack.toLowerCase().replace(/[^a-z0-9]/g, "");
+  return needleTokens.every((t) => {
+    if (haystackTokens.has(t)) return true;
+    if (/^[a-z]+$/.test(t) && t.length >= 4 && haystackBlob.includes(t)) return true;
+    return false;
+  });
 }
 
 export interface ConceptRecall {

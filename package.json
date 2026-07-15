@@ -10,7 +10,7 @@
     "test:coverage": "vitest run --coverage",
     "pretest:e2e": "tsx e2e/runGlobalSetup.ts",
     "test:e2e": "playwright test",
-    "smoke:real": "vitest run --config vitest.smoke.config.ts",
+    "smoke:real": "vitest run --config vitest.smoke.config.ts src/smoke",
     "eval:resume": "vitest run --config vitest.smoke.config.ts src/server/resume/eval.live.test.ts",
     "typecheck": "tsc --noEmit",
     "storybook": "storybook dev -p 6006",

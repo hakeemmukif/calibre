@@ -39,6 +39,29 @@ describe("fuzzyContains", () => {
     const haystack = "REDACTED_NAME, PMP Product-Focused UX / Pre-Sales Specialist";
     expect(fuzzyContains(haystack, "Software Engineer")).toBe(false);
   });
+
+  it("tolerates a PDF intra-word space break in the haystack", () => {
+    expect(fuzzyContains("Pro blem scoping and requirements", "Problem scoping")).toBe(true);
+  });
+
+  it("tolerates multiple intra-word breaks across a longer bullet", () => {
+    const haystack = "D esigned Web 3.0 products using Figma";
+    expect(fuzzyContains(haystack, "Designed Web 3.0 products using Figma")).toBe(true);
+  });
+
+  it("still matches a token-reordered de-scramble (regression)", () => {
+    expect(fuzzyContains("REDACTED_NAME, PMP", "REDACTED_NAME")).toBe(true);
+  });
+
+  it("still catches a hallucination absent from the haystack blob", () => {
+    expect(fuzzyContains("designer with figma experience", "blockchain architecture")).toBe(false);
+  });
+
+  it("does not let a short/digit token pass via substring fallback", () => {
+    // "5" is a substring of almost any blob with digits in it — the
+    // alphabetic + length>=4 guard must keep digits on exact-membership only.
+    expect(fuzzyContains("completed migration in 3 days", "completed migration in 5 days")).toBe(false);
+  });
 });
 
 describe("conceptRecall", () => {
@@ -96,6 +119,25 @@ describe("containmentViolations", () => {
     const violations = containmentViolations(store, rawText);
     expect(violations).toHaveLength(1);
     expect(violations[0]).toContain("Kubernetes");
+  });
+
+  it("flags a hallucinated digit even when every other token matches", () => {
+    const digitRawText = "REDACTED_NAME, PMP. Completed migration in 3 days.";
+    const store = baseStore({
+      name: "REDACTED_NAME",
+      experience: [
+        {
+          company: "Techtics Solutions",
+          title: "UI/UX Designer",
+          dates: "2021-2024",
+          isCurrent: false,
+          bullets: ["Completed migration in 5 days"],
+        },
+      ],
+    });
+    const violations = containmentViolations(store, digitRawText);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toContain("Completed migration in 5 days");
   });
 });
 
