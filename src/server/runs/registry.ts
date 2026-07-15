@@ -10,7 +10,7 @@
 // or the process restarted); see task-B5-brief.md route contract.
 import { searchRunsRepo } from "@/server/persistence/repos/searchRuns";
 
-export type RunKind = "search" | "tailor";
+export type RunKind = "search" | "tailor" | "correlate";
 
 export type RunEvent =
   | { event: "progress"; data: unknown }

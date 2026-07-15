@@ -14,6 +14,7 @@ export type TaskName =
   | "question-extract"
   | "question-answer"
   | "tailor"
+  | "correlate"
   | "url-check-search"
   | "ghost-web";
 

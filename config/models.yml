@@ -61,6 +61,13 @@ tasks:
     # "add" has no `before`). Strict mode drops optionals from `required` and
     # 400s the whole call, so tailor stays non-strict; the EMIT resume schema
     # under strict:false + emitToStore already fixes the optional-drop bug.
+  correlate:
+    # Requirement-vs-résumé classification: cheap tier. Emits one row per JD
+    # requirement (term/status/evidence/reason/note); no strict — evidence/note
+    # are nullable and gpt-oss-120b drops optionals under strict:false.
+    model: openai/gpt-oss-120b
+    maxTokens: 4000
+    temperature: 0.1
   url-check-search:
     model: perplexity/sonar
     maxTokens: 4000
