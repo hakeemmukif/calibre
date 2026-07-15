@@ -17,7 +17,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import type { ResumeStore } from "../resume/resume-store";
-import type { WebEvidence } from "@/types";
+import type { ScanResult, WebEvidence } from "@/types";
 
 // ---- shared jsonb shapes (only where a precise contract shape exists) ----
 
@@ -51,6 +51,11 @@ type SearchRunStats = {
   perSource: PerSourceStat[];
   unscored?: number; // B6 fix pass: jobs skipped for a null/empty description, never fabricated
   capStopped?: boolean; // B6 fix pass: true iff dailyCapUsd cut scoring short (distinct from candidates-exhausted)
+  // M1 additions — real stage durations (ms) + accumulated cost + scoring policy id.
+  discoverMs?: number;
+  scoreMs?: number;
+  costUsd?: number;
+  policyVersion?: string;
 };
 
 type ApplicationAnswerEntry = {
@@ -106,6 +111,7 @@ export const resumes = pgTable(
     rawText: text("raw_text").notNull(),
     structured: jsonb("structured").$type<ResumeStore>().notNull(),
     originalPath: text("original_path"),
+    label: text("label"),
     sourceKind: text("source_kind", { enum: ["pdf", "docx", "paste"] }).notNull(),
     atsScore: numeric("ats_score", { mode: "number" }),
     isActive: boolean("is_active").notNull(),
@@ -122,6 +128,7 @@ export const searchRuns = pgTable("search_runs", {
   personas: jsonb("personas").$type<("remote" | "local")[]>().notNull(),
   status: text("status", { enum: ["queued", "running", "completed", "failed"] }).notNull(), // reconciliation 1
   stats: jsonb("stats").$type<SearchRunStats>().notNull(),
+  results: jsonb("results").$type<ScanResult[]>().notNull().default([]),
   startedAt: timestamp("started_at").notNull().defaultNow(),
   finishedAt: timestamp("finished_at"),
   error: text("error"),
