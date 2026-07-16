@@ -79,7 +79,7 @@ export default function TailorPage() {
       const started = await startCorrelate({ jobId: job.id });
       await pollCorrelateUntilTerminal(started.id);
     } catch (err) {
-      if (err instanceof ApiError && err.code === "CONFLICT") {
+      if (err instanceof ApiError && err.code === "CONFLICT" && (err.details as { reason?: string } | undefined)?.reason === "no-jdfacts") {
         setNeedsScoreMessage(err.message);
         setStatus("needs-score");
         return;
@@ -108,17 +108,27 @@ export default function TailorPage() {
   }
 
   async function onSave(tailoredId: string, acceptedIndices: number[]) {
-    const saved = await finalizeTailor(tailoredId, acceptedIndices);
-    setTailored(saved);
-    setStatus("saved");
+    try {
+      const saved = await finalizeTailor(tailoredId, acceptedIndices);
+      setTailored(saved);
+      setStatus("saved");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't save your tailored résumé.");
+      setStatus("error");
+    }
   }
 
   async function onExport(acceptedIndices: number[]) {
     if (!tailored) return;
     setStatus("exporting");
-    await finalizeTailor(tailored.id, acceptedIndices);
-    window.open(tailorPdfUrl(tailored.id), "_blank", "noopener");
-    setStatus("review");
+    try {
+      await finalizeTailor(tailored.id, acceptedIndices);
+      window.open(tailorPdfUrl(tailored.id), "_blank", "noopener");
+      setStatus("review");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't export your tailored résumé.");
+      setStatus("error");
+    }
   }
 
   if (!job || !resume) return null;

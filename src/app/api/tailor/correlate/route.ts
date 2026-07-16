@@ -40,10 +40,10 @@ export async function POST(request: NextRequest) {
       return errorResponse(404, "NOT_FOUND", err.message);
     }
     if (err instanceof NoActiveResumeError) {
-      return errorResponse(409, "CONFLICT", err.message);
+      return errorResponse(409, "CONFLICT", err.message, { reason: "no-resume" });
     }
     if (err instanceof NoJdFactsError) {
-      return errorResponse(409, "CONFLICT", err.message);
+      return errorResponse(409, "CONFLICT", err.message, { reason: "no-jdfacts" });
     }
     throw err;
   }

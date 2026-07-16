@@ -83,7 +83,9 @@ describe("POST /api/tailor/correlate", () => {
 
     const res = await POST(jsonRequest({ jobId: job.id }));
     expect(res.status).toBe(409);
-    expect((await res.json()).error.code).toBe("CONFLICT");
+    const body = await res.json();
+    expect(body.error.code).toBe("CONFLICT");
+    expect(body.error.details.reason).toBe("no-resume");
   });
 
   it("no jd facts (job never scored) -> 409 CONFLICT", async () => {
@@ -93,7 +95,9 @@ describe("POST /api/tailor/correlate", () => {
 
     const res = await POST(jsonRequest({ jobId: job.id }));
     expect(res.status).toBe(409);
-    expect((await res.json()).error.code).toBe("CONFLICT");
+    const body = await res.json();
+    expect(body.error.code).toBe("CONFLICT");
+    expect(body.error.details.reason).toBe("no-jdfacts");
   });
 
   it("happy path -> 202 with a queued CorrelationReport", async () => {
