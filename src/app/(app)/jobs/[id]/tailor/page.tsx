@@ -14,7 +14,7 @@ import { getJob } from "@/features/feed/client";
 import { getResume } from "@/features/resume/client";
 import type { CorrelationReport, Job, Resume, TailoredResume } from "@/types";
 
-const POLL_INTERVAL_MS = 400;
+const POLL_INTERVAL_MS = 1200;
 
 export default function TailorPage() {
   const { id } = useParams<{ id: string }>();
@@ -35,9 +35,20 @@ export default function TailorPage() {
     });
   }, [id]);
 
+  // Alive flag for the two poll loops below — flipped on unmount so a
+  // navigate-away mid-generation stops the loop instead of polling forever
+  // from a detached component.
+  const aliveRef = React.useRef(true);
+  React.useEffect(() => {
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
+
   async function pollUntilTerminal(runId: string) {
-    while (true) {
+    while (aliveRef.current) {
       const run = await getTailor(runId);
+      if (!aliveRef.current) return;
       setTailored(run);
       if (run.status === "completed") {
         setAccepted(run.diff.map(() => true));
@@ -54,8 +65,9 @@ export default function TailorPage() {
   }
 
   async function pollCorrelateUntilTerminal(reportId: string) {
-    while (true) {
+    while (aliveRef.current) {
       const run = await getCorrelate(reportId);
+      if (!aliveRef.current) return;
       if (run.status === "completed") {
         setReport(run);
         setStatus("report");
