@@ -16,7 +16,7 @@ RUN npm ci
 COPY . .
 # The build does not connect to the DB (getDb is lazy); a placeholder satisfies
 # any module that reads DATABASE_URL at import time.
-ENV DATABASE_URL=postgres://placeholder
+ENV DATABASE_URL=file:/tmp/build-placeholder.db
 RUN npm run build
 
 # ---- runtime stage ----
@@ -45,9 +45,9 @@ COPY --from=build /app/src ./src
 # tsconfig.json: those tsx one-offs import via the `@/*` -> `./src/*` path alias,
 # which tsx only resolves when tsconfig.json is present at the runtime cwd.
 COPY --from=build /app/tsconfig.json ./
-# Uploads root (Step 5) — bind-mounted from the host in compose. Create the dir
-# so the app can write even before the mount (the mount overlays it).
-RUN mkdir -p /var/lib/caliber/uploads
+# Uploads root (Step 5) + SQLite db dir — persisted via named volumes in compose.
+# Create the dirs so the app can write even before the mounts (they overlay these).
+RUN mkdir -p /var/lib/caliber/uploads /var/lib/caliber/data
 EXPOSE 3000
 # `next start` (robust). Standalone (`node .next/standalone/server.js`) is a
 # slimmer alternative once validated on a clean build — see DEPLOY.md.
