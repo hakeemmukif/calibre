@@ -64,6 +64,11 @@ export function atsSignal(rows: CorrelationRow[]) {
   return { present, total: rows.length, missing };
 }
 
+export function atsPresentCount(terms: string[], store: ResumeStore): number {
+  const text = flattenResumeText(store);
+  return terms.filter((t) => matches(text, t)).length;
+}
+
 const NUMERIC_ATOM = /\d[\d,.]*%?/g; // 40, 40%, 1,200, 3.5, 2024
 
 function numericAtoms(text: string): string[] {

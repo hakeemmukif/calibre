@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ResumeStore } from "@/server/resume/resume-store";
-import { atsSignal, fabricationViolations, flattenResumeText, semanticSignal, verifyEvidence } from "./correlate-metrics";
+import { atsPresentCount, atsSignal, fabricationViolations, flattenResumeText, semanticSignal, verifyEvidence } from "./correlate-metrics";
 import { CORRELATE_BASELINE, falseGapRate, statusAccuracy } from "./correlate-metrics";
 
 const store: ResumeStore = {
@@ -185,6 +185,19 @@ describe("fabricationViolations", () => {
       before: "Led distributed payments platform handling FX settlement",
       reason: "r", requirement: "trim", target: { index: 0, bulletIndex: 0 } }], base);
     expect(v).toEqual([]);
+  });
+});
+
+describe("atsPresentCount", () => {
+  const atsStore: ResumeStore = {
+    ...store,
+    skills: [{ label: "Tooling", items: ["CI/CD", "GitHub Actions"] }],
+  };
+  it("counts only the terms literally present in the résumé", () => {
+    expect(atsPresentCount(["CI/CD", "GitHub Actions", "Kubernetes", "Terraform"], atsStore)).toBe(2);
+  });
+  it("returns 0 for an empty term list", () => {
+    expect(atsPresentCount([], atsStore)).toBe(0);
   });
 });
 
