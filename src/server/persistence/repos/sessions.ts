@@ -4,6 +4,11 @@ import { sessions, users } from "../schema";
 import type { Db } from "./db";
 import type { UserRow } from "./users";
 
+// Below this staleness, skip the lastUsedAt UPDATE — every authenticated
+// request otherwise queues on SQLite's single writer lock, which stalls
+// polling/click traffic behind long-running scan writes.
+const LAST_USED_BUMP_MS = 5 * 60_000;
+
 export function createSessionRepo(db: Db) {
   return {
     async create(input: { userId: string; tokenHash: string }): Promise<void> {
@@ -15,13 +20,15 @@ export function createSessionRepo(db: Db) {
     // must match) is the authorization boundary.
     async findUserByTokenHash(tokenHash: string): Promise<UserRow | null> {
       const [row] = await db
-        .select({ user: users })
+        .select({ user: users, lastUsedAt: sessions.lastUsedAt })
         .from(sessions)
         .innerJoin(users, eq(sessions.userId, users.id))
         .where(eq(sessions.tokenHash, tokenHash))
         .limit(1);
       if (!row) return null;
-      await db.update(sessions).set({ lastUsedAt: new Date() }).where(eq(sessions.tokenHash, tokenHash));
+      if (Date.now() - row.lastUsedAt.getTime() > LAST_USED_BUMP_MS) {
+        await db.update(sessions).set({ lastUsedAt: new Date() }).where(eq(sessions.tokenHash, tokenHash));
+      }
       return row.user;
     },
     // GLOBAL-BY-DECISION: logout — the token hash itself is the caller's
