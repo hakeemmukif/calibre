@@ -140,11 +140,12 @@ resolved the mechanics; these are no longer UNKNOWN):
    description), **no auth**, `robots.txt` fully open (`Disallow:` empty). Payload carries
    a distinct **`function` field** *and* `department`, `telecommuting` bool, `locations[]`,
    `application_url`, stable `shortcode`, full description. All-function coverage confirmed
-   on live pulls (Apna 139 jobs: sales/marketing/eng/product/data/HR/ops/community; Pavago
-   200 jobs: Attorney, Accountant, Legal, Property Manager, Graphic Design). It is the
-   *mechanism behind Workable's own vendor-documented job-widget embed*, so
-   undocumented-as-an-API but sanctioned in practice. **4,269 slugs already in jobhive.**
-   No pagination param (full list in one call). Effort **S** (one connector, JSON, no auth).
+   by **two independent research runs** (Apna 139: sales/marketing/eng/product/data/HR/ops;
+   Pavago 200: Attorney/Accountant/Legal/Design; Nuvei 68: Finance & Legal incl. Compliance
+   Officer, Legal Counsel, VP Solutions). **Vendor-documented** — Workable's own help centre
+   publishes this endpoint for building custom careers pages, the strongest legal footing of
+   any ATS surveyed. ~4,269 slugs already in jobhive; survived adversarial verification
+   (CONFIRMED). No pagination param (full list in one call). Effort **S**.
 2. **Recruitee** — `GET https://{slug}.recruitee.com/api/offers/`, no auth, **officially
    vendor-documented** as the "Careers Site API" (built for third-party embedding),
    `robots.txt` doesn't block `/api/offers/`. Full text + `careers_apply_url` + remote flag.
@@ -176,17 +177,24 @@ resolved the mechanics; these are no longer UNKNOWN):
 - **Glints** — most favourable robots.txt of any SEA board (job pages crawlable; only
   personalized/tracking paths blocked), startup-leaning. **The legal growth path for the
   local persona**, superseding JobStreet volume growth.
-- **Getro-powered VC portfolio boards** — *high-leverage and now verified viable, as a
-  company-discovery source, not a connector.* No usable public API
-  (`api.getro.com/v2/networks/{id}/jobs` exists but is gated behind a paid Getro contract —
-  401 unauthenticated). **But every Getro board is scrapable without the API**, verified
-  live on two: `GET {board}/sitemap.xml` → job-page shards → each page is Next.js SSR with
-  a `__NEXT_DATA__` JSON blob (plain fetch, no JS execution). **The apply URL in that blob
-  resolves straight to the underlying ATS** — confirmed `jobs.ashbyhq.com/G2/…` (Accel→Ashby)
-  and `boards.greenhouse.io/a16z/…` (a16z-network→Greenhouse). So one sitemap scrape yields
-  company→ATS-vendor→slug triples that **feed the existing greenhouse/lever/ashby
-  connectors** — it belongs in the §4.3 company-list engine, not as a new connector. Getro
-  claims 700+ VC networks. Effort **M** (a discovery scraper + ATS-URL parser).
+- **Getro-powered VC portfolio boards** — *technically easy, but the ToS forbids it — see
+  the flag below.* No usable public API (`api.getro.com/v2/networks/{id}/jobs` is gated
+  behind a paid contract, 401 unauthenticated). Technically, every Getro board exposes a
+  clean unauthenticated JSON route — `GET https://{board-host}/_next/data/{buildId}/jobs.json?q={term}`
+  returns 200, verified live on `jobs.accel.com`, `indexventures.getro.com`,
+  `community.getro.com` — and the **buildId is shared across all Getro domains**
+  (`kwlUMI4kNpd4nO77X5MMC`), so one pattern reaches all 700+ networks; apply URLs resolve
+  straight to the underlying ATS (`jobs.ashbyhq.com/G2/…` Accel→Ashby;
+  `boards.greenhouse.io/a16z/…`). Exec titles appear in volume (live counts: Head-of 316,
+  VP 182, CEO 169, COO 134, CFO 85). **BUT — the adversarial verifier fetched
+  `getro.com/terms` and found a verbatim clause prohibiting anything that "crawls, scrapes,
+  or spiders any page, data, or portion" of the service.** This is not "ToS unreviewed" — it
+  is an *explicit, reviewed prohibition*. So Getro moves to **grey-bordering-dangerous** (§7):
+  do **not** build a Getro scraper as a standing ingestion path. The defensible use, if any,
+  is one-off *company-name discovery* (names are also obtainable from yc-oss/Crunchbase
+  without touching Getro), then hitting each company's ATS directly. Given jobhive + yc-oss
+  already supply the company list, **the marginal value of Getro no longer justifies the ToS
+  exposure** — deprioritise it. Effort was **M**; the blocker is legal, not technical.
 
 **Tier 3 — never / trap:**
 - **LinkedIn / Indeed / Glassdoor** — explicit ToS+robots bans, litigated enforcement
@@ -206,11 +214,12 @@ resolved the mechanics; these are no longer UNKNOWN):
   job-board product entirely* mid-2025 (pivoted to contingency recruiting) — dead lead.
   **Chief of Staff Network** (~48 roles, not 5,000; no schema.org markup, ATS links behind
   JS) — not worth it. "Exec.com" is an unrelated AI-sales SaaS, not an exec marketplace.
-- **Consider-powered VC boards** (a16z's primary board, Sequoia, First Round) — the *other*
-  VC-board vendor, and a **documented dead-end**: client-rendered React with an obfuscated
-  `/mendel/{hash}/boards` bundle, no discoverable data endpoint on static inspection. Vendor
-  is a coin-flip (Accel=Getro=scrapable; a16z/Sequoia/First Round=Consider=not cracked), so
-  the Getro scrape (Tier 2) covers only the Getro subset, not the whole VC ecosystem.
+- **VC-portfolio boards, both vendors** — **Getro** is technically trivial (open `_next/data`
+  JSON, shared buildId across all boards) but its **ToS verbatim forbids scraping** (§4.2, §7),
+  so it's out. **Consider** (a16z's primary board, Sequoia, First Round) is a technical
+  dead-end anyway: client-rendered React, obfuscated `/mendel/{hash}/boards` bundle, no
+  discoverable endpoint. Either way the company names are already in yc-oss/jobhive — the VC
+  boards add nothing the legal-clean path doesn't.
 - **Toptal / MarketerHire** — matching marketplaces, **no ingestible job object**.
 - **Remotive free API** — explicit anti-aggregator ToS clause.
 - **jobdataapi.com** ($295–1,650/mo, 45.5M ATS-sourced jobs) — the "buy" option. It
@@ -346,9 +355,8 @@ when the admin UI needs to query them.
    (all S, vendor-documented), then Rippling (M, N+1 descriptions). SmartRecruiters only
    after a batch hit-rate check. Each rides the same seed/validate/crawl machinery from
    steps 2–3 — the connector is the only new code. **S–M each; sequence, don't batch.**
-5. **Getro discovery scraper (optional)** — sitemap → `__NEXT_DATA__` → ATS-URL parser,
-   feeding company→ATS→slug triples into the step-2 engine. Covers the Getro-vendor VC
-   subset only (Consider boards excluded). **M.** Do after the connector set proves out.
+   *(A Getro discovery scraper was considered as a step 5 and dropped — its ToS explicitly
+   forbids scraping; see §4.2 Getro and §7. yc-oss + jobhive already supply the company list.)*
 
 ## 7. Legal posture
 
@@ -371,15 +379,18 @@ targets the *commercially successful* — risk grows with traction, so cap this 
   datasets; Himalayas with attribution; **storing structured facts + short excerpt +
   link-out via `applyUrl` rather than mirroring full descriptions**.
 - **Grey** — Glints crawling (robots-open, ToS unverified); one-time scrapes of
-  topstartups.io / Getro boards; per-company careers-page detection GETs (cached,
-  low-frequency — uncontroversial per *Meta v. Bright Data*'s logged-out logic, but each
-  employer's ToS is individually unverified); EU-domiciled **aggregator** boards (CJEU
-  *CV-Online*: aggregating another aggregator's database is the exact infringement
-  pattern — a single employer's own ATS feed is **not**); recruiter names/emails parsed
-  from descriptions (**GDPR third-party PII — do not persist**; cheap fix at parse time).
+  topstartups.io; per-company careers-page detection GETs (cached, low-frequency —
+  uncontroversial per *Meta v. Bright Data*'s logged-out logic, but each employer's ToS is
+  individually unverified); EU-domiciled **aggregator** boards (CJEU *CV-Online*:
+  aggregating another aggregator's database is the exact infringement pattern — a single
+  employer's own ATS feed is **not**); recruiter names/emails parsed from descriptions
+  (**GDPR third-party PII — do not persist**; cheap fix at parse time).
 - **Dangerous** — LinkedIn (adjudicated twice), Indeed, Glassdoor, SEEK/JobStreet *at
-  meaningful volume or post-block*, and **any circumvention** (fake accounts, CAPTCHA
-  defeat, disguised UAs). Circumvention — not public reading — is what sank hiQ and Proxycurl.
+  meaningful volume or post-block*; **Getro board scraping** (its Terms verbatim prohibit
+  crawling/scraping/spidering — verified 2026-07-16 by fetching `getro.com/terms`; the
+  clean `_next/data` JSON route being open does not license use the ToS forbids); and **any
+  circumvention** (fake accounts, CAPTCHA defeat, disguised UAs). Circumvention — not public
+  reading — is what sank hiQ and Proxycurl.
 
 ## 8. The honest ceiling
 
@@ -437,8 +448,9 @@ work. **Ship the niche; do not market CEO-search coverage.**
 - New ATS connectors (Workable et al.) **before** steps 1–3 land. They are verified and
   sequenced as step 4, but the matching fix + company engine + decoupling come first —
   the existing three connectors already reach the whole niche once pointed at more companies.
-- Consider-vendor VC boards (obfuscated, not cracked — §4.2 Tier 3); the Getro scraper is
-  step 5, optional, and covers only the Getro subset.
+- Any VC-portfolio-board scraper: **Getro** (ToS verbatim forbids scraping — §7) and
+  **Consider** (obfuscated, not cracked — §4.2 Tier 3). Company names come from
+  yc-oss/jobhive instead.
 - Buying jobdataapi.com or any paid feed.
 - Wellfound/LinkedIn/Indeed/Glassdoor access of any kind.
 - A user-facing source picker — sources stay admin-managed global reference data.
