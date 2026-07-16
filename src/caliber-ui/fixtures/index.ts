@@ -10,6 +10,7 @@ import {
   ApplicationQuestion,
   ApplicationAnswers,
   TailoredResume,
+  CorrelationReport,
   Source,
 } from "../../types";
 import { eligibilityTone } from "../lib/eligibility";
@@ -446,6 +447,38 @@ export const tailored: TailoredResume = TailoredResume.parse({
       requirement: "high-throughput payments processing",
       target: { index: 0, bulletIndex: 0 },
     },
+  ],
+});
+
+// ---------------------------------------------------------------------------
+// Correlation report (F6 phase 2 — measure step)
+// ---------------------------------------------------------------------------
+
+export const correlationReport: CorrelationReport = CorrelationReport.parse({
+  id: "report-1", jobId: "job-1", resumeId: "resume-1",
+  status: "completed", progress: null, model: "cheap-model", costUsd: 0.0004,
+  createdAt: "2026-07-16T00:00:00.000Z", completedAt: "2026-07-16T00:00:03.000Z",
+  semantic: { met: 3, buried: 2, gap: 2, total: 7 },
+  ats: { present: 3, total: 7, missing: ["kubernetes", "go", "terraform", "kafka"] },
+  rows: [
+    { requirement: "Kubernetes at production scale", term: "kubernetes", kind: "must", status: "buried",
+      evidence: "deployed containerized microservices across managed clusters", atsPresent: false,
+      reason: "Experience present but never names Kubernetes.", note: null },
+    { requirement: "Event-driven architecture (Kafka)", term: "kafka", kind: "nice", status: "buried",
+      evidence: "built async data pipelines backed by message queues", atsPresent: false,
+      reason: "Adjacent experience; Kafka not named.", note: null },
+    { requirement: "CI/CD pipeline ownership", term: "ci/cd", kind: "must", status: "met",
+      evidence: "owned GitHub Actions CI/CD across 12 services", atsPresent: true,
+      reason: "Explicit and prominent.", note: null },
+    { requirement: "Mentor engineers", term: "mentoring", kind: "responsibility", status: "met",
+      evidence: "led and mentored a team of five backend engineers", atsPresent: true,
+      reason: "Explicit.", note: null },
+    { requirement: "On-call rotation", term: "on-call", kind: "responsibility", status: "met",
+      evidence: "participated in 24/7 on-call rotation", atsPresent: true, reason: "Explicit.", note: null },
+    { requirement: "7+ years Go", term: "go", kind: "must", status: "gap", evidence: null, atsPresent: false,
+      reason: "No Go experience on the résumé.", note: "supportable via 6 yrs Python/Java backend" },
+    { requirement: "Terraform / IaC", term: "terraform", kind: "nice", status: "gap", evidence: null,
+      atsPresent: false, reason: "No IaC tooling mentioned.", note: null },
   ],
 });
 
