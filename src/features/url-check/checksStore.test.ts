@@ -227,4 +227,23 @@ describe("checksStore", () => {
     expect(runB?.phase).toBe("done");
     expect(result.current.doneCount).toBe(1);
   });
+
+  it("caps terminal runs at 20, evicting the oldest terminal entry; active runs are untouched", async () => {
+    startCheck.mockResolvedValue(check({ id: "active-1", status: "running", stage: "fetching" }));
+    const { result } = renderHook(() => useUrlChecks());
+    await act(async () => { result.current.submit("https://active.com/1"); });
+
+    for (let i = 0; i < 21; i++) {
+      evaluateJob.mockResolvedValueOnce(job({ id: `job-${i}` }));
+      await act(async () => { result.current.submitEvaluate(`job-${i}`); });
+    }
+
+    const terminalRuns = result.current.runs.filter((r) => r.phase === "done");
+    expect(terminalRuns).toHaveLength(20);
+    expect(result.current.runs.some((r) => r.jobId === "job-0")).toBe(false); // oldest terminal evicted
+    expect(result.current.runs.some((r) => r.jobId === "job-20")).toBe(true); // newest terminal kept
+    expect(result.current.runs.some((r) => r.url === "https://active.com/1")).toBe(true); // active untouched
+    expect(result.current.active).toHaveLength(1);
+    expect(result.current.doneCount).toBe(21); // lifetime counter, unaffected by eviction
+  });
 });

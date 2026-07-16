@@ -15,6 +15,7 @@ export interface CheckRun {
 
 const POLL_MS = 1500;
 const MAX_POLL_FAILURES = 8;
+const MAX_TERMINAL_RUNS = 20; // completed runs retain the full Job (description text) for the tab's lifetime otherwise — cap the corner tray's memory footprint
 const TERMINAL: ReadonlySet<CheckRunPhase> = new Set(["done", "needsText", "failed"]);
 
 // Module-singleton state.
@@ -106,14 +107,36 @@ async function applySnapshot(key: string, c: UrlCheck) {
     runs[i] = { ...runs[i], phase, stage: c.stage, checkId: c.id, jobId: c.jobId, job, alreadyKnown: c.alreadyKnown, finishedAt: Date.now() };
     doneCount += 1;
     emit();
+    trimTerminal();
     return;
   }
   pollFailures.set(key, 0); // a definitive server snapshot is a successful poll — reset the streak
   upsert(key, { phase, stage: c.stage, error: c.error, finishedAt: TERMINAL.has(phase) ? Date.now() : null });
+  if (TERMINAL.has(phase)) trimTerminal(); // server-reported failed/needsText lands here, not in the done branch
 }
 
 function applyTerminalFailure(key: string) {
   upsert(key, { phase: "failed", error: { code: "POLL_FAILED", message: "Lost contact with the check." }, finishedAt: Date.now() });
+  trimTerminal();
+}
+
+// Evict the oldest TERMINAL runs beyond MAX_TERMINAL_RUNS. Iterates in the
+// existing newest-first order so remaining runs stay newest-first; active
+// runs are never counted or removed. A separate emit (only when something
+// was actually evicted) — the doneCount/emit coupling above is about the
+// done TRANSITION landing atomically, not about this unrelated eviction.
+function trimTerminal() {
+  let seen = 0;
+  const kept: CheckRun[] = [];
+  let evicted = false;
+  for (const r of runs) {
+    if (TERMINAL.has(r.phase)) {
+      seen += 1;
+      if (seen > MAX_TERMINAL_RUNS) { evicted = true; pollFailures.delete(r.key); continue; }
+    }
+    kept.push(r);
+  }
+  if (evicted) { runs = kept; emit(); }
 }
 
 function addRun(run: CheckRun) { runs = [run, ...runs]; emit(); }
@@ -144,7 +167,7 @@ function submit(url: string, text?: string): string {
         if (!TERMINAL.has(phaseFor(c))) ensureTimer(); // don't spin the timer for an already-terminal start
       }
     })
-    .catch(() => upsert(key, { phase: "failed", error: { code: "START_FAILED", message: "Couldn't start the check." }, finishedAt: Date.now() }));
+    .catch(() => { upsert(key, { phase: "failed", error: { code: "START_FAILED", message: "Couldn't start the check." }, finishedAt: Date.now() }); trimTerminal(); });
   return key;
 }
 
@@ -160,8 +183,9 @@ function submitEvaluate(jobId: string): string {
       runs[i] = { ...runs[i], phase: "done", job: freshJob, finishedAt: Date.now() };
       doneCount += 1;
       emit(); // single notification carries both the run and doneCount
+      trimTerminal();
     })
-    .catch(() => upsert(key, { phase: "failed", error: { code: "EVALUATE_FAILED", message: "Re-scoring failed." }, finishedAt: Date.now() }));
+    .catch(() => { upsert(key, { phase: "failed", error: { code: "EVALUATE_FAILED", message: "Re-scoring failed." }, finishedAt: Date.now() }); trimTerminal(); });
   return key;
 }
 

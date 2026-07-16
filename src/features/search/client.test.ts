@@ -39,6 +39,16 @@ class FakeEventSource {
       handler({ data: JSON.stringify(data) } as MessageEvent<string>);
     }
   }
+
+  // Mirrors the browser: a connection error dispatches ONE plain `error`
+  // event (no data) to every "error" listener — addEventListener handlers
+  // first (registration order), then the onerror property.
+  transportError() {
+    for (const handler of this.listeners.get("error") ?? []) {
+      handler({ data: undefined } as unknown as MessageEvent<string>);
+    }
+    this.onerror?.();
+  }
 }
 
 function snapshot(overrides: Partial<SearchRun> = {}): SearchRun {
@@ -96,11 +106,39 @@ describe("subscribeSearch", () => {
     subscribeSearch("run-1", onEvent);
     const source = FakeEventSource.instances[0]!;
 
-    source.onerror?.();
+    source.transportError();
 
     expect(source.closed).toBe(false);
     expect(onEvent).not.toHaveBeenCalled();
     expect(requestJsonMock).not.toHaveBeenCalled();
+  });
+
+  it("30 consecutive transport errors close the source and deliver a synthetic error event", () => {
+    const onEvent = vi.fn();
+    subscribeSearch("run-1", onEvent);
+    const source = FakeEventSource.instances[0]!;
+
+    for (let i = 0; i < 30; i++) source.transportError();
+
+    expect(source.closed).toBe(true);
+    expect(onEvent).toHaveBeenCalledTimes(1);
+    expect(onEvent).toHaveBeenCalledWith({
+      event: "error",
+      data: { error: { code: "INTERNAL", message: expect.any(String) } },
+    } satisfies SseEvent);
+  });
+
+  it("a received event between errors resets the consecutive-error count", () => {
+    const onEvent = vi.fn();
+    subscribeSearch("run-1", onEvent);
+    const source = FakeEventSource.instances[0]!;
+
+    for (let i = 0; i < 29; i++) source.transportError();
+    source.emit("progress", { stage: "score", current: 1, total: 10, label: "1/10" });
+    for (let i = 0; i < 29; i++) source.transportError();
+
+    expect(source.closed).toBe(false); // reset means 29 more errors is still below the cap
+    expect(onEvent).toHaveBeenCalledTimes(1); // only the progress event, no synthetic error
   });
 
   it("cleanup removes listeners and closes the source", () => {

@@ -23,6 +23,44 @@ interface ParseableSchema<T> {
   parse(value: unknown): T;
 }
 
+interface RawResponse {
+  ok: boolean;
+  status: number;
+  body: unknown;
+}
+
+// Concurrent callers of the same GET URL share one fetch — a page that
+// fires several `requestJson` calls for the same resource (e.g. a
+// re-render storm) must not cost several network round-trips. Keyed by URL
+// only, so each caller still `.parse`s the shared raw body through its OWN
+// schema. Deleted in `finally` — this is in-flight coalescing, not a cache;
+// nothing is retained once the fetch settles.
+const inFlightGets = new Map<string, Promise<RawResponse>>();
+
+async function fetchRaw(input: string, init: RequestInit | undefined): Promise<RawResponse> {
+  const res = await fetch(input, init);
+  const raw = await res.text();
+  let body: unknown;
+  try {
+    body = raw.length > 0 ? JSON.parse(raw) : undefined;
+  } catch {
+    body = undefined;
+  }
+  return { ok: res.ok, status: res.status, body };
+}
+
+function fetchRawDeduped(input: string, init: RequestInit | undefined): Promise<RawResponse> {
+  const isGet = !init?.method || init.method === "GET";
+  if (!isGet) return fetchRaw(input, init);
+
+  const existing = inFlightGets.get(input);
+  if (existing) return existing;
+
+  const promise = fetchRaw(input, init).finally(() => inFlightGets.delete(input));
+  inFlightGets.set(input, promise);
+  return promise;
+}
+
 // Fetch + `.parse` the response with the frozen Zod schema — a contract
 // drift between this client and the route handler throws here, at the
 // boundary, instead of silently handing the UI a malformed object. A
@@ -39,20 +77,13 @@ export async function requestJson<T>(
   init: RequestInit | undefined,
   schema: ParseableSchema<T>,
 ): Promise<T> {
-  const res = await fetch(input, init);
-  const raw = await res.text();
-  let body: unknown;
-  try {
-    body = raw.length > 0 ? JSON.parse(raw) : undefined;
-  } catch {
-    body = undefined;
-  }
-  if (!res.ok) {
+  const { ok, status, body } = await fetchRawDeduped(input, init);
+  if (!ok) {
     const envelope = ErrorEnvelope.safeParse(body);
     if (envelope.success) {
-      throw new ApiError(res.status, envelope.data.error.code, envelope.data.error.message, envelope.data.error.details);
+      throw new ApiError(status, envelope.data.error.code, envelope.data.error.message, envelope.data.error.details);
     }
-    throw new ApiError(res.status, "INTERNAL", `Request failed with status ${res.status}.`);
+    throw new ApiError(status, "INTERNAL", `Request failed with status ${status}.`);
   }
   return schema.parse(body);
 }

@@ -48,6 +48,56 @@ describe("requestJson", () => {
   });
 });
 
+describe("requestJson GET dedup", () => {
+  it("two concurrent GETs to the same URL share one fetch", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const [a, b] = await Promise.all([requestJson("/x", undefined, Schema), requestJson("/x", undefined, Schema)]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(a).toEqual({ ok: true });
+    expect(b).toEqual({ ok: true });
+  });
+
+  it("sequential GETs to the same URL fetch twice (nothing cached after resolution)", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await requestJson("/x", undefined, Schema);
+    await requestJson("/x", undefined, Schema);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("POSTs to the same URL are never deduped", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await Promise.all([
+      requestJson("/x", { method: "POST" }, Schema),
+      requestJson("/x", { method: "POST" }, Schema),
+    ]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("each concurrent caller parses the shared response through its own schema", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const StrictSchema = z.object({ ok: z.boolean(), extra: z.string() });
+
+    const [okResult, failResult] = await Promise.allSettled([
+      requestJson("/x", undefined, Schema),
+      requestJson("/x", undefined, StrictSchema),
+    ]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(okResult.status).toBe("fulfilled");
+    expect(failResult.status).toBe("rejected");
+  });
+});
+
 describe("requestJsonOrNull", () => {
   it("resolves a 404 with an empty body to null (not a JSON parse crash)", async () => {
     stubFetch(new Response("", { status: 404 }));
