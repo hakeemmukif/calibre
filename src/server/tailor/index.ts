@@ -84,6 +84,23 @@ export const TailorResultSchema = z.object({
 });
 export type TailorResult = z.infer<typeof TailorResultSchema>;
 
+// Emit-side twin of TailorResultSchema. gpt-oss-120b drops any field not in
+// the derived json_schema's `required` list (see the correlate classify
+// schema for the same workaround), so the LLM-facing shape makes every field
+// required and models absence as null. Parsed output is normalised back onto
+// the wire shape and re-validated by TailorResultSchema — the modify-anchor
+// superRefine stays the real enforcement point.
+const TailorEmitEntry = z.object({
+  section: z.string(),
+  op: z.enum(["add", "remove", "modify"]),
+  before: z.string().nullable(),
+  after: z.string().nullable(),
+  reason: z.string(),
+  requirement: z.string(),
+  target: z.object({ index: z.number().int().nullable(), bulletIndex: z.number().int().nullable() }),
+});
+export const TailorEmitSchema = z.object({ diff: z.array(TailorEmitEntry) });
+
 export interface StartTailorInput {
   jobId: string;
   reportId?: string;
@@ -257,12 +274,23 @@ async function runTailorJob(
       resume: JSON.stringify(resumeRow.structured),
       report: JSON.stringify({ candidates, gaps }),
     }),
-    responseSchema: TailorResultSchema,
+    responseSchema: TailorEmitSchema,
   });
+
+  // Normalise the emit shape's null-modelled absence back onto the wire
+  // shape (before/after optional) and re-validate — TailorResultSchema's
+  // superRefine (a non-empty before/after on every `modify`) stays the real
+  // enforcement point.
+  const normalised = result.data.diff.map(({ before, after, ...rest }) => ({
+    ...rest,
+    ...(before !== null ? { before } : {}),
+    ...(after !== null ? { after } : {}),
+  }));
+  const { diff } = TailorResultSchema.parse({ diff: normalised });
 
   // Fabrication guard (design §6, deterministic, fail-loud): an edit's
   // `after` may not introduce a number/metric absent from the base résumé.
-  const fabrications = fabricationViolations(result.data.diff, resumeRow.structured);
+  const fabrications = fabricationViolations(diff, resumeRow.structured);
   if (fabrications.length > 0) {
     throw new Error(`tailor: fabrication guard rejected the rewrite — ${fabrications.join("; ")}`);
   }
@@ -277,7 +305,7 @@ async function runTailorJob(
   const candidateRequirements = new Set(
     report.rows.filter((r) => r.status === "met" || r.status === "buried").map((r) => r.requirement),
   );
-  const invalidEdits = result.data.diff.filter((e) => !candidateRequirements.has(e.requirement));
+  const invalidEdits = diff.filter((e) => !candidateRequirements.has(e.requirement));
   if (invalidEdits.length > 0) {
     throw new Error(
       `tailor: rewrite wrote an edit for requirement(s) not present as a met/buried row in the report — ${invalidEdits.map((e) => `"${e.requirement}"`).join(", ")}. The rewrite must stay constrained to the report.`,
@@ -291,8 +319,8 @@ async function runTailorJob(
 
   const completedAt = new Date();
   const completed = await tailoredResumesRepo.complete(row.id, {
-    structured: applyEdits(resumeRow.structured, result.data.diff),
-    diff: result.data.diff,
+    structured: applyEdits(resumeRow.structured, diff),
+    diff,
     model: result.model,
     costUsd: result.costUsd,
     completedAt,

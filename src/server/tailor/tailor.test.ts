@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { z } from "zod";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { makeMockLlm } from "@/lib/llm/mock";
 import { insertJob, insertJobScore, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
@@ -9,7 +10,7 @@ import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
 
-const { startTailor, UnknownJobError, NoActiveResumeError, UnknownReportError } = await import("./index");
+const { startTailor, UnknownJobError, NoActiveResumeError, UnknownReportError, TailorEmitSchema } = await import("./index");
 const { tailoredResumesRepo } = await import("@/server/persistence/repos/tailoredResumes");
 const { applyEdits } = await import("./merge");
 const { get: getRunHandle, __resetForTests } = await import("@/server/runs/registry");
@@ -134,6 +135,36 @@ const MISSING_BEFORE_DIFF = [
   {
     section: "experience",
     op: "modify" as const,
+    after: "Led distributed payments platform spanning a distributed systems architecture",
+    reason: "surface distributed systems experience",
+    requirement: "distributed systems experience",
+    target: { index: 0, bulletIndex: 0 },
+  },
+];
+
+// Emit-shape `add` with an explicit `before: null` (the anchor doesn't apply
+// to `add`) — TailorEmitSchema requires the key, and normalisation must
+// strip it back to absent on the wire shape.
+const ADD_NULL_BEFORE_DIFF = [
+  {
+    section: "experience",
+    op: "add" as const,
+    before: null,
+    after: "Scaled a distributed systems platform to new regions",
+    reason: "surface distributed systems experience",
+    requirement: "distributed systems experience",
+    target: { index: 0, bulletIndex: null },
+  },
+];
+
+// Emit-shape `modify` with an explicit `before: null` — normalisation turns
+// this into an absent `before` on the wire shape, which TailorResultSchema's
+// superRefine must still reject.
+const MODIFY_NULL_BEFORE_DIFF = [
+  {
+    section: "experience",
+    op: "modify" as const,
+    before: null,
     after: "Led distributed payments platform spanning a distributed systems architecture",
     reason: "surface distributed systems experience",
     requirement: "distributed systems experience",
@@ -508,5 +539,45 @@ describe("startTailor", () => {
     expect(row?.status).toBe("completed");
     expect(row?.diff).toEqual(TWO_EDIT_DIFF);
     expect(row?.structured).toEqual(applyEdits(BASE_STRUCTURED, TWO_EDIT_DIFF));
+  });
+
+  it("tailor emit schema requires before/after (gpt-oss-120b drops non-required fields)", () => {
+    const js = z.toJSONSchema(TailorEmitSchema) as any;
+    const entry = js.properties.diff.items;
+    for (const k of ["section", "op", "before", "after", "reason", "requirement", "target"]) {
+      expect(entry.required).toContain(k);
+    }
+  });
+
+  it("normalises an emit-shape `add` with before:null to an absent `before` on the wire shape", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id);
+    const resume = await insertResume(state.testDb, { isActive: true, structured: BASE_STRUCTURED });
+    const report = await insertCompletedReport(job.id, resume.id);
+
+    const llm = makeMockLlm({ tailor: { diff: ADD_NULL_BEFORE_DIFF } });
+
+    const draft = await startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id, reportId: report.id }, { llm });
+    await waitForTerminal(draft.id);
+
+    const row = await tailoredResumesRepo.getById(draft.id, BOOTSTRAP_ADMIN_ID);
+    expect(row?.status).toBe("completed");
+    expect(row?.diff[0]).not.toHaveProperty("before");
+    expect(row?.diff[0].after).toBe(ADD_NULL_BEFORE_DIFF[0].after);
+  });
+
+  it("fails the run loudly (schema) when a modify edit emits before:null (normalises to absent, still rejected)", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id);
+    const resume = await insertResume(state.testDb, { isActive: true, structured: BASE_STRUCTURED });
+    const report = await insertCompletedReport(job.id, resume.id);
+
+    const llm = makeMockLlm({ tailor: { diff: MODIFY_NULL_BEFORE_DIFF } });
+
+    const draft = await startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id, reportId: report.id }, { llm });
+    await waitForTerminal(draft.id);
+
+    const row = await tailoredResumesRepo.getById(draft.id, BOOTSTRAP_ADMIN_ID);
+    expect(row?.status).toBe("failed");
   });
 });
