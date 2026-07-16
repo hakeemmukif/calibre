@@ -109,7 +109,7 @@ describe("resumesRepo", () => {
 
     const [userB] = await db
       .insert(users)
-      .values({ email: "user-b-resumes@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-resumes@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
 
     const base = {
@@ -205,7 +205,7 @@ describe("resumesRepo", () => {
 
     const [userB] = await db
       .insert(users)
-      .values({ email: "user-b-resumes-getactive@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-resumes-getactive@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
 
     await repo.insertReplacingActive({
@@ -238,7 +238,7 @@ describe("resumesRepo", () => {
 
     const [userB] = await db
       .insert(users)
-      .values({ email: "user-b-resumes-getbyid@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-resumes-getbyid@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
 
     const resumeA = await repo.insertReplacingActive({

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createTestDb } from "../test-db";
 import { applications, users } from "../schema";
+import { seedAdmin } from "../seed";
 import { createUserRepo } from "./users";
 import { insertJob, insertResume, insertSource } from "./__fixtures__/helpers";
 import { EmailTakenError } from "@/server/auth/errors";
@@ -11,7 +12,7 @@ describe("users schema", () => {
     const db = await createTestDb();
     const [row] = await db
       .insert(users)
-      .values({ email: "a@b.co", passwordHash: "x", role: "user" })
+      .values({ email: "a@b.co", passwordHash: "x", role: "user", plan: "standard" })
       .returning();
     expect(row.id).toMatch(/^[0-9a-f-]{36}$/);
     expect(row.role).toBe("user");
@@ -35,9 +36,9 @@ describe("usersRepo", () => {
 
   it("users_email_unique constraint fires a SQLITE_CONSTRAINT_UNIQUE on a direct duplicate insert (foundation for the race-safety catch in create())", async () => {
     const db = await createTestDb();
-    await db.insert(users).values({ email: "race@x.co", passwordHash: "h", role: "user" });
+    await db.insert(users).values({ email: "race@x.co", passwordHash: "h", role: "user", plan: "standard" });
     await expect(
-      db.insert(users).values({ email: "race@x.co", passwordHash: "h", role: "user" }),
+      db.insert(users).values({ email: "race@x.co", passwordHash: "h", role: "user", plan: "standard" }),
     ).rejects.toMatchObject({ cause: { extendedCode: "SQLITE_CONSTRAINT_UNIQUE" } });
   });
 
@@ -88,5 +89,14 @@ describe("usersRepo", () => {
     for (const u of list) {
       expect(u).not.toHaveProperty("passwordHash");
     }
+  });
+
+  it("create writes plan 'standard' explicitly; seedAdmin writes 'unlimited'", async () => {
+    const db = await createTestDb();
+    const repo = createUserRepo(db);
+    const u = await repo.create({ email: "p@x.co", passwordHash: "h", role: "user" });
+    expect(u.plan).toBe("standard");
+    const [admin] = await seedAdmin(db, { email: "root@x.co", password: "hunter2hunter2" });
+    expect(admin.plan).toBe("unlimited");
   });
 });

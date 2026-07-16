@@ -119,7 +119,7 @@ describe("migrateUploads", () => {
     const db = await createTestDb();
     const [userB] = await db
       .insert(users)
-      .values({ email: "user-b-migrate@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-migrate@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
 
     const oldAbsPathA = join(legacyDir, "shared-hash.pdf");

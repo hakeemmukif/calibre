@@ -71,7 +71,7 @@ describe("GET /api/admin/users/[id]/jobs", () => {
   it("a target user with no profile (not onboarded) returns an empty feed, not a 500", async () => {
     const [userB] = await state.testDb
       .insert(users)
-      .values({ email: "target-b-no-profile@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "target-b-no-profile@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
     const { request, params } = req(userB.id);
     const res = await GET(request, { params });
@@ -85,7 +85,7 @@ describe("GET /api/admin/users/[id]/jobs", () => {
   it("returns target user B's jobs, not the admin's own or a third user's", async () => {
     const [userB] = await state.testDb
       .insert(users)
-      .values({ email: "target-b-jobs@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "target-b-jobs@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
     await insertProfile(state.testDb, { id: "profile-b", userId: userB.id, relocation: "open" });
 

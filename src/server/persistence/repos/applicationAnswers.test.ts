@@ -44,7 +44,7 @@ describe("applicationAnswersRepo", () => {
     const job = await insertJob(db, source.id);
     const [userB] = await db
       .insert(users)
-      .values({ email: "user-b-answers-getbyid@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-answers-getbyid@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
 
     const inserted = await repo.insert({
@@ -103,7 +103,7 @@ describe("applicationAnswersRepo", () => {
     const job = await insertJob(db, source.id);
     const [userB] = await db
       .insert(users)
-      .values({ email: "user-b-answers-update@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-answers-update@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
 
     const inserted = await repo.insert({

@@ -50,7 +50,7 @@ describe("GET /api/jobs", () => {
   it("a second user's jobs are invisible to the first (cross-tenant isolation)", async () => {
     const [userB] = await state.testDb
       .insert(users)
-      .values({ email: "user-b-jobs-route@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-jobs-route@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
     const source = await insertSource(state.testDb);
     const resumeA = await insertResume(state.testDb);

@@ -67,7 +67,7 @@ describe("GET /api/jobs/check/:id", () => {
   it("returns 404 for a foreign-owned check id (cross-tenant isolation, no existence leak)", async () => {
     const [userB] = await state.testDb
       .insert(users)
-      .values({ email: `user-b-jobs-check-id-route-${crypto.randomUUID()}@example.com`, passwordHash: "h", role: "user" })
+      .values({ email: `user-b-jobs-check-id-route-${crypto.randomUUID()}@example.com`, passwordHash: "h", role: "user", plan: "standard" })
       .returning();
     const row = await urlChecksRepo.insert({
       userId: BOOTSTRAP_ADMIN_ID,

@@ -111,7 +111,7 @@ describe("/api/profile", () => {
   it("a second user's PUT does not affect the first user's row (cross-tenant isolation)", async () => {
     const [userB] = await state.testDb
       .insert(users)
-      .values({ email: "user-b-profile-route@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-profile-route@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
 
     await state.testDb.insert(profile).values({ id: "default", userId: BOOTSTRAP_ADMIN_ID, baseCountry: "MY", relocation: "stay", scheduleFlex: "any-hours", employmentPref: "any" });

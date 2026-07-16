@@ -61,7 +61,7 @@ describe("extractQuestions", () => {
     const job = await insertJob(state.testDb, source.id);
     const [userB] = await state.testDb
       .insert(users)
-      .values({ email: "user-b-extract-questions@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-extract-questions@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
 
     await expect(extractQuestions(userB.id, { jobId: job.id })).rejects.toBeInstanceOf(UnknownJobError);

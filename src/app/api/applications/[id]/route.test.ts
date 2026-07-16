@@ -126,7 +126,7 @@ describe("PATCH /api/applications/:id", () => {
 
     const [userB] = await state.testDb
       .insert(users)
-      .values({ email: "user-b-applications-patch-route@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-applications-patch-route@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
     requireUser.mockResolvedValue({ id: userB.id, email: userB.email, role: "user" });
 

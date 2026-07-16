@@ -133,7 +133,7 @@ describe("applicationsRepo", () => {
 
     const [userB] = await db
       .insert(users)
-      .values({ email: "user-b-applications-list@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-applications-list@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
 
     const { items } = await repo.listJoined({ userId: userB.id });
@@ -250,7 +250,7 @@ describe("applicationsRepo", () => {
     });
     const [userB] = await db
       .insert(users)
-      .values({ email: "user-b-applications-getjoined@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-applications-getjoined@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
 
     expect(await repo.getJoined(app.id, userB.id)).toBeNull();
@@ -274,7 +274,7 @@ describe("applicationsRepo", () => {
     });
     const [userB] = await db
       .insert(users)
-      .values({ email: "user-b-applications-cursor@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-applications-cursor@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
 
     const foreignCursor = encodeCursorId(app.id);
@@ -327,7 +327,7 @@ describe("applicationsRepo", () => {
     });
     const [userB] = await db
       .insert(users)
-      .values({ email: "user-b-applications-patch@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-applications-patch@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
 
     const result = await repo.patch(app.id, userB.id, { stage: 3, statusLabel: "Offer", note: "hijacked" });

@@ -341,7 +341,7 @@ describe("GET /api/search/:id", () => {
     });
     const [userB] = await state.testDb
       .insert(users)
-      .values({ email: "user-b-search-sse@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-search-sse@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
 
     requireUser.mockResolvedValue({ id: userB.id, email: userB.email, role: "user" });

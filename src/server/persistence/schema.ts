@@ -331,8 +331,30 @@ export const users = sqliteTable("users", {
   email: text("email").notNull().unique(), // normalized lowercase at the repo boundary
   passwordHash: text("password_hash").notNull(),
   role: text("role", { enum: ["user", "admin"] }).notNull(), // written explicitly at insert — no column default (no-fallback)
+  plan: text("plan", { enum: ["standard", "unlimited"] }).notNull(), // written explicitly at insert — no drizzle default (no-fallback); the migration's DB default exists only to satisfy ALTER on existing rows
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
 });
+
+// Membership spec §4.1 — append-only; balance = SUM(delta) per user. No
+// updates, no deletes: refunds/corrections are new rows (reason 'admin').
+export const creditLedger = sqliteTable(
+  "credit_ledger",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id").notNull().references(() => users.id),
+    delta: integer("delta").notNull(), // +grant / −debit, never 0 (asserted in server/credits)
+    reason: text("reason", { enum: ["signup", "purchase", "admin", "debit"] }).notNull(),
+    feature: text("feature", { enum: ["scan", "evaluate", "tailor", "resume", "answers"] }), // debits only
+    refId: text("ref_id"), // domain row the debit paid for (searchRun/urlCheck/…)
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  },
+  (t) => [
+    index("credit_ledger_user_id_idx").on(t.userId),
+    // one-time signup bundle by construction — a second 'signup' row for a
+    // user violates this index.
+    uniqueIndex("credit_ledger_signup_once").on(t.userId).where(sql`${t.reason} = 'signup'`),
+  ],
+);
 
 export const sessions = sqliteTable("sessions", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),

@@ -152,7 +152,7 @@ describe("POST /api/search", () => {
 
     const [userB] = await state.testDb
       .insert(users)
-      .values({ email: "user-b-search-mutex-route@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-search-mutex-route@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
     await insertProfile(state.testDb, { id: "profile-b-route", userId: userB.id });
     await insertResume(state.testDb, { userId: userB.id, isActive: true });

@@ -46,7 +46,7 @@ describe("deletePastedJob", () => {
   it("a foreign-owned job -> UnknownJobError (404, never a leak), row untouched (cross-tenant isolation)", async () => {
     const [userB] = await state.testDb
       .insert(users)
-      .values({ email: "user-b-delete-job@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-delete-job@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
     const source = await insertSource(state.testDb);
     const job = await insertJob(state.testDb, source.id, { persona: "pasted" });

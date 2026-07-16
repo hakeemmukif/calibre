@@ -5,7 +5,7 @@ import { sessions, users } from "../schema";
 import { createSessionRepo } from "./sessions";
 
 async function seedUser(db: Awaited<ReturnType<typeof createTestDb>>) {
-  const [u] = await db.insert(users).values({ email: "s@x.co", passwordHash: "h", role: "user" }).returning();
+  const [u] = await db.insert(users).values({ email: "s@x.co", passwordHash: "h", role: "user", plan: "standard" }).returning();
   return u;
 }
 

@@ -259,7 +259,7 @@ describe("startTailor", () => {
     const job = await insertJob(state.testDb, source.id);
     const [userB] = await state.testDb
       .insert(users)
-      .values({ email: "user-b-starttailor@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-starttailor@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
 
     await expect(startTailor(userB.id, { jobId: job.id })).rejects.toBeInstanceOf(UnknownJobError);
@@ -448,7 +448,7 @@ describe("startTailor", () => {
     const resume = await insertResume(state.testDb, { isActive: true, structured: BASE_STRUCTURED });
     const [userB] = await state.testDb
       .insert(users)
-      .values({ email: "user-b-unknownreport@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-unknownreport@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
     const [foreignReport] = await state.testDb
       .insert(correlationReports)

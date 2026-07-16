@@ -416,7 +416,7 @@ describe("startSearch", () => {
 
     const [userB] = await state.testDb
       .insert(users)
-      .values({ email: "user-b-search-mutex@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-search-mutex@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
     await insertProfile(state.testDb, { id: "profile-b", userId: userB.id });
     await insertResume(state.testDb, { ...resumeFixture, userId: userB.id, isActive: true });

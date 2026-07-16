@@ -88,7 +88,7 @@ describe("finalizeTailor", () => {
     const resume = await insertResume(state.testDb, { isActive: true, structured: BASE_STORE });
     const [userB] = await state.testDb
       .insert(users)
-      .values({ email: "user-b-finalizetailor@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-finalizetailor@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
 
     const draft = await tailoredResumesRepo.insert({

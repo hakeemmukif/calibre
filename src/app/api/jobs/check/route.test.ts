@@ -192,7 +192,7 @@ describe("GET /api/jobs/check", () => {
   it("?active=1 returns only the caller's own checks (cross-tenant isolation)", async () => {
     const [userB] = await state.testDb
       .insert(users)
-      .values({ email: `user-b-jobs-check-route-${crypto.randomUUID()}@example.com`, passwordHash: "h", role: "user" })
+      .values({ email: `user-b-jobs-check-route-${crypto.randomUUID()}@example.com`, passwordHash: "h", role: "user", plan: "standard" })
       .returning();
     const [checkA] = await state.testDb.insert(urlChecks).values(newUrlCheckRow({ status: "queued" })).returning();
     const [checkB] = await state.testDb

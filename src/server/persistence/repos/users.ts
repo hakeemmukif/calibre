@@ -32,7 +32,7 @@ export function createUserRepo(db: Db) {
       try {
         const [row] = await db
           .insert(users)
-          .values({ email, passwordHash: input.passwordHash, role: input.role })
+          .values({ email, passwordHash: input.passwordHash, role: input.role, plan: "standard" as const })
           .returning();
         return row;
       } catch (err) {

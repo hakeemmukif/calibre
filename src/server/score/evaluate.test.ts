@@ -36,7 +36,7 @@ describe("evaluateJob", () => {
   it("throws UnknownJobError for a foreign-owned job id (404, never a leak)", async () => {
     const [userB] = await state.testDb
       .insert(users)
-      .values({ email: "user-b-evaluate@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-evaluate@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
     const source = await insertSource(state.testDb);
     const job = await insertJob(state.testDb, source.id, { description: "Backend role at Acme." });

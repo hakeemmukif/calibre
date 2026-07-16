@@ -143,7 +143,7 @@ describe("/api/resume", () => {
   it("a second user's active résumé is invisible to the first (cross-tenant isolation)", async () => {
     const [userB] = await state.testDb
       .insert(users)
-      .values({ email: "user-b-resume-route@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-resume-route@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
 
     const uploaded = await POST(jsonRequest({ text: "a".repeat(120) }));
@@ -304,7 +304,7 @@ describe("/api/resume", () => {
   it("two different users uploading identical bytes get distinct per-user physical files", async () => {
     const [userB] = await state.testDb
       .insert(users)
-      .values({ email: "user-b-upload@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-upload@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
 
     const bytes = new Uint8Array(readFileSync(PDF_FIXTURE));

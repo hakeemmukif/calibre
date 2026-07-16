@@ -49,7 +49,7 @@ describe("searchRunsRepo", () => {
     const resume = await insertResume(db);
     const [userB] = await db
       .insert(users)
-      .values({ email: "user-b-searchruns-getbyid@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-searchruns-getbyid@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
 
     const run = await repo.insert({
@@ -70,7 +70,7 @@ describe("searchRunsRepo", () => {
     const resumeA = await insertResume(db);
     const [userB] = await db
       .insert(users)
-      .values({ email: "user-b-searchruns@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-searchruns@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
     const resumeB = await insertResume(db, { userId: userB.id });
 
@@ -177,7 +177,7 @@ describe("searchRunsRepo", () => {
     const resume = await insertResume(db, { isActive: true });
     const [userB] = await db
       .insert(users)
-      .values({ email: "user-b-searchruns-appendresult@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-searchruns-appendresult@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
     const run = await repo.insert({ userId: BOOTSTRAP_ADMIN_ID, resumeId: resume.id, personas: ["remote"], status: "running", stats: baseStatsFixture, results: [] });
     await repo.appendResult(run.id, userB.id, { jobId: "foreign", title: "t", company: "c", source: "s", outcome: "scored" });
@@ -191,7 +191,7 @@ describe("searchRunsRepo", () => {
     // FK: search_runs.user_id → users.id (libsql enforces it (foreign_keys=ON)) — insert the other user first.
     const [userB] = await db
       .insert(users)
-      .values({ email: "user-b-searchruns-list@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-searchruns-list@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
     const mine = await insertResume(db, { isActive: true, label: "mine.pdf" });
     for (let i = 0; i < 3; i++) {

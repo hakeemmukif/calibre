@@ -42,7 +42,7 @@ describe("draftAnswers", () => {
     const job = await insertJob(state.testDb, source.id);
     const [userB] = await state.testDb
       .insert(users)
-      .values({ email: "user-b-draft-answers@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-draft-answers@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
 
     await expect(
@@ -209,7 +209,7 @@ describe("patchAnswers", () => {
 
     const [userB] = await state.testDb
       .insert(users)
-      .values({ email: "user-b-answer-patch@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-answer-patch@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
 
     await expect(

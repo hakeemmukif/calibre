@@ -78,8 +78,8 @@ export async function seedAdmin(db: Db, creds: { email: string; password: string
   const email = creds.email.trim().toLowerCase();
   return db
     .insert(users)
-    .values({ id: BOOTSTRAP_ADMIN_ID, email, passwordHash, role: "admin" })
-    .onConflictDoUpdate({ target: users.id, set: { email, passwordHash, role: "admin" } })
+    .values({ id: BOOTSTRAP_ADMIN_ID, email, passwordHash, role: "admin", plan: "unlimited" })
+    .onConflictDoUpdate({ target: users.id, set: { email, passwordHash, role: "admin", plan: "unlimited" } })
     .returning();
 }
 
