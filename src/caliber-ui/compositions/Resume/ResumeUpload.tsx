@@ -109,7 +109,7 @@ export function ResumeUpload({ onFile, status, progress, error }: ResumeUploadPr
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: "24px 8px" }}>
           <Icon name="refresh-cw" size={26} style={{ color: "var(--accent)", animation: "caliber-spin 1s linear infinite" }} />
           <div style={{ font: "var(--type-body)", color: "var(--text-body)" }}>
-            {status === "uploading" ? "Uploading résumé…" : "Parsing résumé…"}
+            {status === "uploading" ? "Uploading résumé…" : "Parsing résumé — usually 10–20 seconds…"}
           </div>
           {typeof progress === "number" && (
             <div style={{ width: "100%", maxWidth: 220, height: 6, borderRadius: "var(--radius-bar)", background: "var(--surface-sunken)", overflow: "hidden" }}>

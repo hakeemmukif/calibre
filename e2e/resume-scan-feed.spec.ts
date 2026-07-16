@@ -1,18 +1,20 @@
 import { expect, test } from "@playwright/test";
 
-// Journey F1 -> /scans (D7): paste-text résumé ingest auto-fires the
-// dual-persona scan (src/app/(app)/resume/page.tsx's `startSearches`) and
-// navigates to /scans, where BOTH runs are visible (the retention win — the
-// old sessionStorage handoff -> /feed overlay round-trip is retired). Once a
-// run reaches a terminal state, its /scans/:id detail replays the persisted
-// results (ScanReplay) with the scored fixture job. No EventSource is opened
-// on this path (a terminal run's detail is a plain JSON fetch), so the old
-// SSE route warm-up request is no longer needed. >=100 raw chars (POST
-// /api/resume's `PasteBody` schema) — trimmed length is what ResumeUpload's
-// "Use this text" button gates on, so pad well past it.
+// Journey F1 -> /scans/:id (D7 review-then-scan pivot): paste-text résumé
+// ingest no longer auto-fires a scan — the page shows a "Résumé ready"
+// prompt (src/app/(app)/resume/page.tsx's `handleScan`), and the user
+// explicitly clicks a persona button to start exactly one scan, which
+// navigates straight to that run's /scans/:id detail (the old dual-persona
+// auto-launch -> /scans list round-trip is retired). Once the run reaches a
+// terminal state, its detail replays the persisted results (ScanReplay) with
+// the scored fixture job. No EventSource is opened on this path (a terminal
+// run's detail is a plain JSON fetch), so the old SSE route warm-up request
+// is no longer needed. >=100 raw chars (POST /api/resume's `PasteBody`
+// schema) — trimmed length is what ResumeUpload's "Use this text" button
+// gates on, so pad well past it.
 const SAMPLE_RESUME = "Jane Doe\nSenior Backend Engineer\nPayments, Node.js, Postgres\n" + "x".repeat(120);
 
-test("paste résumé -> dual-persona scan -> /scans list -> completed run replays a scored job", async ({ page }) => {
+test("paste résumé -> explicit remote scan -> /scans/:id -> completed run replays a scored job", async ({ page }) => {
   await page.goto("/resume");
 
   // The DB is shared across spec files within one `test:e2e` invocation (only
@@ -28,25 +30,25 @@ test("paste résumé -> dual-persona scan -> /scans list -> completed run replay
   await page.getByPlaceholder(/paste the plain text of your résumé/i).fill(SAMPLE_RESUME);
   await page.getByRole("button", { name: "Use this text" }).click();
 
-  await page.waitForURL("**/scans");
+  // Upload no longer auto-scans: the "Résumé ready" prompt Card appears
+  // above ResumeView, and the run only starts once the persona button is
+  // clicked.
+  await expect(page.getByText("Résumé ready")).toBeVisible();
+  await page.getByRole("button", { name: "Scan remote roles" }).click();
 
-  // Both just-started persona runs land in the list as clickable run cards
-  // (ScansList Cards carry role="button" and a "N worth · N ghost · N scored"
-  // stats line; the "Scan now · …" launcher buttons don't). Prior specs may
-  // have left older runs behind in the shared DB, so assert at-least-two.
-  const runCards = page.getByRole("button").filter({ hasText: /\d+ worth · \d+ ghost · \d+ scored/ });
-  await runCards.first().waitFor();
-  expect(await runCards.count()).toBeGreaterThanOrEqual(2);
+  // handleScan navigates straight to the new run's detail page.
+  await page.waitForURL(/\/scans\/[^/]+$/);
 
-  // The list fetches once on mount (no polling), so reload until a run shows
-  // a terminal tag — "Completed", or "Partial" when the daily cap stopped it.
+  // The detail page swaps to ScanReplay once its status flips terminal —
+  // ScanReplay renders the raw `detail.status` ("completed"/"failed", lower
+  // case) plus a "Partial — daily cap" tag when the daily cap stopped it.
+  // Reload until one shows up (mirrors the old list-page polling; the SSE
+  // bridge should also refetch on its own, but reload is the robust
+  // fallback).
   await expect(async () => {
     await page.reload();
-    await expect(runCards.filter({ hasText: /Completed|Partial/ }).first()).toBeVisible({ timeout: 2_000 });
+    await expect(page.getByText(/completed|partial/i).first()).toBeVisible({ timeout: 2_000 });
   }).toPass({ timeout: 30_000 });
-
-  await runCards.filter({ hasText: /Completed|Partial/ }).first().click();
-  await page.waitForURL(/\/scans\/[^/]+$/);
 
   // ScanReplay's Score section lists the fixture posting as a scored row.
   // Score is deterministic (MATCH_SCORE fixture -> 4.2); the legitimacy TIER

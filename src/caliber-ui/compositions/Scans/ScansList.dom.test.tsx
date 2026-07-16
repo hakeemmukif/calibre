@@ -36,4 +36,9 @@ describe('ScansList', () => {
     render(<ScansList runs={[{ ...run, stats: { ...run.stats, capStopped: true } }]} onOpen={() => {}} />);
     expect(screen.getByText(/partial/i)).toBeInTheDocument();
   });
+
+  it('renders a persona tag on the row', () => {
+    render(<ScansList runs={[run]} onOpen={() => {}} />);
+    expect(screen.getByText('remote')).toBeInTheDocument();
+  });
 });

@@ -53,7 +53,10 @@ export function ScansList({ runs, onOpen }: ScansListProps) {
             onKeyDown={(e) => handleKeyDown(e, run.id)}
           >
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-              <span style={{ font: "var(--type-h3)", color: "var(--text-strong)" }}>{run.resumeName}</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ font: "var(--type-h3)", color: "var(--text-strong)" }}>{run.resumeName}</span>
+                <Tag tone="neutral">{run.persona}</Tag>
+              </div>
               <StatusIndicator run={run} />
             </div>
             <div style={{ font: "var(--type-caption)", color: "var(--text-muted)", marginTop: 3 }}>
