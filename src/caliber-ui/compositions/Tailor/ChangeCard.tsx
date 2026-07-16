@@ -30,6 +30,9 @@ export function ChangeCard({ change, accepted, onToggle }: ChangeCardProps) {
           <span style={{ font: "var(--type-eyebrow)", textTransform: "uppercase", letterSpacing: "var(--tracking-caps)", color: "var(--text-faint)" }}>
             {change.section}
           </span>
+          <span style={{ font: "var(--type-caption)", color: "var(--fit-mid)" }} title="Requirement this edit serves">
+            ↳ {change.requirement}
+          </span>
           <span
             style={{
               font: "600 11px/1 var(--font-body)",
