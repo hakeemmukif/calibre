@@ -2,7 +2,7 @@
 
 > 🗄️ **DB = embedded SQLite (libsql), no database service.** `DATABASE_URL=file:/var/lib/caliber/data/caliber.db` on the `dbdata` named volume. There is no Postgres container. See [`docs/superpowers/specs/2026-07-16-sqlite-migration-design.md`].
 >
-> ⚠️ **Re-validate on SQLite.** The 2026-07-16 Colima smoke was against the old Postgres stack and is now superseded by the SQLite migration — re-run the build + boot + migrate + seed + PDF smoke on the target host before going live. The VPS is x86_64 and builds its own image (`--build`).
+> ✅ **SQLite stack locally validated 2026-07-16** on Colima (arm64) against these exact artifacts: build → migrate → seed → clean boot → login 200 / register 201 → Chromium PDF render → `.db`+`-wal`+`-shm` on the `dbdata` volume, with data surviving both `docker compose restart app` and a full `down`+`up`. The VPS is x86_64 and builds its own image (`--build`), so re-run the smoke there on first deploy.
 
 ## Architecture constraints (do not violate)
 - **Exactly ONE app process.** The in-memory SSE run-registry and the single url-check worker (started by `src/instrumentation.ts` `register()`) only work in one process. **No PM2 cluster, no compose `replicas`.** A second app instance silently breaks SSE streaming and the url-check queue.
@@ -50,6 +50,11 @@ SQLite is one file, but do **not** `cp` a live WAL DB — take a consistent snap
 
 **Nightly snapshot (floor).** `VACUUM INTO` is a safe hot copy while the app runs (single-writer). Cron on the host:
 ```
+# VACUUM INTO refuses to overwrite an existing file — clear last night's snapshot
+# FIRST or the job fails silently from night two (verified on the running stack:
+# "SQLITE_ERROR: output file already exists"). rm-first is idempotent even after
+# a partial run (e.g. died between vacuum and cp).
+docker compose exec -T app rm -f /var/lib/caliber/data/snapshot.db
 # consistent db snapshot written into the dbdata volume, then copied off
 docker compose exec -T app npx tsx -e "const{createClient}=require('@libsql/client');const c=createClient({url:process.env.DATABASE_URL});c.execute(\"VACUUM INTO '/var/lib/caliber/data/snapshot.db'\").then(()=>console.log('ok'))"
 cp   /var/lib/docker/volumes/<project>_dbdata/_data/snapshot.db /backups/caliber-$(date +%F).db
