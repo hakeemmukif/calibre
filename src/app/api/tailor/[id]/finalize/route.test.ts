@@ -137,6 +137,8 @@ describe("POST /api/tailor/:id/finalize", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.resume.summary).toBe(TAILORED_STORE.summary);
+    // No reportId on this draft — atsDelta must be present on the wire and null.
+    expect(body.atsDelta).toBeNull();
   });
 
   it("empty JSON body -> 422 VALIDATION_ERROR", async () => {

@@ -87,10 +87,11 @@ describe("tailoredResumesRepo", () => {
     expect(completed?.completedAt).not.toBeNull();
 
     const finalizedAt = new Date();
-    const finalized = await repo.finalize(inserted.id, { acceptedIndices: [0], finalizedAt });
+    const finalized = await repo.finalize(inserted.id, { acceptedIndices: [0], finalizedAt, atsDelta: null });
     expect(finalized?.finalizedAt).not.toBeNull();
     expect(finalized?.status).toBe("completed");
     expect(finalized?.acceptedIndices).toEqual([0]);
+    expect(finalized?.atsDelta).toBeNull();
     // task-B8 review fix (Finding 2): finalize must NOT overwrite `structured`
     // — it stays the immutable tailored draft so a later re-finalize with a
     // different accepted set can still recompute from it.

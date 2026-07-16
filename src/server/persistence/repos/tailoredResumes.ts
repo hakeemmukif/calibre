@@ -67,7 +67,7 @@ export function createTailoredResumesRepo(db: Db) {
     // once that lookup succeeds; no separate check needed here.
     async finalize(
       id: string,
-      patch: { acceptedIndices: number[]; finalizedAt: Date },
+      patch: { acceptedIndices: number[]; finalizedAt: Date; atsDelta: { before: number; after: number; total: number } | null },
     ): Promise<TailoredResumeRow | null> {
       const [updated] = await db.update(tailoredResumes).set(patch).where(eq(tailoredResumes.id, id)).returning();
       return updated ?? null;

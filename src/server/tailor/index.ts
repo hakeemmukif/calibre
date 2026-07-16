@@ -24,7 +24,7 @@ import { create, type RunHandle } from "@/server/runs/registry";
 import { TailoredResume } from "@/types";
 import { toTailoredResume } from "./assemble";
 import { correlate, type CorrelateDeps } from "./correlate";
-import { fabricationViolations } from "./correlate-metrics";
+import { atsPresentCount, fabricationViolations } from "./correlate-metrics";
 import { NoActiveResumeError, UnknownJobError, UnknownReportError } from "./errors";
 import { applyAcceptedDiff, applyEdits, DiffEntrySchema } from "./merge";
 
@@ -325,9 +325,26 @@ export async function finalizeTailor(id: string, userId: string, acceptedIndices
     throw new Error(`tailored_resumes ${id}: base résumé ${row.baseResumeId} no longer exists`);
   }
 
-  applyAcceptedDiff(baseResumeRow.structured, row.diff, acceptedIndices);
+  const merged = applyAcceptedDiff(baseResumeRow.structured, row.diff, acceptedIndices);
 
-  const updated = await tailoredResumesRepo.finalize(id, { acceptedIndices, finalizedAt: new Date() });
+  // Deterministic ATS before→after delta (tailor-correlation-engine design):
+  // `before`/`total` are frozen at the moment the linked report finished
+  // (report.ats was computed against the SAME base résumé this run
+  // tailors — design §7), `after` is recomputed fresh against the
+  // accepted-only merge on every finalize, so re-finalizing with a
+  // different accepted set always reflects that set's own ATS delta.
+  let atsDelta: { before: number; after: number; total: number } | null = null;
+  if (row.reportId) {
+    const reportRow = await correlationReportsRepo.getById(row.reportId, userId);
+    if (!reportRow) throw new Error(`tailored_resumes ${id}: report ${row.reportId} no longer exists`);
+    if (!reportRow.ats) {
+      throw new Error(`tailored_resumes ${id}: report ${row.reportId} has no ats signal (status: ${reportRow.status})`);
+    }
+    const terms = reportRow.rows.map((r) => r.term);
+    atsDelta = { before: reportRow.ats.present, after: atsPresentCount(terms, merged), total: reportRow.ats.total };
+  }
+
+  const updated = await tailoredResumesRepo.finalize(id, { acceptedIndices, finalizedAt: new Date(), atsDelta });
   if (!updated) throw new Error(`tailored_resumes ${id} vanished during finalize`);
   return toTailoredResume(updated);
 }

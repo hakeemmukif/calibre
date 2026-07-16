@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { insertJob, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
-import { jobs, resumes, sources, tailoredResumes, users } from "@/server/persistence/schema";
+import { correlationReports, jobs, resumes, sources, tailoredResumes, users } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import { computeAtsScore } from "@/server/resume/atsScore";
 import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
@@ -11,6 +11,7 @@ vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
 
 const { finalizeTailor, RunNotReadyError, UnknownTailorIdError } = await import("./index");
 const { tailoredResumesRepo } = await import("@/server/persistence/repos/tailoredResumes");
+const { correlationReportsRepo } = await import("@/server/persistence/repos/correlationReports");
 
 const BASE_STORE = {
   storeVersion: 2 as const,
@@ -58,6 +59,7 @@ describe("finalizeTailor", () => {
 
   afterEach(async () => {
     await state.testDb.delete(tailoredResumes);
+    await state.testDb.delete(correlationReports);
     await state.testDb.delete(jobs);
     await state.testDb.delete(resumes);
     await state.testDb.delete(sources);
@@ -208,5 +210,86 @@ describe("finalizeTailor", () => {
 
     const result = await finalizeTailor(draft.id, BOOTSTRAP_ADMIN_ID, [0, 1]);
     expect(result.resume?.skills).toEqual(["TypeScript", "Go"]);
+  });
+
+  it("computes and persists atsDelta from the linked report's ats signal and the accepted merge", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id);
+    const resume = await insertResume(state.testDb, { isActive: true, structured: BASE_STORE });
+
+    const report = await correlationReportsRepo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
+      jobId: job.id,
+      resumeId: resume.id,
+      rows: [],
+      status: "queued",
+      model: "openai/gpt-4.1",
+    });
+    await correlationReportsRepo.complete(report.id, {
+      rows: [
+        { requirement: "TypeScript experience", term: "TypeScript", kind: "must", status: "met", evidence: "TypeScript", atsPresent: true, reason: "r", note: null },
+        { requirement: "Go experience", term: "Go", kind: "nice", status: "gap", evidence: null, atsPresent: false, reason: "r", note: null },
+      ],
+      semantic: { met: 1, buried: 0, gap: 1, total: 2 },
+      ats: { present: 1, total: 2, missing: ["Go"] },
+      model: "mock",
+      costUsd: 0.01,
+      completedAt: new Date(),
+    });
+
+    const draft = await tailoredResumesRepo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
+      jobId: job.id,
+      baseResumeId: resume.id,
+      reportId: report.id,
+      diff: DIFF,
+      status: "queued",
+      model: "openai/gpt-4.1",
+    });
+    await tailoredResumesRepo.complete(draft.id, {
+      structured: TAILORED_STORE,
+      diff: DIFF,
+      model: "mock",
+      costUsd: 0.03,
+      completedAt: new Date(),
+      reportId: report.id,
+    });
+
+    // Accept only the skills "add Go" edit (index 1) — DIFF[0] (summary)
+    // doesn't touch either report term, so it's the +1 "Go" bullet that
+    // moves ATS presence from 1/2 to 2/2.
+    const result = await finalizeTailor(draft.id, BOOTSTRAP_ADMIN_ID, [1]);
+    expect(result.atsDelta).toEqual({ before: 1, after: 2, total: 2 });
+
+    const row = await tailoredResumesRepo.getById(draft.id, BOOTSTRAP_ADMIN_ID);
+    expect(row?.atsDelta).toEqual({ before: 1, after: 2, total: 2 });
+  });
+
+  it("atsDelta is null for a tailored résumé with no linked report", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id);
+    const resume = await insertResume(state.testDb, { isActive: true, structured: BASE_STORE });
+
+    const draft = await tailoredResumesRepo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
+      jobId: job.id,
+      baseResumeId: resume.id,
+      diff: DIFF,
+      status: "queued",
+      model: "openai/gpt-4.1",
+    });
+    await tailoredResumesRepo.complete(draft.id, {
+      structured: TAILORED_STORE,
+      diff: DIFF,
+      model: "mock",
+      costUsd: 0.03,
+      completedAt: new Date(),
+    });
+
+    const result = await finalizeTailor(draft.id, BOOTSTRAP_ADMIN_ID, [0]);
+    expect(result.atsDelta).toBeNull();
+
+    const row = await tailoredResumesRepo.getById(draft.id, BOOTSTRAP_ADMIN_ID);
+    expect(row?.atsDelta).toBeNull();
   });
 });
