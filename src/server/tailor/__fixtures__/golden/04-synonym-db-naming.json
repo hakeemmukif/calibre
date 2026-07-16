@@ -1,0 +1,51 @@
+{
+  "id": "04-synonym-db-naming",
+  "category": "synthetic",
+  "resume": {
+    "storeVersion": 2,
+    "extractionPath": "text",
+    "name": "Wei Ming Tan",
+    "headline": "Backend Engineer",
+    "location": "Kuala Lumpur",
+    "summary": "Backend engineer building order and payments services.",
+    "contact": [],
+    "education": [],
+    "projects": [],
+    "certifications": [],
+    "languages": [],
+    "sections": [],
+    "experience": [
+      {
+        "company": "Fintrack",
+        "title": "Backend Engineer",
+        "dates": "2020-2023",
+        "isCurrent": false,
+        "bullets": [
+          "Designed Postgres schemas and tuned slow queries for a 2M-row orders table",
+          "Built REST APIs in Node.js serving 500K daily requests"
+        ]
+      }
+    ],
+    "skills": [
+      { "label": "Backend", "items": ["Node.js", "Postgres", "Docker"] }
+    ]
+  },
+  "jdFacts": {
+    "title": "Backend Engineer",
+    "mustHaves": [
+      "PostgreSQL schema design and query optimisation",
+      "REST API design in Node.js",
+      "Rust services in production"
+    ],
+    "niceToHaves": [],
+    "responsibilities": [],
+    "redFlags": []
+  },
+  "expected": {
+    "rows": [
+      { "requirement": "PostgreSQL schema design and query optimisation", "status": "met" },
+      { "requirement": "REST API design in Node.js", "status": "met" },
+      { "requirement": "Rust services in production", "status": "gap" }
+    ]
+  }
+}

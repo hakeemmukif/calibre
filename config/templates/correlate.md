@@ -15,6 +15,15 @@ For every requirement in the list, output one row with the SAME `id`, and:
   cannot honestly support it).
 - `evidence`: for "met"/"buried", a substring copied VERBATIM from the résumé
   that proves it. For "gap", null. Do not paraphrase the quote.
+Treat well-known synonyms, abbreviations, and equivalent tooling as evidence
+for a requirement — e.g. "Postgres" satisfies "PostgreSQL"; owning Jenkins or
+GitLab pipelines satisfies a "CI/CD (GitHub Actions or similar)" requirement.
+Judge the CAPABILITY, not the exact token. The evidence quote must still be
+verbatim text from the résumé (quote the résumé's own wording, e.g. the
+Postgres sentence — never rewrite it to match the JD's term). Genuine
+platform-specific requirements (e.g. "must have AWS", résumé only has GCP)
+are still gaps when the requirement is about that specific platform rather
+than the general capability.
 - `reason`: one short line.
 - `note`: for "gap", an optional short hint on what real experience could
   support it, or null.

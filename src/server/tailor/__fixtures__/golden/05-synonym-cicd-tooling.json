@@ -1,0 +1,51 @@
+{
+  "id": "05-synonym-cicd-tooling",
+  "category": "synthetic",
+  "resume": {
+    "storeVersion": 2,
+    "extractionPath": "text",
+    "name": "Priya Nair",
+    "headline": "DevOps Engineer",
+    "location": "Kuala Lumpur",
+    "summary": "DevOps engineer running build and deploy infrastructure for a services platform.",
+    "contact": [],
+    "education": [],
+    "projects": [],
+    "certifications": [],
+    "languages": [],
+    "sections": [],
+    "experience": [
+      {
+        "company": "Loop Logistics",
+        "title": "DevOps Engineer",
+        "dates": "2021-2024",
+        "isCurrent": false,
+        "bullets": [
+          "Owned Jenkins pipelines building and deploying 14 services",
+          "Managed Terraform modules provisioning staging and production environments"
+        ]
+      }
+    ],
+    "skills": [
+      { "label": "Infrastructure", "items": ["Jenkins", "Terraform", "AWS"] }
+    ]
+  },
+  "jdFacts": {
+    "title": "DevOps Engineer",
+    "mustHaves": [
+      "CI/CD pipeline ownership (GitHub Actions or similar)",
+      "Infrastructure as code with Terraform",
+      "Kubernetes cluster administration"
+    ],
+    "niceToHaves": [],
+    "responsibilities": [],
+    "redFlags": []
+  },
+  "expected": {
+    "rows": [
+      { "requirement": "CI/CD pipeline ownership (GitHub Actions or similar)", "status": "met" },
+      { "requirement": "Infrastructure as code with Terraform", "status": "met" },
+      { "requirement": "Kubernetes cluster administration", "status": "gap" }
+    ]
+  }
+}
