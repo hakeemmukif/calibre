@@ -1,0 +1,368 @@
+# Remote-Startup Niche & Source Expansion — Design Spec
+
+Date: 2026-07-16. Status: **operator-approved design, pre-implementation.**
+Grounding: Opus code deep-read + a 7-modality web-research fan-out with adversarial
+verification (4 of 7 sweeps completed; 74 sources, 5 verdicts), Fable synthesis — all 2026-07-16.
+Supersedes the niche framing in `2026-07-11-caliber-standalone-design.md` §11 (see §9).
+
+## 1. Summary
+
+Caliber's niche becomes **a global remote-startup job portal spanning every job
+function** — engineering, product, design, operations, finance, legal, marketing,
+sales, people/HR, customer success, and executive. The operator's rule: *"as long as
+we have a résumé, the job should be visible."* The Malaysia/SEA-local persona stays,
+alongside the remote persona, unchanged.
+
+The central finding: **the source layer was never tech-only — the company list was.**
+ATS board APIs are *company*-scoped, not *function*-scoped. A live fetch of Stripe's
+Greenhouse board returned **525 open roles, 54–77% of them non-engineering** (86 sales,
+71 ops, 36 finance, 31 marketing, 28 CS, 20 legal, 11 HR, 6 strictly exec-titled
+including "Chief Compliance Officer (APAC)" and "Head of Finance Operations"). Lever
+confirmed the same on SEA companies. The three ATS connectors already shipped
+(`greenhouse`, `lever`, `ashby`) therefore *already* reach the entire niche. They are
+pointed at 12 companies.
+
+So this program does not add many connectors. It (a) fixes the two code paths that
+structurally reject the new niche, (b) builds a **company-list engine** that takes the
+seeded list from 12 → 1,500–4,000 verified remote startups using MIT-licensed public
+datasets and the connectors that already exist, and (c) **decouples ingestion from
+per-user matching** — a global crawler filling a shared postings pool — because
+per-user scan-time fan-out across ~1,000 boards does not survive contact with reality.
+
+## 2. Operator-locked decisions (2026-07-16 — do not re-litigate)
+
+| # | Decision | Value |
+|---|----------|-------|
+| 1 | Niche | Global **remote startups, all job functions** (incl. exec); SEA-local persona retained |
+| 2 | Matching | **Two-stage**: de-biased cheap title/function filter (~thousands → ~200) → cheap LLM function classifier → deep LLM `scoreMatch` on ~40 |
+| 3 | Scope | **Full program**: matching fix + company-list engine + ingestion/matching decoupling |
+| 4 | Coverage strategy | **More companies, not more function-boards.** Single-function boards are Tier 3 (see §4.2) |
+| 5 | Per-user `jobs` | **Kept** (multitenancy decision intact) — re-cast as the materialized *match view*, not the posting universe |
+| 6 | JobStreet | **Kept, capped, not scaled.** Local-persona growth goes via Glints instead (§7) |
+| 7 | Blocked sources | LinkedIn, Indeed, Glassdoor, Wellfound, Remotive — never (§4.2 Tier 3) |
+
+## 3. Grounding (verified in code / live, 2026-07-16)
+
+**Verified by reading the code:**
+- `src/server/search/connector.ts` — `SourceConnector { id, kind:'ats'|'board'|'manual', persona, discover(ctx) → AsyncIterable<RawPosting>, fetchDetail?, extractQuestions? }`.
+- `src/server/persistence/seed.ts:22-33` — **12 employer rows**, all tech startups. `config.connector` is the FACTORIES key; `config.slug` the company slug; `config.geo = {scope, regions?}`.
+- `src/server/search/connectors/index.ts` — one connector fans out across many employer rows. Registry: greenhouse, lever, ashby, jobstreet (+fixture under test doubles).
+- `src/server/persistence/repos/sources.ts` — sources are **global admin-managed reference data**, no `userId`.
+- `src/server/search/run.ts:33` `TOP_N_CANDIDATES = 30`; `:34` `SCORE_CONCURRENCY = 3`; `:61` `DEFAULT_CONCURRENCY = 8`; `:535` `pool.slice(0, TOP_N_CANDIDATES)`.
+- `src/server/persistence/schema.ts:176` — `unique(userId, dedupeKey)` on `jobs`.
+- `src/server/search/connectors/jobstreet.ts` — calls SEEK's **unauthenticated `jobsearch/v5` JSON API** + public `/graphql jobDetails`, honest self-identifying UA `Mozilla/5.0 (compatible; caliber/1.0)`, capped ~3 pages × 30 = ~90 postings. Does **not** scrape the Cloudflare-walled SSR page.
+
+**Verified by running the code** — `roleFuzzyMatch` against a *literally identical* posting title:
+
+```
+REJECT | "CEO"               (tokens: [])             vs "CEO"
+REJECT | "CFO"               (tokens: [])             vs "Chief Financial Officer"
+REJECT | "Chief of Staff"    (tokens: [])             vs "Chief of Staff"
+REJECT | "Head of Finance"   (tokens: ["finance"])    vs "Head of Finance"
+REJECT | "Head of Operations"(tokens: ["operations"]) vs "Head of Operations"
+REJECT | "VP of Marketing"   (tokens: ["marketing"])  vs "VP of Marketing"
+REJECT | "Recruiter"         (tokens: ["recruiter"])  vs "Recruiter"
+MATCH  | "Operations Manager" · "Product Manager" · "Financial Controller"
+       | "Account Executive"  · "Customer Success Manager" · "Backend Engineer"
+```
+
+Two root causes in `src/server/search/roleMatch.ts` (both inherited from the donor's
+`roleFuzzyMatch`, which was built for engineers):
+1. `roleTokens()` drops any word ≤3 chars unless in `SHORT_SPECIALTY` — a list that is
+   *entirely tech acronyms* (`api,sre,sdk,cli,gpu,cpu,ios,qa,ux,ui,ar,vr,ocr,crm,erp`).
+   So `CEO/CTO/CFO/COO/VP` tokenize to `[]`, and `titleTokens.length === 0` returns
+   `false` immediately. **A CEO's résumé currently matches nothing in the universe.**
+2. The `overlap.length < 2` rule kills single-token roles. `head`/`chief`/`of` are
+   stopwords, so "Head of Finance" → `["finance"]` — one token can never reach two
+   overlaps. Same for Recruiter, Controller, Paralegal, Copywriter.
+
+**Verified live (web):** `boards-api.greenhouse.io/v1/boards/stripe/jobs` → HTTP 200,
+525 roles, 54–77% non-eng. `kalil0321/ats-scrapers` CSVs downloaded: **greenhouse 4,966
++ ashby 2,856 + lever 2,113 slugs**, MIT licence confirmed via GitHub API, schema
+`name,slug,url` (e.g. `Ramp,ramp,https://jobs.lever.co/ramp`). SEA slugs live-verified:
+`GoToGroup` (lever), `shopback-2` (lever), `bjakcareer` (ashby). **Aspire's slug is NOT
+`aspire`** — 404'd live.
+
+**Research gap — declared:** the dedicated **ATS-platform enumeration** and
+**exec/fractional** sweeps died before completing. Workable/SmartRecruiters/Recruitee
+endpoint mechanics, rate limits, and ToS posture are therefore **UNKNOWN**; so is the
+exec-marketplace landscape. Both are gated on verification (§4.2 Tier 2), not assumed.
+
+## 4. Design
+
+### 4.1 Stage 1 — Matching fix (the gate that ships the old niche)
+
+Nothing else is safe to ship before this: every seeded company funnels through
+`roleMatch`, so expanding sources first means paying to ingest ops/finance/exec
+postings that are then silently discarded.
+
+**De-bias `roleTokens`.** The ≤3-char rule plus a tech-only acronym allowlist is the
+bug. Replace with: keep tokens ≥2 chars, and treat a curated set of *role* acronyms
+(`ceo,cto,cfo,coo,cmo,cro,cpo,vp,gm,hr,pm,bd,ae,sdr,csm,fp&a` …) as first-class
+alongside the existing tech ones. `SHORT_SPECIALTY` becomes function-agnostic.
+
+**Kill the `overlap.length < 2` floor for discriminating single tokens.** A single
+*non-baseline* token ("finance", "operations", "marketing", "recruiter") that matches
+is real signal — the floor exists to stop `["engineer"]`-style baseline collisions,
+which `BASELINE_TOKENS` already handles. Rule becomes: ≥1 shared **non-baseline**
+token, and drop the blanket ≥2 requirement when the sole overlap is non-baseline.
+
+**Function tagging.** Stage-1 assigns a coarse `function` (eng/product/design/ops/
+finance/legal/marketing/sales/people/cs/exec) from title tokens; a cheap LLM classifier
+resolves only the ambiguous ones on the ~200 survivors. Deep `scoreMatch` runs on ~40.
+
+**Deterministic ranking before any slice — the second bug.** `run.ts:535`
+`pool.slice(0, TOP_N_CANDIDATES)` slices a Map in **insertion order**, i.e. whichever
+connector won the 8-wide `pLimit` race. At 12 companies this never bites (fewer than 30
+candidates). At 1,000 it deep-scores **30 arbitrary postings chosen by network race
+order** — expansion would make results *worse and non-deterministic*. Sort stage-1
+survivors by `(stage1Score desc, postedAt desc, stableKey asc)` before the slice.
+**Map-insertion order must never reach the slice.**
+
+### 4.2 Tiered source architecture
+
+**Tier 1 — do first (all reachable with existing connectors):**
+
+| Source | Non-eng value | Effort | Risk |
+|---|---|---|---|
+| **jobhive CSVs** — 9,935 slugs across greenhouse/ashby/lever | Every function at every company; **zero new connector code** | S | MIT; same public APIs already called |
+| **Verified SEA seeds** — `GoToGroup`, `shopback-2`, `bjakcareer` | SEA + function-diverse, slugs live-verified | S | None. Resolve Aspire's real token first |
+| **yc-oss/api** (6,043 YC cos, daily JSON, `isHiring`) + **remoteintech/remote-jobs** (883 cos, ships `careers_url`, 40k★, pushed 2026-07-15) + **topstartups.io** (1,261) | Startup/remote signal; `careers_url` feeds ATS auto-detection | S | yc-oss has no LICENSE file (mirrors YC public data); remoteintech is NOASSERTION — fine for internal seeding, **read before redistributing** |
+
+**Tier 2 — later, each behind a verification gate:**
+- **Workable** — 4,269 slugs already in the jobhive CSV, the largest startup ATS not
+  covered. **Mechanics/ToS UNKNOWN** (sweep died). One day of verification before any build.
+  Same for **SmartRecruiters** (2,214), **Recruitee**/**Personio** (EU startups).
+- **Himalayas API** — free, documented, no auth, ~108k remote jobs, explicit
+  Finance/Legal/HR/Sales categories. The only general remote board both permissive and
+  useful. **Gap-fill, not backbone**: no ATS/careers field, 24h-stale, 20/page. Needs a
+  startup filter + attribution.
+- **Glints** — most favourable robots.txt of any SEA board (job pages crawlable; only
+  personalized/tracking paths blocked), startup-leaning. **The legal growth path for the
+  local persona**, superseding JobStreet volume growth.
+- **Getro-powered VC boards** (`jobs.a16z.com` et al.) — high-leverage but unverified.
+  If apply links resolve to greenhouse/lever/ashby URLs, one pass yields company + ATS +
+  slug together. One afternoon to check; **do not build ahead of it**.
+
+**Tier 3 — never / trap:**
+- **LinkedIn / Indeed / Glassdoor** — explicit ToS+robots bans, litigated enforcement
+  (hiQ: $500k consent judgment; Proxycurl, 2025: a $10M-ARR business shut down).
+  Structurally no read path.
+- **Wellfound** — best niche fit on paper (130k+ listings, 100% startups), worst access
+  (Cloudflare + DataDome; robots blocks exactly the role-filtered views needed).
+  Partnership or nothing.
+- **Single-function boards** — RepVue (403s its own robots.txt), Mind the Product (**27
+  live roles**), Coroflot (64), TopCSJobs, HR Chief, GoInhouse, AccountingFly, Support
+  Driven, Dribbble (write-only API). **The math is unambiguous: one seeded Stripe ≈ 280
+  non-eng postings; one Mind the Product connector = 27 product postings.** Adding
+  companies dominates adding function boards in every case examined. Sole conditional
+  exception: Chief of Staff Network (5,000 jobs self-reported, access unverified) — one
+  verification hour, because the exec sweep died. Nothing more.
+- **Toptal / MarketerHire** — matching marketplaces, **no ingestible job object**.
+- **Remotive free API** — explicit anti-aggregator ToS clause.
+- **jobdataapi.com** ($295–1,650/mo, 45.5M ATS-sourced jobs) — the "buy" option. It
+  proves the architecture is right (someone commoditized ATS fan-out) but sells
+  *undifferentiated volume*; the curated startup list **is** the differentiation.
+  Revisit only if the company-list engine fails.
+- **Crunchbase** (free tier eliminated 2025), **OpenVC** (investors, not startups),
+  **Indie Hackers** (too small to run an ATS), **Levels.fyi** (eng-skewed), **BuiltIn**.
+- **MDEC** — downgraded to PARTIAL by a verifier: a tax-incentive registry (4,379 MY
+  companies) full of MNC/BPO subsidiaries, names only, zero job/ATS data. **Cradle** —
+  its one API is an orphaned WordPress endpoint with **2 records**. Manual harvesting aids only.
+
+### 4.3 Stage 2 — The company-list engine (the centrepiece)
+
+**Pipeline (one script + one cron):**
+
+1. **Ingest** — vendor the three jobhive CSVs → ~9,935 `(name, slug, ats, url)` rows.
+2. **Filter for niche** — join against yc-oss + remoteintech + topstartups.io **on
+   normalized domain**, never company name (jobhive has `url`, yc-oss `website`,
+   remoteintech `website`; domains are the only reliable join key). Any startup signal
+   survives → expect **1,500–4,000**.
+   *Do not pre-filter for "remote-only companies"* — seed the company and let the
+   existing per-posting geo filter (`config.geo` + parsed `RawPosting.geo`) decide
+   visibility per posting.
+3. **Validate before seeding** (non-negotiable — the Aspire 404 proves listing-page
+   slugs lie): hit the real endpoint (`boards-api.greenhouse.io/v1/boards/{slug}/jobs`
+   etc.), require HTTP 200, record `jobCount` + `lastValidatedAt`. Politeness ≤2–4
+   concurrent per vendor host; ~5k greenhouse slugs at ~1 req/s ≈ **90 minutes, once**.
+   *Trap:* 4,848/4,966 greenhouse rows use the new `job-boards.greenhouse.io` host — the
+   **API host is unaffected**, but slug-extraction regex must accept both hosts.
+4. **Bulk-seed** `sources` rows.
+5. **Freshness loop** (weekly cron) — revalidate every enabled row. On failure increment
+   `consecutiveFailures`; at 3 → `status='dead'` + queue **re-detection**: fetch the
+   company's `careers_url`, run the ATS-signature regex (`boards.greenhouse.io/([\w-]+)`,
+   `jobs.lever.co/([\w-]+)`, `jobs.ashbyhq.com/([\w.-]+)`), and if the company moved
+   (Lever→Ashby happens constantly) **rewrite `config` in place**. A dead slug must never
+   silently 404 forever — it heals or it is visibly disabled with a count on an admin surface.
+6. **Growth loop** — yc-oss `changes/latest.json` daily diff for new YC companies
+   (website → careers scan → slug → validate); quarterly jobhive re-pull; manual SEA
+   harvesting (500 Global SEA ~270–300, East Ventures 300+, MDEC filtered) into the same
+   detection funnel. **This is how the local persona escapes JobStreet dependence.**
+
+**A `sources` row after the engine:**
+
+```json
+{
+  "id": "gh:vercel",
+  "name": "Vercel", "kind": "ats", "persona": "remote", "enabled": true,
+  "config": {
+    "connector": "greenhouse", "slug": "vercel",
+    "geo": { "scope": "anywhere" },
+    "provenance": ["jobhive", "yc-oss"], "companyDomain": "vercel.com",
+    "lastValidatedAt": "2026-07-16T02:00:00Z", "jobCount": 87,
+    "consecutiveFailures": 0, "status": "active"
+  }
+}
+```
+
+Health fields live in `config` initially; promote `status`/`lastValidatedAt` to columns
+when the admin UI needs to query them.
+
+### 4.4 Stage 3 — Decoupling ingestion from matching
+
+**What breaks at 1,000 sources**, from the real constants:
+- **Wall-clock**: 1,000 / 8-wide ≈ 125 sequential waves ≈ **2–5 min fetching**, before
+  40 deep scores × 20–60s / 3-wide ≈ **4.5–13 min scoring** → **10–20 min per scan.**
+- **Politeness**: 1,000 "sources" is really ~3 vendor hosts. Per-user fan-out means
+  every user's daily scan re-fetches ~1,000 boards — N users × 1,000 GETs/day,
+  redundantly. Greenhouse historically doesn't rate-limit; **that is not a guarantee to burn.**
+- **SQLite/libsql**: single writer, and this project's `file:` driver **forbids
+  concurrent `db.transaction`**. Concurrent user scans each writing thousands of
+  per-user rows is exactly the contention shape that hurts.
+- **DB growth**: per-user fan-out duplicates the posting universe per user
+  (`unique(userId, dedupeKey)`) — O(users × postings). ~30k live postings × users is
+  pointless duplication.
+- **Credits**: ~10/scan (~$0.33 at $5=150) covers ~40 deep scores fine *because* the
+  two-stage gate holds. Discovery has no LLM cost — so credits are **not** the
+  decoupling driver. Wall-clock, politeness, and write contention are.
+
+**Decision: decouple.**
+- A **scheduled crawler** (nightly, or 2–4×/day) fetches all enabled sources **once**,
+  upserting a new global **`postings`** table (no `userId`). Global dedupe key: ATS
+  `externalId` when present, else normalized company-domain + title + location bucket.
+  **ATS-direct records win over aggregator (Himalayas) duplicates.**
+- A **user scan** becomes: stage-1 filter over the pool (in-process, ms over ~30k rows)
+  → LLM function classifier on ~200 → deep score ~40. Scan wall-clock drops to
+  **scoring time only**, results are deterministic, and network cost amortizes across
+  all users — the only posture defensible as a good citizen at 1,000 boards.
+- **Per-user `jobs` is kept** (decision #5): it becomes the *materialized match view*.
+  When a pool posting passes a user's stage-1 gate it is admitted into that user's
+  `jobs` — existing `dedupeKey` normalization unchanged, `isNew`/`firstSeen` semantics
+  preserved per user. The table shrinks from the universe to ~hundreds of matched rows/user.
+- **Constraints**: crawler writes in **small sequential batches, no long transactions**
+  (libsql); WAL + busy-timeout to interleave with user-scan writes.
+- Description storage stays lazy (`describe.ts` `ensureDescription`, candidates only)
+  and excerpt-bounded → pool ~100–300k rows/year with churn, comfortably SQLite-sized,
+  and doubles as the copyright mitigation (§7).
+
+**Interim ramp:** at 100–300 companies the current per-scan fan-out still works
+(2–4 min). Ramp to a few hundred after the matching fix; hold the rest until decoupling lands.
+
+## 5. Testing
+
+- **Regression fixtures pinning the new niche** — the exact titles from §3 must MATCH:
+  CEO/CFO/CTO/COO/VP-of-X/Head-of-X/Chief of Staff/Recruiter, each against its identical
+  posting *and* against a plausible variant ("Head of Finance" → "Finance Lead").
+  These fixtures are the guard against silently regressing to the donor's engineer bias.
+- **Negative fixtures kept** — the donor's existing `roleMatch` rejections must not all
+  collapse; de-biasing must not become "match everything". Pin a few true non-matches.
+- **Determinism test** — shuffle candidate insertion order, assert the top-30 slice is
+  byte-identical. This is the guard for the `run.ts:535` bug.
+- **Company-list engine** — CSV parse, domain-join, the `job-boards.greenhouse.io` vs
+  `boards.greenhouse.io` host trap, validation 200/404 handling, `consecutiveFailures`
+  → `status='dead'` → re-detection rewriting `config` in place.
+- **Crawler/pool** — global dedupe key collisions, ATS-beats-aggregator canonical
+  resolution, batch-write behaviour under the no-concurrent-`db.transaction` constraint.
+- Live-verification of any Tier 2 source is a **prerequisite to building it**, not a test.
+
+## 6. Rollout order
+
+1. **Matching fix** — de-biased `roleTokens`/floor + stage-1 function tagging +
+   deterministic ranking before the slice + regression fixtures. **M, ~3–5 days.**
+   *Nothing else ships before this.*
+2. **Company-list engine v1** — jobhive ingest, domain-join filter, validation pass,
+   bulk seed with provenance/health, weekly revalidation + ATS re-detection. Seed the 3
+   verified SEA slugs immediately; resolve Aspire's real token. **Ramp to ~200–300
+   enabled sources, hold the rest.** **M, ~3–5 days.**
+3. **Decoupling** — global `postings` pool, scheduled crawler with per-vendor
+   politeness, global dedupe, `jobs` re-cast as match view, `run.ts` split into crawl
+   and match loops. **Then flip on the full validated list.** **L, ~1.5–2 weeks.**
+
+## 7. Legal posture
+
+**JobStreet, directly** — the shipped connector calls SEEK's *own* unauthenticated JSON
+API with an honest self-identifying UA, capped ~90 postings/scan, and deliberately does
+not touch the Cloudflare-walled SSR page. That is the most defensible form of something
+**SEEK's ToS still prohibits** (export/scrape without written consent; declared
+fingerprinting countermeasures; circumvention itself a violation). Under *Van Buren*'s
+"gates" framing the gate is currently **up** (open endpoint, no block) — **the moment
+SEEK blocks or rate-limits, continued access flips the analysis**: the block becomes the
+gate. Posture: **keep it, low-volume, local-persona only; treat any 403/429 as a stop
+signal, never an obstacle; never spoof a real browser UA; do not scale JobStreet volume
+with this expansion.** Growth goes via Glints. The Proxycurl lesson is that enforcement
+targets the *commercially successful* — risk grows with traction, so cap this dependency now.
+
+**Ranked register:**
+- **Safe** — Greenhouse/Lever/Ashby public APIs used as designed (vendor-documented for
+  external consumption; residual third-party-aggregation clause **UNKNOWN**, but an
+  ecosystem of identical tools exists); jobhive CSVs (MIT); yc-oss/remoteintech
+  datasets; Himalayas with attribution; **storing structured facts + short excerpt +
+  link-out via `applyUrl` rather than mirroring full descriptions**.
+- **Grey** — Glints crawling (robots-open, ToS unverified); one-time scrapes of
+  topstartups.io / Getro boards; per-company careers-page detection GETs (cached,
+  low-frequency — uncontroversial per *Meta v. Bright Data*'s logged-out logic, but each
+  employer's ToS is individually unverified); EU-domiciled **aggregator** boards (CJEU
+  *CV-Online*: aggregating another aggregator's database is the exact infringement
+  pattern — a single employer's own ATS feed is **not**); recruiter names/emails parsed
+  from descriptions (**GDPR third-party PII — do not persist**; cheap fix at parse time).
+- **Dangerous** — LinkedIn (adjudicated twice), Indeed, Glassdoor, SEEK/JobStreet *at
+  meaningful volume or post-block*, and **any circumvention** (fake accounts, CAPTCHA
+  defeat, disguised UAs). Circumvention — not public reading — is what sank hiQ and Proxycurl.
+
+## 8. The honest ceiling
+
+The exec/fractional sweep died, so this is **partly inference and flagged as such**.
+Evidence *does* show posted exec roles on ATS boards (Stripe live: Chief Compliance
+Officer, Head of Finance Operations, Head of Marketing Operations, 6+ exec-titled).
+
+Structurally never captured: **seed-stage founding-exec searches** (run via investors and
+retained search, never posted — *inference, unverified*); **fractional roles**
+(Toptal/MarketerHire have no job object — verified structural misfit); community-gated
+postings (Chief of Staff Network — unverified); referral-only roles; **LinkedIn-only
+postings** (many startups post nowhere else — real, permanent leakage);
+Wellfound-exclusive listings (130k, best fit, hard-blocked); non-English SEA boards;
+companies too small to run any ATS. Closable later: Workable/SmartRecruiters/Recruitee
+startups (~6,500 slugs already resolved in jobhive) are invisible until those connectors
+exist — mechanics **UNKNOWN** because that sweep died.
+
+**Does this kill the niche? No.** *"If we have a résumé, the job should be visible"* is
+satisfiable for the **postable** universe, which spans every function including
+Head-of/VP/Chief titles at funded startups. It is **not** satisfiable for C-suite-at-seed
+or fractional work. **Ship the niche; do not market CEO-search coverage.**
+
+## 9. Reconciliation with prior specs
+
+- `2026-07-11-caliber-standalone-design.md` §11 framed the niche as *Malaysian/SEA
+  professionals seeking remote/global roles + Malaysia-local*. That is now the **local
+  persona**, not the whole product. The remote persona widens to **global remote
+  startups, all functions**. The wedge (fit + **legitimacy**) is unchanged and is the
+  reason single-function boards stay Tier 3 — legitimacy scoring needs the ATS-direct
+  `applyUrl`, which aggregators degrade.
+- **Credits** (`2026-07-16-membership-credits-guardrails-design.md`): scan stays 10
+  credits. Decoupling does not change debit prices — discovery has no LLM cost and moves
+  to a global crawler the user does not pay for; the ~40 deep scores the 10 credits buy
+  are unchanged. **The credit model is unaffected by this program.**
+- **Multitenancy** (`project-multitenant-decisions`): "per-user jobs" is **kept**
+  (decision #5). The global `postings` pool sits *below* it; `jobs` remains per-user.
+- **libsql** (`project-sqlite-migration-shipped`): the `file:` driver's
+  no-concurrent-`db.transaction` constraint binds the crawler's write shape (§4.4).
+
+## 10. Explicitly not built (YAGNI — agreed)
+
+- Any single-function board connector (§4.2 Tier 3).
+- Workable/SmartRecruiters/Recruitee connectors — **gated on verification**, not in this program.
+- Buying jobdataapi.com or any paid feed.
+- Wellfound/LinkedIn/Indeed/Glassdoor access of any kind.
+- A user-facing source picker — sources stay admin-managed global reference data.
+- Full job-description mirroring (excerpt + link-out only — §7).
