@@ -121,13 +121,15 @@ export async function ingestResume(
   input: IngestResumeInput,
   deps: IngestResumeDeps = {},
 ): Promise<Resume> {
-  // Admission-time debit, before extraction: the résumé row doesn't exist
-  // yet, so there is no id for refId — the ledger still carries user/
-  // feature/time. The route already Zod-validates mime/size/text-length, so
-  // the common bad-input cases are rejected free before this ever runs.
-  await assertAndDebit(userId, "resume");
-
   const rawText = await extractText(input);
+
+  // Debit after extraction succeeds, before any LLM call: extraction is
+  // where mime/text validation happens (UnsupportedMimeError,
+  // ResumeTooLongError, DOCX ParseFailedError), so a rejected or unreadable
+  // upload never gets charged. The résumé row doesn't exist yet, so there is
+  // no id for refId — the ledger still carries user/feature/time. Still
+  // precedes the expensive LLM structuring below.
+  await assertAndDebit(userId, "resume");
 
   const isVisionCandidate =
     input.file?.mime === PDF_MIME && rawText.trim().length < VISION_TEXT_THRESHOLD;

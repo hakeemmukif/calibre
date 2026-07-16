@@ -12,6 +12,7 @@ import type { ResumeRow } from "@/server/persistence/repos/resumes";
 import { creditLedger, users } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import { ParseFailedError } from "./derive-view";
+import { UnsupportedMimeError } from "./extract-text";
 import { getActiveResume, ingestResume } from "./ingest";
 import { NonEnglishResumeError } from "./language";
 
@@ -435,7 +436,7 @@ describe("ingestResume — credit debit (admission gate)", () => {
     state.insertReplacingActive.mockImplementation(async (row: { structured: unknown }) => fakeRow(row.structured));
   });
 
-  it("debits 3 credits at admission before extraction (feature 'resume', no refId)", async () => {
+  it("debits 3 after successful extraction, before the LLM (feature 'resume', no refId)", async () => {
     const userId = await seedUser();
     await grant(userId, 3, "admin");
 
@@ -476,5 +477,22 @@ describe("ingestResume — credit debit (admission gate)", () => {
     expect(await balance(userId)).toBe(0);
     const rows = await state.testDb.select().from(creditLedger).where(eq(creditLedger.userId, userId));
     expect(rows).toHaveLength(0);
+  });
+
+  it("an unsupported-mime upload is free — no debit even with a positive balance", async () => {
+    const userId = await seedUser();
+    await grant(userId, 30, "admin");
+
+    const complete = vi.fn();
+    const llm = { complete } as unknown as LlmClient;
+
+    await expect(
+      ingestResume(userId, { file: { bytes: Buffer.from("not a resume"), mime: "text/html" } }, { llm }),
+    ).rejects.toBeInstanceOf(UnsupportedMimeError);
+
+    expect(complete).not.toHaveBeenCalled();
+    expect(await balance(userId)).toBe(30);
+    const rows = await state.testDb.select().from(creditLedger).where(eq(creditLedger.userId, userId));
+    expect(rows.find((r) => r.reason === "debit")).toBeUndefined();
   });
 });
