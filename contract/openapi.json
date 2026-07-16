@@ -3355,6 +3355,16 @@
             },
             "description": "No session"
           },
+          "402": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Insufficient credits"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -3651,6 +3661,16 @@
             },
             "description": "Created + session cookie set"
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Invalid invite code"
+          },
           "409": {
             "content": {
               "application/json": {
@@ -3670,6 +3690,16 @@
               }
             },
             "description": "Validation error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too many registrations from this IP"
           }
         },
         "summary": "Register an account (auto-login)"
@@ -3992,6 +4022,16 @@
             },
             "description": "No session"
           },
+          "402": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Insufficient credits"
+          },
           "409": {
             "content": {
               "application/json": {
@@ -4190,6 +4230,16 @@
               }
             },
             "description": "No session"
+          },
+          "402": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Insufficient credits"
           },
           "404": {
             "content": {
@@ -4438,6 +4488,16 @@
             },
             "description": "No session"
           },
+          "402": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Insufficient credits"
+          },
           "413": {
             "content": {
               "application/json": {
@@ -4594,6 +4654,16 @@
               }
             },
             "description": "No session"
+          },
+          "402": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Insufficient credits"
           },
           "409": {
             "content": {
@@ -4836,6 +4906,16 @@
             },
             "description": "No session"
           },
+          "402": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Insufficient credits"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -4899,6 +4979,16 @@
               }
             },
             "description": "No session"
+          },
+          "402": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Insufficient credits"
           },
           "404": {
             "content": {

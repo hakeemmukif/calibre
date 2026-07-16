@@ -164,6 +164,7 @@ describe("evaluateJob", () => {
       .insert(users)
       .values({ email: "credits-evaluate-broke@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
+    await insertProfile(state.testDb, { id: "profile-credits-evaluate-broke", userId: user.id });
     const source = await insertSource(state.testDb);
     const job = await insertJob(state.testDb, source.id, { userId: user.id, description: "Backend role at Acme." });
     await insertResume(state.testDb, { userId: user.id, isActive: true });

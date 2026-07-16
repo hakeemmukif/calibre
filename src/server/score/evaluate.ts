@@ -25,8 +25,8 @@ export async function evaluateJob(jobId: string, userId: string, deps: { llm?: L
   if (!found) throw new UnknownJobError(jobId);
   const resume = await resumesRepo.getActive(userId);
   if (!resume) throw new NoActiveResumeError();
-  await assertAndDebit(userId, "evaluate", { refId: jobId });
   const profile = await profileRepo.get(userId);
+  await assertAndDebit(userId, "evaluate", { refId: jobId });
   const job = await ensureDescription(found.job, found.source).catch((err) => {
     console.error(`evaluateJob ${jobId}: detail fetch failed:`, err);
     return found.job;

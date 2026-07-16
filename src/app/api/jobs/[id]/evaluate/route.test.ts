@@ -140,6 +140,7 @@ describe("POST /api/jobs/:id/evaluate", () => {
       .insert(users)
       .values({ email: "credits-402-evaluate@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
+    await insertProfile(state.testDb, { id: "profile-credits-402-evaluate", userId: user.id });
     const source = await insertSource(state.testDb);
     const job = await insertJob(state.testDb, source.id, { userId: user.id, description: "Backend role at Acme." });
     await insertResume(state.testDb, { userId: user.id, isActive: true });
