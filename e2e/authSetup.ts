@@ -37,7 +37,9 @@ export default async function globalSetup() {
     throw new Error(`authSetup: register failed: ${registerRes.status()} ${await registerRes.text()}`);
   }
 
-  const profileRes = await context.put("/api/profile", { data: { baseCountry: "MY", relocation: "stay" } });
+  const profileRes = await context.put("/api/profile", {
+    data: { baseCountry: "MY", relocation: "stay", scheduleFlex: "base-hours", employmentPref: "any" },
+  });
   if (!profileRes.ok()) {
     throw new Error(`authSetup: PUT /api/profile failed: ${profileRes.status()} ${await profileRes.text()}`);
   }
