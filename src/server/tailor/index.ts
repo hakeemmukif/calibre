@@ -21,7 +21,7 @@ import { resumesRepo, type ResumeRow } from "@/server/persistence/repos/resumes"
 import { tailoredResumesRepo, type TailoredResumeRow } from "@/server/persistence/repos/tailoredResumes";
 import { correlationReportsRepo, type CorrelationReportRow } from "@/server/persistence/repos/correlationReports";
 import type { ResumeStore } from "@/server/resume/resume-store";
-import { create, type RunHandle } from "@/server/runs/registry";
+import { create, release, type RunHandle } from "@/server/runs/registry";
 import { TailoredResume } from "@/types";
 import { toTailoredResume } from "./assemble";
 import { correlate, type CorrelateDeps } from "./correlate";
@@ -168,6 +168,7 @@ async function failRun(id: string, handle: RunHandle, err: unknown): Promise<voi
     console.error(`tailor run ${id}: failed to persist 'failed' status after crash:`, persistErr);
   }
   handle.emit({ event: "error", data: { error: { code: "INTERNAL", message } } });
+  release(id);
 }
 
 // A poll loop is a new pattern for this feature (correlate's own async job
@@ -414,6 +415,7 @@ async function runTailorJob(
   if (!completed) throw new Error(`tailored_resumes row ${row.id} vanished before completion could be recorded`);
 
   handle.emit({ event: "done", data: await toTailoredResume(completed) });
+  release(row.id);
 }
 
 // task-B8 review pass, Finding 2: `structured` is immutable once completed —

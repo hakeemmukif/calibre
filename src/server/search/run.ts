@@ -155,6 +155,10 @@ export async function startSearch(
 
     return toSearchRun(row);
   } catch (err) {
+    // No subscriber can exist yet (the id was never returned to a client) —
+    // this emit's only job is to flip isTerminal so release() can evict the
+    // handle from the registry Map instead of leaking it per rejected start.
+    handle.emit({ event: "error", data: { error: { code: "INTERNAL", message: err instanceof Error ? err.message : String(err) } } });
     release(runId, userId, input.persona);
     throw err;
   }
@@ -362,10 +366,14 @@ async function runFanOut(
     await searchRunsRepo.updateStats(row.id, stats);
     const finished = await searchRunsRepo.updateStatus(row.id, "completed", { finishedAt: new Date() });
 
-    release(row.id, userId, persona);
     const finalRow = finished ?? (await searchRunsRepo.getById(row.id, userId));
     if (!finalRow) throw new Error(`search_runs row ${row.id} vanished before completion could be recorded`);
     handle.emit({ event: "done", data: toSearchRun(finalRow) });
+    // release() evicts the handle from the registry Map (guarded on
+    // isTerminal) — must run AFTER the 'done' emit above so no SSE/GET
+    // subscriber can observe a gap where the handle is gone but hasn't
+    // terminal-emitted yet.
+    release(row.id, userId, persona);
   } catch (err) {
     // Partial-run persistence (M1): write whatever counters accumulated before
     // the crash so the failed run isn't zeroed. results[] was appended

@@ -41,6 +41,23 @@ describe("run registry", () => {
     expect(getActiveRunForPersona("user-a", "remote")).toBe("run-2");
   });
 
+  it("release evicts a terminal handle from the registry Map", () => {
+    const handle = create("search", "run-1");
+    handle.emit({ event: "done", data: { status: "completed" } });
+    expect(handle.isTerminal).toBe(true);
+
+    release("run-1");
+    expect(get("run-1")).toBeUndefined();
+  });
+
+  it("release does NOT evict a non-terminal (in-flight) handle", () => {
+    const handle = create("search", "run-1");
+    expect(handle.isTerminal).toBe(false);
+
+    release("run-1");
+    expect(get("run-1")).toBe(handle);
+  });
+
   it("the per-persona mutex is per-user — user A's active run never blocks user B (Fable design review)", () => {
     create("search", "run-1", "user-a", "remote");
     expect(getActiveRunForPersona("user-a", "remote")).toBe("run-1");

@@ -332,7 +332,12 @@ describe("startSearch", () => {
   it("throws NoActiveResumeError when no résumé exists", async () => {
     const originalDb = state.testDb;
     state.testDb = await createTestDb(); // fresh, résumé-less DB
+    const uuidSpy = vi.spyOn(crypto, "randomUUID").mockReturnValueOnce("00000000-0000-4000-8000-0000000dead1");
     await expect(startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" })).rejects.toThrow(NoActiveResumeError);
+    // Pre-flight rejection must evict the reserved handle, not leak it in the
+    // registry Map (the synthetic terminal emit in startSearch's catch).
+    expect(getRunHandle("00000000-0000-4000-8000-0000000dead1")).toBeUndefined();
+    uuidSpy.mockRestore();
     state.testDb = originalDb;
   });
 

@@ -11,7 +11,7 @@ vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
 const { buildRequirements, classifyAndVerify, correlate, NoJdFactsError } = await import("./correlate");
 const { UnknownJobError, NoActiveResumeError } = await import("./errors");
 const { correlationReportsRepo } = await import("@/server/persistence/repos/correlationReports");
-const { __resetForTests } = await import("@/server/runs/registry");
+const { __resetForTests, get: getRunHandle } = await import("@/server/runs/registry");
 
 async function pollUntilTerminal(id: string, timeoutMs = 2000) {
   const deadline = Date.now() + timeoutMs;
@@ -160,6 +160,9 @@ describe("correlate", () => {
     expect(row.rows[0].status).toBe("met");
     expect(row.semantic?.total).toBe(row.rows.length);
     expect(row.ats?.total).toBe(row.rows.length);
+    // release() evicts the handle from the registry on terminal completion
+    // (perf/scan-overhead: long-lived processes must not accumulate handles).
+    expect(getRunHandle(queued.id)).toBeUndefined();
   });
 
   it("downgrades an uncited claim to gap (fail-safe, not fail-open)", async () => {

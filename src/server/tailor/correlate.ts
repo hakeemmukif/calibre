@@ -16,7 +16,7 @@ import { resumesRepo, type ResumeRow } from "@/server/persistence/repos/resumes"
 import {
   correlationReportsRepo, type CorrelationReportRow,
 } from "@/server/persistence/repos/correlationReports";
-import { create, type RunHandle } from "@/server/runs/registry";
+import { create, release, type RunHandle } from "@/server/runs/registry";
 import type { ResumeStore } from "@/server/resume/resume-store";
 import type { JdFacts } from "@/server/score/jdFacts";
 import { CorrelationReport, type CorrelationRow } from "@/types";
@@ -187,6 +187,7 @@ async function runCorrelateJob(
   });
   if (!completed) throw new Error(`correlation_reports row ${row.id} vanished before completion`);
   handle.emit({ event: "done", data: toCorrelationReport(completed) });
+  release(row.id);
 }
 
 async function failRun(id: string, handle: RunHandle, err: unknown): Promise<void> {
@@ -195,6 +196,7 @@ async function failRun(id: string, handle: RunHandle, err: unknown): Promise<voi
   try { await correlationReportsRepo.markFailed(id); }
   catch (e) { console.error(`correlate run ${id}: failed to persist 'failed':`, e); }
   handle.emit({ event: "error", data: { error: { code: "INTERNAL", message } } });
+  release(id);
 }
 
 export function toCorrelationReport(row: CorrelationReportRow): CorrelationReport {

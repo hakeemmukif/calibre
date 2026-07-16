@@ -118,11 +118,21 @@ export function getActiveRunForPersona(userId: string, persona: string): string 
   return activeRunByPersona.get(personaSlotKey(userId, persona));
 }
 
-/** Called once a run reaches a terminal state — frees the per-persona slot. */
+/**
+ * Called once a run reaches a terminal state — frees the per-persona slot
+ * (search runs only) and evicts the handle from `runs` so a long-lived
+ * process doesn't accumulate one entry (incl. its `frame`) per run forever.
+ * The eviction is guarded on `isTerminal` so a handle can never be dropped
+ * while still in flight — callers must call this AFTER the terminal
+ * done/error event has been emitted.
+ */
 export function release(id: string, userId?: string, persona?: string): void {
-  if (!userId || !persona) return;
-  const key = personaSlotKey(userId, persona);
-  if (activeRunByPersona.get(key) === id) activeRunByPersona.delete(key);
+  if (userId && persona) {
+    const key = personaSlotKey(userId, persona);
+    if (activeRunByPersona.get(key) === id) activeRunByPersona.delete(key);
+  }
+  const handle = runs.get(id);
+  if (handle?.isTerminal) runs.delete(id);
 }
 
 /** Test-only: clears all in-memory state between test cases. */

@@ -296,6 +296,9 @@ describe("startTailor", () => {
     expect(row?.structured).toEqual(applyEdits(BASE_STRUCTURED, TAILOR_DIFF));
     expect(row?.model).toBe("mock");
     expect(row?.completedAt).not.toBeNull();
+    // release() evicts the handle from the registry on terminal completion
+    // (perf/scan-overhead: long-lived processes must not accumulate handles).
+    expect(getRunHandle(draft.id)).toBeUndefined();
   });
 
   it("carries forward the base résumé's extractionPath (vision) into the derived structured store", async () => {
