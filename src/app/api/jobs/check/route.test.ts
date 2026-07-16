@@ -153,6 +153,21 @@ describe("POST /api/jobs/check", () => {
     expect(body.status).toBe("queued");
     expect(body.alreadyKnown).toBe(false);
   });
+
+  it("a broke non-admin user returns 402 INSUFFICIENT_CREDITS with feature/required/balance details", async () => {
+    const [user] = await state.testDb
+      .insert(users)
+      .values({ email: "credits-402-check@example.com", passwordHash: "h", role: "user", plan: "standard" })
+      .returning();
+    await insertResume(state.testDb, { userId: user.id, isActive: true });
+    requireUser.mockResolvedValue({ id: user.id, email: user.email, role: "user" });
+
+    const res = await POST(jsonRequest({ url: "https://example.com/credits-402-check" }));
+    expect(res.status).toBe(402);
+    const body = await res.json();
+    expect(body.error.code).toBe("INSUFFICIENT_CREDITS");
+    expect(body.error.details).toEqual({ feature: "evaluate", required: 5, balance: 0 });
+  });
 });
 
 describe("GET /api/jobs/check", () => {
@@ -192,7 +207,7 @@ describe("GET /api/jobs/check", () => {
   it("?active=1 returns only the caller's own checks (cross-tenant isolation)", async () => {
     const [userB] = await state.testDb
       .insert(users)
-      .values({ email: `user-b-jobs-check-route-${crypto.randomUUID()}@example.com`, passwordHash: "h", role: "user" })
+      .values({ email: `user-b-jobs-check-route-${crypto.randomUUID()}@example.com`, passwordHash: "h", role: "user", plan: "standard" })
       .returning();
     const [checkA] = await state.testDb.insert(urlChecks).values(newUrlCheckRow({ status: "queued" })).returning();
     const [checkB] = await state.testDb

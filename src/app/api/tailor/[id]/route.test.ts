@@ -131,8 +131,9 @@ describe("GET /api/tailor/:id", () => {
   it("returns a 200 JSON snapshot by default", async () => {
     const source = await insertSource(state.testDb);
     const job = await insertJob(state.testDb, source.id);
-    await insertResume(state.testDb, { isActive: true });
-    llm.scripted = { tailor: TAILOR_RESULT };
+    const resume = await insertResume(state.testDb, { isActive: true });
+    await seedJdFacts(job.id, resume.id);
+    llm.scripted = { tailor: TAILOR_RESULT, correlate: CORRELATE_RESULT };
 
     const created = await POST(postRequest({ jobId: job.id }));
     const run = await created.json();
@@ -280,7 +281,7 @@ describe("GET /api/tailor/:id", () => {
     });
     const [userB] = await state.testDb
       .insert(users)
-      .values({ email: "user-b-tailor-sse@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-tailor-sse@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
 
     requireUser.mockResolvedValue({ id: userB.id, email: userB.email, role: "user" });

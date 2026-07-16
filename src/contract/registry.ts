@@ -60,6 +60,9 @@ import {
   SessionResponse,
   AdminUser,
   AdminUsersResponse,
+  AdminPlanPatch,
+  AdminGrantRequest,
+  CreditsResponse,
 } from "@/types";
 
 const entitySchemas: Record<string, z.ZodType> = {
@@ -99,6 +102,9 @@ const entitySchemas: Record<string, z.ZodType> = {
   SessionResponse,
   AdminUser,
   AdminUsersResponse,
+  AdminPlanPatch,
+  AdminGrantRequest,
+  CreditsResponse,
 };
 
 for (const [name, schema] of Object.entries(entitySchemas)) {
@@ -147,6 +153,16 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "get",
+  path: "/api/credits",
+  summary: "Wallet balance + plan for the header chip",
+  responses: {
+    200: { description: "Wallet balance and plan", content: { "application/json": { schema: CreditsResponse } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
   method: "post",
   path: "/api/resume",
   summary: "Upload (PDF/DOCX) or paste a résumé — F1 ingest",
@@ -165,6 +181,7 @@ registry.registerPath({
   responses: {
     200: { description: "Parsed résumé", content: { "application/json": { schema: Resume } } },
     401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    402: { description: "Insufficient credits", content: { "application/json": { schema: ErrorEnvelope } } },
     413: { description: "File exceeds the 10MB limit", content: { "application/json": { schema: ErrorEnvelope } } },
     422: {
       description: "Bad mime type or too-short/missing text",
@@ -207,6 +224,7 @@ registry.registerPath({
   responses: {
     202: { description: "Run queued", content: { "application/json": { schema: SearchRun } } },
     401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    402: { description: "Insufficient credits", content: { "application/json": { schema: ErrorEnvelope } } },
     409: {
       description: "A run is already active for this persona, or no résumé exists",
       content: { "application/json": { schema: ErrorEnvelope } },
@@ -323,6 +341,7 @@ registry.registerPath({
   responses: {
     200: { description: "The freshly re-scored, frozen Job", content: { "application/json": { schema: Job } } },
     401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    402: { description: "Insufficient credits", content: { "application/json": { schema: ErrorEnvelope } } },
     404: { description: "Malformed or unknown job id", content: { "application/json": { schema: ErrorEnvelope } } },
     409: { description: "No active résumé to score against", content: { "application/json": { schema: ErrorEnvelope } } },
     422: { description: "No job description obtainable — nothing to extract facts from", content: { "application/json": { schema: ErrorEnvelope } } },
@@ -348,6 +367,7 @@ registry.registerPath({
     },
     202: { description: "Pipeline queued", content: { "application/json": { schema: UrlCheck } } },
     401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    402: { description: "Insufficient credits", content: { "application/json": { schema: ErrorEnvelope } } },
     409: { description: "No active résumé to score against", content: { "application/json": { schema: ErrorEnvelope } } },
     422: {
       description: "Invalid body/URL, or pasted text exceeds the 40k-character cap",
@@ -437,6 +457,7 @@ registry.registerPath({
   responses: {
     200: { description: "Persisted, résumé-grounded answer set", content: { "application/json": { schema: ApplicationAnswers } } },
     401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    402: { description: "Insufficient credits", content: { "application/json": { schema: ErrorEnvelope } } },
     404: { description: "Unknown job id (incl. a foreign-owned one — no existence leak)", content: { "application/json": { schema: ErrorEnvelope } } },
     409: { description: "No résumé exists to ground answers against", content: { "application/json": { schema: ErrorEnvelope } } },
     422: { description: "Invalid body (e.g. empty questions[])", content: { "application/json": { schema: ErrorEnvelope } } },
@@ -460,6 +481,7 @@ registry.registerPath({
   responses: {
     202: { description: "Tailor run queued", content: { "application/json": { schema: TailoredResume } } },
     401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    402: { description: "Insufficient credits", content: { "application/json": { schema: ErrorEnvelope } } },
     404: { description: "Unknown job id", content: { "application/json": { schema: ErrorEnvelope } } },
     409: { description: "No résumé exists to tailor", content: { "application/json": { schema: ErrorEnvelope } } },
   },
@@ -499,6 +521,7 @@ registry.registerPath({
   responses: {
     202: { description: "Correlation run queued", content: { "application/json": { schema: CorrelationReport } } },
     401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    402: { description: "Insufficient credits", content: { "application/json": { schema: ErrorEnvelope } } },
     404: { description: "Unknown job id", content: { "application/json": { schema: ErrorEnvelope } } },
     409: { description: "No résumé exists to correlate", content: { "application/json": { schema: ErrorEnvelope } } },
     422: { description: "Invalid body", content: { "application/json": { schema: ErrorEnvelope } } },
@@ -794,14 +817,53 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "patch",
+  path: "/api/admin/users/{id}",
+  summary: "Admin: toggle a user's plan (standard/unlimited)",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: { content: { "application/json": { schema: AdminPlanPatch } } },
+  },
+  responses: {
+    200: { description: "The updated AdminUser", content: { "application/json": { schema: AdminUser } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    403: { description: "Caller is not an admin", content: { "application/json": { schema: ErrorEnvelope } } },
+    404: { description: "Unknown/non-uuid user id", content: { "application/json": { schema: ErrorEnvelope } } },
+    422: { description: "Invalid body (plan must be 'standard' or 'unlimited')", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/admin/users/{id}/credits",
+  summary: "Admin: grant (or debit) credits by an arbitrary non-zero delta",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: { content: { "application/json": { schema: AdminGrantRequest } } },
+  },
+  responses: {
+    200: {
+      description: "The user's new balance",
+      content: { "application/json": { schema: z.object({ balance: z.number().int() }) } },
+    },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    403: { description: "Caller is not an admin", content: { "application/json": { schema: ErrorEnvelope } } },
+    404: { description: "Unknown/non-uuid user id", content: { "application/json": { schema: ErrorEnvelope } } },
+    422: { description: "Invalid body (delta must be a non-zero integer)", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
   method: "post",
   path: "/api/auth/register",
   summary: "Register an account (auto-login)",
   request: { body: { content: { "application/json": { schema: RegisterRequest } } } },
   responses: {
     201: { description: "Created + session cookie set", content: { "application/json": { schema: SessionResponse } } },
+    403: { description: "Invalid invite code", content: { "application/json": { schema: ErrorEnvelope } } },
     409: { description: "Email already registered", content: { "application/json": { schema: ErrorEnvelope } } },
     422: { description: "Validation error", content: { "application/json": { schema: ErrorEnvelope } } },
+    429: { description: "Too many registrations from this IP", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
 

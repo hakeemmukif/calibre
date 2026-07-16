@@ -4,13 +4,16 @@
 // server/* or lib/llm.
 import { CorrelationReport, SseEvent, TailoredResume } from "@/types";
 import { requestJson } from "@/features/http";
+import { refreshCredits } from "@/features/credits/creditsStore";
 
 export async function startTailor(input: { jobId: string; reportId?: string }): Promise<TailoredResume> {
-  return requestJson(
+  const tailored = await requestJson(
     "/api/tailor",
     { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) },
     TailoredResume,
   );
+  refreshCredits();
+  return tailored;
 }
 
 export async function getTailor(id: string): Promise<TailoredResume> {
@@ -18,11 +21,13 @@ export async function getTailor(id: string): Promise<TailoredResume> {
 }
 
 export async function startCorrelate(input: { jobId: string }): Promise<CorrelationReport> {
-  return requestJson(
+  const report = await requestJson(
     "/api/tailor/correlate",
     { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) },
     CorrelationReport,
   );
+  refreshCredits();
+  return report;
 }
 
 export async function getCorrelate(id: string): Promise<CorrelationReport> {

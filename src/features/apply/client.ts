@@ -4,6 +4,7 @@
 import { z } from "zod";
 import { ApplicationAnswer, ApplicationAnswers, ApplicationQuestion } from "@/types";
 import { requestJson } from "@/features/http";
+import { refreshCredits } from "@/features/credits/creditsStore";
 
 export interface ExtractQuestionsInput {
   jobId?: string;
@@ -23,11 +24,13 @@ export async function extractQuestions(input: ExtractQuestionsInput): Promise<Ex
 }
 
 export async function draftAnswers(input: { jobId: string; questions: ApplicationQuestion[] }): Promise<ApplicationAnswers> {
-  return requestJson(
+  const answers = await requestJson(
     "/api/apply/answers",
     { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) },
     ApplicationAnswers,
   );
+  refreshCredits();
+  return answers;
 }
 
 export async function patchAnswers(id: string, answers: ApplicationAnswer[]): Promise<ApplicationAnswers> {

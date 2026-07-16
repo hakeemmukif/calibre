@@ -338,6 +338,8 @@ export const ErrorCode = z.enum([
   "PAYLOAD_TOO_LARGE",
   "FETCH_BLOCKED",
   "NOT_A_JOB_POSTING",
+  "RATE_LIMITED",
+  "INSUFFICIENT_CREDITS",
   "INTERNAL",
   "UNAUTHORIZED",
   "FORBIDDEN",
@@ -444,9 +446,13 @@ export const AuthUser = z.object({
 }); // .parse() strips unknown keys (e.g. passwordHash) by default
 export type AuthUser = z.infer<typeof AuthUser>;
 
+export const CreditsResponse = z.object({ balance: z.number().int(), plan: z.enum(["standard", "unlimited"]) });
+export type CreditsResponse = z.infer<typeof CreditsResponse>;
+
 export const RegisterRequest = z.object({
   email: z.string().email(),
   password: z.string().min(8).max(200),
+  inviteCode: z.string().min(1),
 });
 export type RegisterRequest = z.infer<typeof RegisterRequest>;
 
@@ -470,8 +476,19 @@ export const AdminUser = z.object({
   resumeCount: z.number().int(),
   jobCount: z.number().int(),
   applicationCount: z.number().int(),
+  balance: z.number().int(),
+  plan: z.enum(["standard", "unlimited"]),
 });
 export type AdminUser = z.infer<typeof AdminUser>;
 
 export const AdminUsersResponse = z.object({ items: z.array(AdminUser) });
 export type AdminUsersResponse = z.infer<typeof AdminUsersResponse>;
+
+// AdminPlanPatch — PATCH /api/admin/users/:id body (admin plan toggle).
+export const AdminPlanPatch = z.object({ plan: z.enum(["standard", "unlimited"]) });
+export type AdminPlanPatch = z.infer<typeof AdminPlanPatch>;
+
+// AdminGrantRequest — POST /api/admin/users/:id/credits body (admin credit
+// grant, ±delta). Zero is meaningless as a grant, so it's rejected here.
+export const AdminGrantRequest = z.object({ delta: z.number().int().refine((n) => n !== 0) });
+export type AdminGrantRequest = z.infer<typeof AdminGrantRequest>;

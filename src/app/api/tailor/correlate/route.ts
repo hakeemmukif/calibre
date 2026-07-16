@@ -7,6 +7,7 @@ import { z, ZodError } from "zod";
 import { UuidParam } from "@/server/http/params";
 import { UnauthorizedError } from "@/server/auth/errors";
 import { requireUser } from "@/server/auth/session";
+import { InsufficientCreditsError } from "@/server/credits";
 import { NoActiveResumeError, UnknownJobError } from "@/server/tailor";
 import { correlate, NoJdFactsError } from "@/server/tailor/correlate";
 import type { ErrorEnvelope } from "@/types";
@@ -44,6 +45,9 @@ export async function POST(request: NextRequest) {
     }
     if (err instanceof NoJdFactsError) {
       return errorResponse(409, "CONFLICT", err.message, { reason: "no-jdfacts" });
+    }
+    if (err instanceof InsufficientCreditsError) {
+      return errorResponse(402, "INSUFFICIENT_CREDITS", err.message, { feature: err.feature, required: err.required, balance: err.balance });
     }
     throw err;
   }

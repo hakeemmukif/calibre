@@ -209,7 +209,7 @@ describe("jobsRepo", () => {
 
     const [userB] = await db
       .insert(users)
-      .values({ email: "user-b-jobs@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-jobs@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
 
     const dedupeKey = "dk-cross-tenant";
@@ -640,7 +640,7 @@ describe("jobsRepo", () => {
     const source = await insertSource(db);
     const [userB] = await db
       .insert(users)
-      .values({ email: "user-b-remote-fit@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-remote-fit@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
     const job = await repo.upsertByDedupeKey({
       userId: BOOTSTRAP_ADMIN_ID,
@@ -823,7 +823,7 @@ describe("jobsRepo — cross-tenant isolation", () => {
   async function makeUserB(db: Awaited<ReturnType<typeof createTestDb>>) {
     const [userB] = await db
       .insert(users)
-      .values({ email: `user-b-jobs-isolation-${crypto.randomUUID()}@example.com`, passwordHash: "h", role: "user" })
+      .values({ email: `user-b-jobs-isolation-${crypto.randomUUID()}@example.com`, passwordHash: "h", role: "user", plan: "standard" })
       .returning();
     return userB;
   }

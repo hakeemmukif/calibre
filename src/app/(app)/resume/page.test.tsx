@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-// D7: after a confirmed résumé upload fires the dual-persona search, the page
-// navigates to /scans (both runs are visible in the list) — the sessionStorage
-// scanHandoff → /feed round-trip is retired.
+// D7 pivot (membership-credits Task 8): upload no longer auto-starts a scan.
+// The user reviews the parsed résumé, then explicitly picks a persona to
+// start exactly one scan, which navigates straight to /scans/:id.
 import "@testing-library/jest-dom/vitest";
 import * as React from "react";
 import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
@@ -58,25 +58,50 @@ beforeEach(() => {
   startSearch.mockReset();
 });
 
-describe("ResumePage dual-persona auto-start", () => {
-  it("fires remote+local searches after upload and navigates to /scans", async () => {
-    startSearch.mockResolvedValueOnce({ id: "r-remote" }).mockResolvedValueOnce({ id: "r-local" });
+describe("ResumePage review-then-scan flow", () => {
+  it("does not auto-start a scan after upload, and prompts to scan", async () => {
     render(<ResumePage />);
 
     await pasteResumeText();
 
-    await waitFor(() => expect(startSearch).toHaveBeenCalledWith({ persona: "remote" }));
-    expect(startSearch).toHaveBeenCalledWith({ persona: "local" });
-    await waitFor(() => expect(push).toHaveBeenCalledWith("/scans"));
+    expect(await screen.findByText("Résumé ready")).toBeInTheDocument();
+    expect(startSearch).not.toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
   });
 
-  it("stays on the page with a retry error when both starts fail", async () => {
-    startSearch.mockRejectedValue(new Error("boom"));
+  it("starts exactly one scan for the chosen persona and navigates to /scans/:id", async () => {
+    startSearch.mockResolvedValueOnce({ id: "r-remote" });
     render(<ResumePage />);
 
     await pasteResumeText();
 
-    expect(await screen.findByText(/Search failed to start — retry\. \(boom\)/)).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "Scan remote roles" }));
+
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/scans/r-remote"));
+    expect(startSearch).toHaveBeenCalledTimes(1);
+    expect(startSearch).toHaveBeenCalledWith({ persona: "remote" });
+  });
+
+  it("surfaces a retry error and stops the launching state when the scan fails to start", async () => {
+    startSearch.mockRejectedValueOnce(new Error("boom"));
+    render(<ResumePage />);
+
+    await pasteResumeText();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Scan local roles" }));
+
+    expect(await screen.findByText("boom")).toBeInTheDocument();
     expect(push).not.toHaveBeenCalled();
+  });
+
+  it("dismisses the scan prompt via Not now without starting a scan", async () => {
+    render(<ResumePage />);
+
+    await pasteResumeText();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Not now" }));
+
+    expect(screen.queryByText("Résumé ready")).not.toBeInTheDocument();
+    expect(startSearch).not.toHaveBeenCalled();
   });
 });

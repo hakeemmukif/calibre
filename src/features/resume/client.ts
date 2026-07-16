@@ -3,20 +3,25 @@
 // lib/llm; talks to the route over fetch and `.parse`s the response.
 import { Resume } from "@/types";
 import { requestJson, requestJsonOrNull } from "@/features/http";
+import { refreshCredits } from "@/features/credits/creditsStore";
 
 export type UploadResumeInput = { file: File } | { text: string };
 
 export async function uploadResume(input: UploadResumeInput): Promise<Resume> {
+  let resume: Resume;
   if ("file" in input) {
     const formData = new FormData();
     formData.set("file", input.file);
-    return requestJson("/api/resume", { method: "POST", body: formData }, Resume);
+    resume = await requestJson("/api/resume", { method: "POST", body: formData }, Resume);
+  } else {
+    resume = await requestJson(
+      "/api/resume",
+      { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: input.text }) },
+      Resume,
+    );
   }
-  return requestJson(
-    "/api/resume",
-    { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: input.text }) },
-    Resume,
-  );
+  refreshCredits();
+  return resume;
 }
 
 // 404 (no résumé uploaded yet) resolves to `null` — not an error state.

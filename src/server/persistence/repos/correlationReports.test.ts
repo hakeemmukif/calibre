@@ -54,7 +54,7 @@ describe("correlationReportsRepo", () => {
     const job = await insertJob(db, source.id);
     const [userB] = await db
       .insert(users)
-      .values({ email: "user-b-correlationreports@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-correlationreports@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
 
     const row = await repo.insert({

@@ -5,7 +5,7 @@ import { sessions, users } from "../schema";
 import { createSessionRepo } from "./sessions";
 
 async function seedUser(db: Awaited<ReturnType<typeof createTestDb>>) {
-  const [u] = await db.insert(users).values({ email: "s@x.co", passwordHash: "h", role: "user" }).returning();
+  const [u] = await db.insert(users).values({ email: "s@x.co", passwordHash: "h", role: "user", plan: "standard" }).returning();
   return u;
 }
 
@@ -67,5 +67,30 @@ describe("sessionsRepo", () => {
     expect(found?.id).toBe(u.id);
     const after = await readLastUsedAt(db, "stale");
     expect(after.getTime()).toBeGreaterThanOrEqual(before);
+  });
+
+  it("deletes and rejects a session idle for more than 30 days", async () => {
+    const db = await createTestDb();
+    const u = await seedUser(db);
+    const repo = createSessionRepo(db);
+    await repo.create({ userId: u.id, tokenHash: "old" });
+    const idle = new Date(Date.now() - 31 * 24 * 60 * 60_000); // 31 days
+    await db.update(sessions).set({ lastUsedAt: idle }).where(eq(sessions.tokenHash, "old"));
+
+    expect(await repo.findUserByTokenHash("old")).toBeNull();
+    const [row] = await db.select().from(sessions).where(eq(sessions.tokenHash, "old"));
+    expect(row).toBeUndefined(); // row deleted, not just rejected
+  });
+
+  it("a session idle 29 days still resolves (sliding window)", async () => {
+    const db = await createTestDb();
+    const u = await seedUser(db);
+    const repo = createSessionRepo(db);
+    await repo.create({ userId: u.id, tokenHash: "fresh30" });
+    const idle = new Date(Date.now() - 29 * 24 * 60 * 60_000);
+    await db.update(sessions).set({ lastUsedAt: idle }).where(eq(sessions.tokenHash, "fresh30"));
+
+    const found = await repo.findUserByTokenHash("fresh30");
+    expect(found?.id).toBe(u.id);
   });
 });

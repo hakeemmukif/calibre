@@ -10,6 +10,9 @@
 // touches the DB, which edge can't do).
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME === "nodejs") {
+    if (process.env.NODE_ENV === "production" && !process.env.CALIBER_INVITE_CODE) {
+      throw new Error("CALIBER_INVITE_CODE must be set in production — registration invite gate (membership spec §4.5.2).");
+    }
     const { markStaleRunningOnBoot } = await import("@/server/runs/registry");
     await markStaleRunningOnBoot();
     const { urlChecksRepo } = await import("@/server/persistence/repos/urlChecks");

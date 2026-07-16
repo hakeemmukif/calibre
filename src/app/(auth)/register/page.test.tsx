@@ -26,11 +26,14 @@ describe("RegisterPage", () => {
     register.mockResolvedValue({ id: "u1", email: "new@b.co", role: "user" });
     render(<RegisterPage />);
 
+    fireEvent.change(screen.getByLabelText("Invite code"), { target: { value: "e2e-invite" } });
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "new@b.co" } });
     fireEvent.change(screen.getByLabelText("Password"), { target: { value: "longenough" } });
     fireEvent.click(screen.getByRole("button", { name: "Create account" }));
 
-    await waitFor(() => expect(register).toHaveBeenCalledWith({ email: "new@b.co", password: "longenough" }));
+    await waitFor(() =>
+      expect(register).toHaveBeenCalledWith({ email: "new@b.co", password: "longenough", inviteCode: "e2e-invite" }),
+    );
     await waitFor(() => expect(push).toHaveBeenCalledWith("/"));
   });
 

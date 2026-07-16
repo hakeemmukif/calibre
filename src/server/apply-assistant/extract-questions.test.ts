@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { makeMockLlm } from "@/lib/llm/mock";
 import { insertJob, insertJobScore, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
-import { jobs, jobScores, resumes, sources, users } from "@/server/persistence/schema";
+import { creditLedger, jobs, jobScores, resumes, sources, users } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
@@ -47,6 +47,21 @@ describe("extractQuestions", () => {
     expect(result.questions).toEqual([{ id: "q1", prompt: "Why do you want to work here?", kind: "textarea", required: true }]);
   });
 
+  // Membership-credits Task 7: extractQuestions is 0-credit by spec — unlike
+  // draftAnswers/ingestResume/tailor, it must never write a ledger row.
+  it("writes no credit_ledger row (0-credit by spec)", async () => {
+    llm.scripted = {
+      "question-extract": {
+        questions: [{ id: "q1", prompt: "Why do you want to work here?", kind: "textarea", required: true }],
+      },
+    };
+
+    await extractQuestions(BOOTSTRAP_ADMIN_ID, { pastedForm: "Why do you want to work here? ____" });
+
+    const rows = await state.testDb.select().from(creditLedger);
+    expect(rows).toHaveLength(0);
+  });
+
   it("tier 3 (paste): no questions found -> ExtractionFailedError, never []", async () => {
     llm.scripted = { "question-extract": { questions: [] } };
     await expect(extractQuestions(BOOTSTRAP_ADMIN_ID, { pastedForm: "blank form" })).rejects.toBeInstanceOf(ExtractionFailedError);
@@ -61,7 +76,7 @@ describe("extractQuestions", () => {
     const job = await insertJob(state.testDb, source.id);
     const [userB] = await state.testDb
       .insert(users)
-      .values({ email: "user-b-extract-questions@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-extract-questions@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
 
     await expect(extractQuestions(userB.id, { jobId: job.id })).rejects.toBeInstanceOf(UnknownJobError);

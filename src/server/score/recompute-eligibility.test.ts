@@ -142,7 +142,7 @@ describe("recomputeEligibility", () => {
     // baseCountry decides a DIFFERENT tier for the same-shaped JD facts.
     const [userB] = await state.testDb
       .insert(users)
-      .values({ email: "user-b-recompute@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-recompute@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
     await insertProfile(state.testDb, { id: "profile-b", userId: userB.id, baseCountry: "US", relocation: "open" });
     const { job: jobB, resume: resumeB } = await seedOwner(state.testDb, {
@@ -158,7 +158,7 @@ describe("recomputeEligibility", () => {
     // Owner C: a third user who has NOT onboarded yet (no profile row).
     const [userC] = await state.testDb
       .insert(users)
-      .values({ email: "user-c-recompute@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-c-recompute@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
     const { job: jobC, resume: resumeC } = await seedOwner(state.testDb, {
       userId: userC.id,

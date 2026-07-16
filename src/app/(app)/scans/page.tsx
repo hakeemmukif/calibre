@@ -11,6 +11,7 @@ import { ScansList } from "@/caliber-ui/compositions/Scans/ScansList";
 import { Button } from "@/caliber-ui/components/Button";
 import { listScans, startSearch } from "@/features/search/client";
 import { ApiError } from "@/features/http";
+import { showDenial } from "@/features/credits/creditsStore";
 import type { ScanPersona, SearchRunSummary } from "@/types";
 
 const SCAN_PERSONAS: { value: ScanPersona; label: string }[] = [
@@ -49,6 +50,10 @@ export default function ScansPage() {
       const run = await startSearch({ persona });
       router.push(`/scans/${run.id}`);
     } catch (err) {
+      if (err instanceof ApiError && err.code === "INSUFFICIENT_CREDITS") {
+        const d = err.details as { feature: string; required: number; balance: number };
+        showDenial(d);
+      }
       if (err instanceof ApiError && err.status === 409 && err.code === "CONFLICT") {
         const activeRunId =
           typeof err.details === "object" && err.details !== null && "activeRunId" in err.details

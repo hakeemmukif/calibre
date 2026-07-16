@@ -2,8 +2,9 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { makeMockLlm } from "@/lib/llm/mock";
+import { balance, grant, InsufficientCreditsError } from "@/server/credits";
 import { insertJob, insertJobScore, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
-import { correlationReports, jobs, jobScores, resumes, sources, tailoredResumes, users } from "@/server/persistence/schema";
+import { correlationReports, creditLedger, jobs, jobScores, resumes, sources, tailoredResumes, users } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
@@ -11,6 +12,7 @@ const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
 
 const { startTailor, UnknownJobError, NoActiveResumeError, UnknownReportError, TailorEmitSchema } = await import("./index");
+const { NoJdFactsError } = await import("./correlate");
 const { tailoredResumesRepo } = await import("@/server/persistence/repos/tailoredResumes");
 const { applyEdits } = await import("./merge");
 const { get: getRunHandle, __resetForTests } = await import("@/server/runs/registry");
@@ -193,10 +195,10 @@ const TWO_EDIT_DIFF = [
   },
 ];
 
-async function waitForTerminal(id: string, timeoutMs = 2000): Promise<void> {
+async function waitForTerminal(id: string, userId: string = BOOTSTRAP_ADMIN_ID, timeoutMs = 2000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const row = await tailoredResumesRepo.getById(id, BOOTSTRAP_ADMIN_ID);
+    const row = await tailoredResumesRepo.getById(id, userId);
     if (row && (row.status === "completed" || row.status === "failed")) return;
     await new Promise((r) => setTimeout(r, 5));
   }
@@ -207,11 +209,12 @@ async function insertCompletedReport(
   jobId: string,
   resumeId: string,
   rows: ReportRow[] = REPORT_ROWS,
+  userId: string = BOOTSTRAP_ADMIN_ID,
 ) {
   const [row] = await state.testDb
     .insert(correlationReports)
     .values({
-      userId: BOOTSTRAP_ADMIN_ID,
+      userId,
       jobId,
       resumeId,
       rows,
@@ -259,7 +262,7 @@ describe("startTailor", () => {
     const job = await insertJob(state.testDb, source.id);
     const [userB] = await state.testDb
       .insert(users)
-      .values({ email: "user-b-starttailor@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-starttailor@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
 
     await expect(startTailor(userB.id, { jobId: job.id })).rejects.toBeInstanceOf(UnknownJobError);
@@ -448,7 +451,7 @@ describe("startTailor", () => {
     const resume = await insertResume(state.testDb, { isActive: true, structured: BASE_STRUCTURED });
     const [userB] = await state.testDb
       .insert(users)
-      .values({ email: "user-b-unknownreport@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-unknownreport@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
     const [foreignReport] = await state.testDb
       .insert(correlationReports)
@@ -711,5 +714,139 @@ describe("startTailor", () => {
     const row = await tailoredResumesRepo.getById(draft.id, BOOTSTRAP_ADMIN_ID);
     expect(row?.status).toBe("failed");
     expect(tailorCalls).toBe(2);
+  });
+});
+
+// Flow invariant (membership-credits Task 7): exactly ONE 8-credit debit per
+// tailor flow, always at a synchronous admission point.
+// - reportId supplied: the flow was already paid when correlate created that
+//   report — startTailor debits nothing.
+// - no reportId: startTailor debits 8 at ITS OWN admission, then the
+//   background job's internal correlate call (resolveReport, index.ts) is
+//   marked prepaid — it must NOT debit again.
+// BOOTSTRAP_ADMIN_ID (used throughout the suite above) is admin/unlimited and
+// bypasses credits entirely, so these need their own non-admin, standard-plan
+// users to actually exercise the ledger.
+describe("startTailor — credit debit (flow invariant)", () => {
+  beforeAll(async () => {
+    state.testDb = await createTestDb();
+  });
+
+  afterEach(async () => {
+    __resetForTests();
+    await state.testDb.delete(tailoredResumes);
+    await state.testDb.delete(correlationReports);
+    await state.testDb.delete(jobScores);
+    await state.testDb.delete(jobs);
+    await state.testDb.delete(resumes);
+    await state.testDb.delete(sources);
+  });
+
+  async function seedUser(): Promise<string> {
+    const id = crypto.randomUUID();
+    await state.testDb.insert(users).values({ id, email: `${id}@example.com`, passwordHash: "h", role: "user", plan: "standard" });
+    return id;
+  }
+
+  it("WITH a reportId debits nothing (the flow was already paid when the report was created via correlate)", async () => {
+    const userId = await seedUser();
+    // No grant — 0 balance; success (no InsufficientCreditsError) proves no debit was attempted.
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id, { userId });
+    const resume = await insertResume(state.testDb, { userId, isActive: true, structured: BASE_STRUCTURED });
+    const report = await insertCompletedReport(job.id, resume.id, REPORT_ROWS, userId);
+
+    const llm = makeMockLlm({ tailor: { diff: TAILOR_DIFF } });
+
+    const draft = await startTailor(userId, { jobId: job.id, reportId: report.id }, { llm });
+    let rows = await state.testDb.select().from(creditLedger).where(eq(creditLedger.userId, userId));
+    expect(rows).toHaveLength(0);
+
+    await waitForTerminal(draft.id, userId);
+
+    rows = await state.testDb.select().from(creditLedger).where(eq(creditLedger.userId, userId));
+    expect(rows).toHaveLength(0); // still nothing after the run completes
+  });
+
+  it("WITHOUT reportId debits 8 once at admission; the internal (prepaid) correlate call never charges again — exactly ONE -8 row exists across the whole flow", async () => {
+    const userId = await seedUser();
+    await grant(userId, 8, "admin");
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id, { userId });
+    const resume = await insertResume(state.testDb, { userId, isActive: true, structured: BASE_STRUCTURED });
+    await insertJobScore(state.testDb, job.id, resume.id, {
+      userId,
+      jdFacts: { title: "Backend Engineer", mustHaves: ["distributed systems experience"], niceToHaves: [], responsibilities: [], redFlags: [] },
+    });
+
+    const llm = makeMockLlm({
+      correlate: {
+        rows: [{ id: 0, term: "distributed", status: "buried", evidence: "Led distributed payments platform", reason: "r", note: null }],
+      },
+      tailor: { diff: TAILOR_DIFF },
+    });
+
+    const draft = await startTailor(userId, { jobId: job.id }, { llm });
+
+    // Synchronous admission has already debited — exactly one -8 row must
+    // exist the instant startTailor returns, before the background job even
+    // starts its own (prepaid) internal correlate call.
+    const rowsAtAdmission = await state.testDb.select().from(creditLedger).where(eq(creditLedger.userId, userId));
+    const debitsAtAdmission = rowsAtAdmission.filter((r) => r.reason === "debit");
+    expect(debitsAtAdmission).toHaveLength(1);
+    expect(debitsAtAdmission[0].delta).toBe(-8);
+    expect(debitsAtAdmission[0].feature).toBe("tailor");
+    expect(debitsAtAdmission[0].refId).toBe(job.id);
+    expect(await balance(userId)).toBe(0);
+
+    await waitForTerminal(draft.id, userId);
+
+    // After the background job (whose internal correlate call is marked
+    // prepaid) completes, the ledger must STILL show exactly one debit row —
+    // proving the internal call did not charge a second time.
+    const rowsAfterCompletion = await state.testDb.select().from(creditLedger).where(eq(creditLedger.userId, userId));
+    const debitsAfterCompletion = rowsAfterCompletion.filter((r) => r.reason === "debit");
+    expect(debitsAfterCompletion).toHaveLength(1);
+    expect(debitsAfterCompletion).toEqual(debitsAtAdmission);
+    expect(await balance(userId)).toBe(0);
+
+    const row = await tailoredResumesRepo.getById(draft.id, userId);
+    expect(row?.status).toBe("completed");
+  });
+
+  it("WITHOUT reportId, insufficient credits -> InsufficientCreditsError; no tailored_resumes row inserted", async () => {
+    const userId = await seedUser();
+    // No grant — 0 balance.
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id, { userId });
+    const resume = await insertResume(state.testDb, { userId, isActive: true, structured: BASE_STRUCTURED });
+    await insertJobScore(state.testDb, job.id, resume.id, {
+      userId,
+      jdFacts: { title: "Backend Engineer", mustHaves: ["distributed systems experience"], niceToHaves: [], responsibilities: [], redFlags: [] },
+    });
+
+    await expect(startTailor(userId, { jobId: job.id })).rejects.toBeInstanceOf(InsufficientCreditsError);
+
+    const rows = await state.testDb.select().from(creditLedger).where(eq(creditLedger.userId, userId));
+    expect(rows).toHaveLength(0);
+    const drafts = await state.testDb.select().from(tailoredResumes).where(eq(tailoredResumes.jobId, job.id));
+    expect(drafts).toHaveLength(0);
+  });
+
+  it("WITHOUT reportId, an unscored job throws NoJdFactsError BEFORE debiting (no ledger row)", async () => {
+    const userId = await seedUser();
+    // No grant — 0 balance. If the implementation checked credits before
+    // jdFacts, this would throw InsufficientCreditsError instead.
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id, { userId });
+    await insertResume(state.testDb, { userId, isActive: true });
+    // No job score inserted.
+
+    await expect(startTailor(userId, { jobId: job.id })).rejects.toBeInstanceOf(NoJdFactsError);
+
+    const rows = await state.testDb.select().from(creditLedger).where(eq(creditLedger.userId, userId));
+    expect(rows).toHaveLength(0);
+    const drafts = await state.testDb.select().from(tailoredResumes).where(eq(tailoredResumes.jobId, job.id));
+    expect(drafts).toHaveLength(0);
   });
 });

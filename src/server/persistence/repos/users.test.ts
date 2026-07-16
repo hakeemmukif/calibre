@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createTestDb } from "../test-db";
-import { applications, users } from "../schema";
+import { applications, creditLedger, users } from "../schema";
+import { seedAdmin } from "../seed";
 import { createUserRepo } from "./users";
 import { insertJob, insertResume, insertSource } from "./__fixtures__/helpers";
 import { EmailTakenError } from "@/server/auth/errors";
@@ -11,7 +12,7 @@ describe("users schema", () => {
     const db = await createTestDb();
     const [row] = await db
       .insert(users)
-      .values({ email: "a@b.co", passwordHash: "x", role: "user" })
+      .values({ email: "a@b.co", passwordHash: "x", role: "user", plan: "standard" })
       .returning();
     expect(row.id).toMatch(/^[0-9a-f-]{36}$/);
     expect(row.role).toBe("user");
@@ -35,9 +36,9 @@ describe("usersRepo", () => {
 
   it("users_email_unique constraint fires a SQLITE_CONSTRAINT_UNIQUE on a direct duplicate insert (foundation for the race-safety catch in create())", async () => {
     const db = await createTestDb();
-    await db.insert(users).values({ email: "race@x.co", passwordHash: "h", role: "user" });
+    await db.insert(users).values({ email: "race@x.co", passwordHash: "h", role: "user", plan: "standard" });
     await expect(
-      db.insert(users).values({ email: "race@x.co", passwordHash: "h", role: "user" }),
+      db.insert(users).values({ email: "race@x.co", passwordHash: "h", role: "user", plan: "standard" }),
     ).rejects.toMatchObject({ cause: { extendedCode: "SQLITE_CONSTRAINT_UNIQUE" } });
   });
 
@@ -88,5 +89,53 @@ describe("usersRepo", () => {
     for (const u of list) {
       expect(u).not.toHaveProperty("passwordHash");
     }
+  });
+
+  it("create writes plan 'standard' explicitly; seedAdmin writes 'unlimited'", async () => {
+    const db = await createTestDb();
+    const repo = createUserRepo(db);
+    const u = await repo.create({ email: "p@x.co", passwordHash: "h", role: "user" });
+    expect(u.plan).toBe("standard");
+    const [admin] = await seedAdmin(db, { email: "root@x.co", password: "hunter2hunter2" });
+    expect(admin.plan).toBe("unlimited");
+  });
+
+  it("listWithCounts carries plan and a ledger-summed balance, without a per-user query", async () => {
+    const db = await createTestDb();
+    const repo = createUserRepo(db);
+    const a = await repo.create({ email: "ledger-a@x.co", passwordHash: "h", role: "user" });
+    const b = await repo.create({ email: "ledger-b@x.co", passwordHash: "h", role: "user" });
+    await db.insert(creditLedger).values([
+      { userId: a.id, delta: 30, reason: "admin" },
+      { userId: a.id, delta: -10, reason: "admin" },
+    ]);
+
+    const select = db.select.bind(db);
+    let selectCalls = 0;
+    db.select = ((...args: Parameters<typeof select>) => {
+      selectCalls += 1;
+      return select(...args);
+    }) as typeof db.select;
+
+    const list = await repo.listWithCounts();
+    // allUsers + resumeRows + jobRows + applicationRows + ledgerRows = 5
+    // fixed selects, regardless of user count — not one per user (N+1).
+    expect(selectCalls).toBe(5);
+
+    const byId = new Map(list.map((u) => [u.id, u]));
+    expect(byId.get(a.id)).toMatchObject({ plan: "standard", balance: 20 });
+    expect(byId.get(b.id)).toMatchObject({ plan: "standard", balance: 0 });
+  });
+
+  it("updatePlan flips the plan and returns the updated row; throws for an unknown id", async () => {
+    const db = await createTestDb();
+    const repo = createUserRepo(db);
+    const u = await repo.create({ email: "toggle@x.co", passwordHash: "h", role: "user" });
+
+    const updated = await repo.updatePlan(u.id, "unlimited");
+    expect(updated.plan).toBe("unlimited");
+    expect((await repo.findById(u.id))?.plan).toBe("unlimited");
+
+    await expect(repo.updatePlan(crypto.randomUUID(), "standard")).rejects.toThrow();
   });
 });

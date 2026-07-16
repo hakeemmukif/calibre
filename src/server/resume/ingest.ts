@@ -9,6 +9,7 @@ import { getLlm, type LlmClient } from "@/lib/llm/client";
 import { renderTemplate } from "@/lib/llm/templates";
 import { rasterizePdfPages } from "@/lib/rasterize";
 import { resumesRepo, type ResumeRow } from "@/server/persistence/repos/resumes";
+import { assertAndDebit } from "@/server/credits";
 import type { Resume } from "@/types";
 import { assertResumeViewDerivable, ParseFailedError, toResumeView } from "./derive-view";
 import { computeAtsScore } from "./atsScore";
@@ -121,6 +122,14 @@ export async function ingestResume(
   deps: IngestResumeDeps = {},
 ): Promise<Resume> {
   const rawText = await extractText(input);
+
+  // Debit after extraction succeeds, before any LLM call: extraction is
+  // where mime/text validation happens (UnsupportedMimeError,
+  // ResumeTooLongError, DOCX ParseFailedError), so a rejected or unreadable
+  // upload never gets charged. The résumé row doesn't exist yet, so there is
+  // no id for refId — the ledger still carries user/feature/time. Still
+  // precedes the expensive LLM structuring below.
+  await assertAndDebit(userId, "resume");
 
   const isVisionCandidate =
     input.file?.mime === PDF_MIME && rawText.trim().length < VISION_TEXT_THRESHOLD;

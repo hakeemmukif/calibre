@@ -17,6 +17,7 @@ import {
   correlationReportsRepo, type CorrelationReportRow,
 } from "@/server/persistence/repos/correlationReports";
 import { create, release, type RunHandle } from "@/server/runs/registry";
+import { assertAndDebit } from "@/server/credits";
 import type { ResumeStore } from "@/server/resume/resume-store";
 import type { JdFacts } from "@/server/score/jdFacts";
 import { CorrelationReport, type CorrelationRow } from "@/types";
@@ -151,6 +152,7 @@ export interface CorrelateDeps { llm?: LlmClient; }
 
 export async function correlate(
   userId: string, input: { jobId: string }, deps: CorrelateDeps = {},
+  opts: { prepaid?: boolean } = {},
 ): Promise<CorrelationReport> {
   if (!(await jobsRepo.existsById(input.jobId, userId))) throw new UnknownJobError(input.jobId);
   const resumeRow = await resumesRepo.getActive(userId);
@@ -158,7 +160,15 @@ export async function correlate(
   const scoreRow = await jobScoresRepo.getLatestByJobId(input.jobId);
   if (!scoreRow?.jdFacts) throw new NoJdFactsError(input.jobId);
 
+  const reportId = crypto.randomUUID();
+  // The tailor-without-report flow (startTailor, index.ts) already debited 8
+  // at ITS admission and calls this from the background job with prepaid — a
+  // debit here would double-charge, and a 402 here could never reach the
+  // user (the background job can only fail the run, not respond to a request).
+  if (!opts.prepaid) await assertAndDebit(userId, "tailor", { refId: reportId });
+
   const inserted = await correlationReportsRepo.insert({
+    id: reportId,
     userId, jobId: input.jobId, resumeId: resumeRow.id, rows: [],
     status: "queued", model: modelFor("correlate").model,
   });

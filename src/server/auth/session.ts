@@ -6,7 +6,7 @@ import { hashToken } from "./token";
 import { UnauthorizedError, ForbiddenError } from "./errors";
 
 export const SESSION_COOKIE = "caliber_session";
-const THIRTY_DAYS = 60 * 60 * 24 * 30;
+const THIRTY_DAYS = 60 * 60 * 24 * 30; // mirrored by SESSION_TTL_MS in repos/sessions.ts — change both together.
 
 // Secure in prod; overridable for local http via SESSION_COOKIE_SECURE=false.
 const secure = process.env.SESSION_COOKIE_SECURE !== "false";

@@ -10,6 +10,7 @@ import type { LlmClient } from "@/lib/llm/client";
 import { getLlm } from "@/lib/llm/client";
 import { policyVersion } from "@/lib/llm/templates";
 import { assembleJob } from "@/features/feed/assemble";
+import { assertAndDebit } from "@/server/credits";
 import { jobsRepo, type JobRow } from "@/server/persistence/repos/jobs";
 import { jobScoresRepo } from "@/server/persistence/repos/jobScores";
 import { profileRepo, type ProfileRow } from "@/server/persistence/repos/profile";
@@ -126,6 +127,11 @@ export async function startSearch(
       if (unknownIds.length > 0) throw new UnknownSourceIdsError(unknownIds);
       scopedSources = enabledSources.filter((s) => input.sources!.includes(s.id));
     }
+
+    // Admission debit (membership spec §4.2): after every pre-flight throw
+    // (conflict/resume/profile/sources) so a rejected start never charges,
+    // before the row insert so a charged start always has its run.
+    await assertAndDebit(userId, "scan", { refId: runId });
 
     const row = await searchRunsRepo.insert({
       userId,

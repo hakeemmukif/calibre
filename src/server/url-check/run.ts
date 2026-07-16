@@ -5,6 +5,7 @@
 // fire-and-forget split, but there's no fan-out and no in-memory registry:
 // one job, one `url_checks` row, polled via getUrlCheck instead of SSE.
 import type { LlmClient } from "@/lib/llm/client";
+import { assertAndDebit } from "@/server/credits";
 import { jobsRepo } from "@/server/persistence/repos/jobs";
 import type { ProfileRow } from "@/server/persistence/repos/profile";
 import { resumesRepo, type ResumeRow } from "@/server/persistence/repos/resumes";
@@ -347,9 +348,12 @@ export async function startUrlCheck(
     return { check: assemble(row), started: false };
   }
 
+  const checkId = crypto.randomUUID();
+  await assertAndDebit(userId, "evaluate", { refId: checkId });
+
   const row = await urlChecksRepo.insert({
     userId,
-    id: crypto.randomUUID(),
+    id: checkId,
     url: req.url,
     dedupeKey,
     status: "queued",

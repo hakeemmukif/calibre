@@ -2,17 +2,28 @@ import { readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { eq } from "drizzle-orm";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LlmClient } from "@/lib/llm/client";
 import { RESUME_STORE, RESUME_STORE_VISION } from "@/lib/llm/scripted-fixtures";
+import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
+import { balance, grant, InsufficientCreditsError } from "@/server/credits";
 import type { ResumeRow } from "@/server/persistence/repos/resumes";
+import { creditLedger, users } from "@/server/persistence/schema";
+import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import { ParseFailedError } from "./derive-view";
+import { UnsupportedMimeError } from "./extract-text";
 import { getActiveResume, ingestResume } from "./ingest";
 import { NonEnglishResumeError } from "./language";
 
 const FIXTURES = join(__dirname, "__fixtures__");
 
-const state = vi.hoisted(() => ({ insertReplacingActive: vi.fn(), getActive: vi.fn(), rasterizePdfPages: vi.fn() }));
+const state = vi.hoisted(() => ({
+  insertReplacingActive: vi.fn(),
+  getActive: vi.fn(),
+  rasterizePdfPages: vi.fn(),
+  testDb: undefined as unknown as TestDb,
+}));
 vi.mock("@/server/persistence/repos/resumes", () => ({
   resumesRepo: { insertReplacingActive: state.insertReplacingActive, getActive: state.getActive },
 }));
@@ -20,6 +31,17 @@ vi.mock("@/lib/rasterize", async () => {
   const actual = await vi.importActual<typeof import("@/lib/rasterize")>("@/lib/rasterize");
   state.rasterizePdfPages.mockImplementation(actual.rasterizePdfPages);
   return { ...actual, rasterizePdfPages: state.rasterizePdfPages };
+});
+// ingestResume now debits credits at admission (assertAndDebit), which reads
+// the real users/credit_ledger tables — resumesRepo above is mocked, but
+// persistence/db is not, so every ingestResume call needs a real testDb with
+// a real user row. BOOTSTRAP_ADMIN_ID is seeded by the migrations
+// createTestDb() applies (admin/unlimited plan), so swapping the old "user-1"
+// placeholder for it keeps every existing test's assertions unchanged.
+vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
+
+beforeAll(async () => {
+  state.testDb = await createTestDb();
 });
 
 function fakeRow(structured: unknown): ResumeRow {
@@ -49,7 +71,7 @@ describe("ingestResume — English-first reject gate", () => {
     const complete = vi.fn();
     const llm = { complete } as unknown as LlmClient;
 
-    await expect(ingestResume("user-1", { text: BAHASA_MALAYSIA_RESUME }, { llm })).rejects.toThrow(
+    await expect(ingestResume(BOOTSTRAP_ADMIN_ID, { text: BAHASA_MALAYSIA_RESUME }, { llm })).rejects.toThrow(
       NonEnglishResumeError,
     );
     expect(complete).not.toHaveBeenCalled();
@@ -63,12 +85,12 @@ describe("rowToResumeView — v1-row read-boundary guard", () => {
 
   it("throws an actionable reextract error for a stored row that predates v2 (storeVersion=1)", async () => {
     state.getActive.mockResolvedValueOnce(fakeRow({ storeVersion: 1 }));
-    await expect(getActiveResume("user-1")).rejects.toThrow(/reextract/);
+    await expect(getActiveResume(BOOTSTRAP_ADMIN_ID)).rejects.toThrow(/reextract/);
   });
 
   it("throws the same actionable error when storeVersion is absent entirely", async () => {
     state.getActive.mockResolvedValueOnce(fakeRow({}));
-    await expect(getActiveResume("user-1")).rejects.toThrow(/reextract/);
+    await expect(getActiveResume(BOOTSTRAP_ADMIN_ID)).rejects.toThrow(/reextract/);
   });
 });
 
@@ -77,7 +99,7 @@ describe("ingestResume — text-path minimum-text floor", () => {
     const complete = vi.fn();
     const llm = { complete } as unknown as LlmClient;
 
-    await expect(ingestResume("user-1", { text: "Too short" }, { llm })).rejects.toThrow(ParseFailedError);
+    await expect(ingestResume(BOOTSTRAP_ADMIN_ID, { text: "Too short" }, { llm })).rejects.toThrow(ParseFailedError);
     expect(complete).not.toHaveBeenCalled();
   });
 });
@@ -108,7 +130,7 @@ describe("ingestResume — vision routing for image-only/near-textless PDFs", ()
     // tiny.pdf's real text layer is ~153 chars — well under the 400-char
     // vision-routing threshold.
     const bytes = readFileSync(join(FIXTURES, "tiny.pdf"));
-    await ingestResume("user-1", { file: { bytes, mime: "application/pdf" } }, { llm });
+    await ingestResume(BOOTSTRAP_ADMIN_ID, { file: { bytes, mime: "application/pdf" } }, { llm });
 
     expect(complete).toHaveBeenCalledTimes(1);
     const callArgs = complete.mock.calls[0][0] as { task: string; images?: string[] };
@@ -134,7 +156,7 @@ describe("ingestResume — vision routing for image-only/near-textless PDFs", ()
     // long-text.pdf's real text layer is ~520 chars — above the 400-char
     // vision-routing threshold.
     const bytes = readFileSync(join(FIXTURES, "long-text.pdf"));
-    await ingestResume("user-1", { file: { bytes, mime: "application/pdf" } }, { llm });
+    await ingestResume(BOOTSTRAP_ADMIN_ID, { file: { bytes, mime: "application/pdf" } }, { llm });
 
     expect(complete).toHaveBeenCalledTimes(1);
     const callArgs = complete.mock.calls[0][0] as { task: string; images?: string[] };
@@ -153,7 +175,7 @@ describe("ingestResume — vision routing for image-only/near-textless PDFs", ()
 
     const bytes = readFileSync(join(FIXTURES, "tiny.pdf"));
     await expect(
-      ingestResume("user-1", { file: { bytes, mime: "application/pdf" } }, { llm }),
+      ingestResume(BOOTSTRAP_ADMIN_ID, { file: { bytes, mime: "application/pdf" } }, { llm }),
     ).rejects.toThrow(ParseFailedError);
     expect(complete).not.toHaveBeenCalled();
   });
@@ -308,7 +330,7 @@ describe("ingestResume — extraction telemetry", () => {
   it("logs one telemetry line for the text path with an empty absent-list, section headings, and zero date-misses", async () => {
     const llm = llmFor("resume-extract", ALL_PRESENT_EMIT);
     await ingestResume(
-      "user-1",
+      BOOTSTRAP_ADMIN_ID,
       { text: "Backend engineer with experience in systems design, distributed systems, and payments infrastructure across several years of professional software engineering work." },
       { llm },
     );
@@ -326,7 +348,7 @@ describe("ingestResume — extraction telemetry", () => {
   it("lists absent optional scalar fields when headline/location/summary come back null", async () => {
     const llm = llmFor("resume-extract", ABSENT_SCALARS_EMIT);
     await ingestResume(
-      "user-1",
+      BOOTSTRAP_ADMIN_ID,
       { text: "Backend engineer with experience in systems design, distributed systems, and payments infrastructure across several years of professional software engineering work." },
       { llm },
     );
@@ -341,7 +363,7 @@ describe("ingestResume — extraction telemetry", () => {
   it("counts a date-miss when an experience entry has a non-empty dates string but no parsed start/end atom", async () => {
     const llm = llmFor("resume-extract", DATE_MISS_EMIT);
     await ingestResume(
-      "user-1",
+      BOOTSTRAP_ADMIN_ID,
       { text: "Backend engineer with experience in systems design, distributed systems, and payments infrastructure across several years of professional software engineering work." },
       { llm },
     );
@@ -353,7 +375,7 @@ describe("ingestResume — extraction telemetry", () => {
   it("counts an empty-dates entry (verbatim date range absent, folded to \"\") separately from a date-miss", async () => {
     const llm = llmFor("resume-extract", EMPTY_DATES_EMIT);
     await ingestResume(
-      "user-1",
+      BOOTSTRAP_ADMIN_ID,
       { text: "Backend engineer with experience in systems design, distributed systems, and payments infrastructure across several years of professional software engineering work." },
       { llm },
     );
@@ -365,9 +387,112 @@ describe("ingestResume — extraction telemetry", () => {
   it("logs extractionPath: \"vision\" exactly once for the vision routing path", async () => {
     const llm = llmFor("resume-extract-vision", RESUME_STORE_VISION);
     const bytes = readFileSync(join(FIXTURES, "tiny.pdf"));
-    await ingestResume("user-1", { file: { bytes, mime: "application/pdf" } }, { llm });
+    await ingestResume(BOOTSTRAP_ADMIN_ID, { file: { bytes, mime: "application/pdf" } }, { llm });
 
     const telemetry = telemetryFromSpy();
     expect(telemetry).toMatchObject({ extractionPath: "vision" });
+  });
+});
+
+// A derivable résumé fixture (headline/location present directly, so
+// assertResumeViewDerivable never fails) — distinct from the file's other
+// EMIT fixtures, kept local to this describe since only these tests exercise
+// the LLM path standalone.
+const DEBIT_EMIT = {
+  storeVersion: 2,
+  name: "Jane Doe",
+  headline: "Senior Backend Engineer",
+  location: "Kuala Lumpur, Malaysia",
+  summary: "Backend engineer with several years of experience.",
+  contact: [{ label: "email", value: "jane@example.com" }],
+  experience: [
+    {
+      company: "Acme Co",
+      title: "Senior Backend Engineer",
+      dates: "2022–Present",
+      start: null,
+      end: null,
+      location: null,
+      bullets: ["Led migration to Kubernetes"],
+    },
+  ],
+  education: [],
+  skills: [],
+  projects: [],
+  certifications: [],
+  languages: [],
+  sections: [],
+};
+
+describe("ingestResume — credit debit (admission gate)", () => {
+  async function seedUser(): Promise<string> {
+    const id = crypto.randomUUID();
+    await state.testDb.insert(users).values({ id, email: `${id}@example.com`, passwordHash: "h", role: "user", plan: "standard" });
+    return id;
+  }
+
+  beforeEach(() => {
+    state.insertReplacingActive.mockReset();
+    state.insertReplacingActive.mockImplementation(async (row: { structured: unknown }) => fakeRow(row.structured));
+  });
+
+  it("debits 3 after successful extraction, before the LLM (feature 'resume', no refId)", async () => {
+    const userId = await seedUser();
+    await grant(userId, 3, "admin");
+
+    const complete = vi.fn(async () => ({ data: DEBIT_EMIT, model: "mock", costUsd: 0 }));
+    const llm = { complete } as unknown as LlmClient;
+
+    await ingestResume(
+      userId,
+      { text: "Backend engineer with several years of professional experience across systems design and distributed systems infrastructure." },
+      { llm },
+    );
+
+    expect(await balance(userId)).toBe(0);
+    const rows = await state.testDb.select().from(creditLedger).where(eq(creditLedger.userId, userId));
+    const debitRow = rows.find((r) => r.reason === "debit");
+    expect(debitRow?.delta).toBe(-3);
+    expect(debitRow?.feature).toBe("resume");
+    expect(debitRow?.refId).toBeNull();
+  });
+
+  it("insufficient credits -> InsufficientCreditsError before extraction; no LLM call, no résumé row inserted", async () => {
+    const userId = await seedUser();
+    // no grant — balance stays 0
+
+    const complete = vi.fn();
+    const llm = { complete } as unknown as LlmClient;
+
+    await expect(
+      ingestResume(
+        userId,
+        { text: "Backend engineer with several years of professional experience across systems design and distributed systems infrastructure." },
+        { llm },
+      ),
+    ).rejects.toBeInstanceOf(InsufficientCreditsError);
+
+    expect(complete).not.toHaveBeenCalled();
+    expect(state.insertReplacingActive).not.toHaveBeenCalled();
+    expect(await balance(userId)).toBe(0);
+    const rows = await state.testDb.select().from(creditLedger).where(eq(creditLedger.userId, userId));
+    expect(rows).toHaveLength(0);
+  });
+
+  it("an unsupported-mime upload is free — no debit even with a positive balance", async () => {
+    const userId = await seedUser();
+    await grant(userId, 30, "admin");
+
+    const complete = vi.fn();
+    const llm = { complete } as unknown as LlmClient;
+
+    await expect(
+      ingestResume(userId, { file: { bytes: Buffer.from("not a resume"), mime: "text/html" } }, { llm }),
+    ).rejects.toBeInstanceOf(UnsupportedMimeError);
+
+    expect(complete).not.toHaveBeenCalled();
+    expect(await balance(userId)).toBe(30);
+    const rows = await state.testDb.select().from(creditLedger).where(eq(creditLedger.userId, userId));
+    expect(rows.find((r) => r.reason === "debit")).toBeUndefined();
   });
 });

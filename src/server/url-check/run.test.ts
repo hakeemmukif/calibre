@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import { makeMockLlm } from "@/lib/llm/mock";
 import {
@@ -9,10 +10,12 @@ import {
 } from "@/server/persistence/repos/__fixtures__/helpers";
 import { createJobsRepo } from "@/server/persistence/repos/jobs";
 import { createUrlChecksRepo } from "@/server/persistence/repos/urlChecks";
+import { creditLedger, urlChecks, users } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import { dedupeKeyFor } from "@/server/search/dedupe";
 import { scoreJob } from "@/server/score";
 import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
+import { balance, grant, InsufficientCreditsError } from "@/server/credits";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
@@ -166,6 +169,80 @@ describe("startUrlCheck admission", () => {
     expect(started).toBe(true);
     expect(check.status).toBe("queued");
     expect(check.alreadyKnown).toBe(false);
+  });
+
+  it("admission debit: queue path debits 5 credits with refId = the url_checks row id", async () => {
+    const db = await createTestDb();
+    state.testDb = db;
+    const [user] = await db
+      .insert(users)
+      .values({ email: "credits-urlcheck@example.com", passwordHash: "h", role: "user", plan: "standard" })
+      .returning();
+    await insertResume(db, { userId: user.id, isActive: true });
+    await grant(user.id, 30, "admin");
+
+    const { check, started } = await startUrlCheck({ url: "https://example.com/credits-queue" }, user.id);
+    expect(started).toBe(true);
+
+    expect(await balance(user.id)).toBe(25);
+    const rows = await db.select().from(creditLedger).where(eq(creditLedger.userId, user.id));
+    const debitRow = rows.find((r) => r.reason === "debit");
+    expect(debitRow?.feature).toBe("evaluate");
+    expect(debitRow?.refId).toBe(check.id);
+  });
+
+  it("admission debit: insufficient balance throws InsufficientCreditsError before any url_checks row is inserted", async () => {
+    const db = await createTestDb();
+    state.testDb = db;
+    const [user] = await db
+      .insert(users)
+      .values({ email: "credits-urlcheck-broke@example.com", passwordHash: "h", role: "user", plan: "standard" })
+      .returning();
+    await insertResume(db, { userId: user.id, isActive: true });
+    // No grant — balance 0, "evaluate" costs 5.
+
+    await expect(startUrlCheck({ url: "https://example.com/credits-queue-broke" }, user.id)).rejects.toThrow(
+      InsufficientCreditsError,
+    );
+    const rows = await db.select().from(urlChecks).where(eq(urlChecks.userId, user.id));
+    expect(rows).toHaveLength(0);
+  });
+
+  it("admission debit: the alreadyKnown short-circuit is free — no ledger row written", async () => {
+    const db = await createTestDb();
+    state.testDb = db;
+    const [user] = await db
+      .insert(users)
+      .values({ email: "credits-urlcheck-known@example.com", passwordHash: "h", role: "user", plan: "standard" })
+      .returning();
+    const resume = await insertResume(db, { userId: user.id, isActive: true });
+    const source = await insertSource(db);
+    const existing = await insertJob(db, source.id, {
+      userId: user.id,
+      dedupeKey: "example.com/credits-known",
+      url: "https://example.com/credits-known",
+    });
+    await insertJobScore(db, existing.id, resume.id, { userId: user.id });
+    // No grant — if this path attempted to debit it would throw InsufficientCreditsError; it must not even try.
+
+    const { check, started } = await startUrlCheck({ url: "https://example.com/credits-known" }, user.id);
+    expect(started).toBe(false);
+    expect(check.alreadyKnown).toBe(true);
+
+    const rows = await db.select().from(creditLedger).where(eq(creditLedger.userId, user.id));
+    expect(rows).toHaveLength(0);
+  });
+
+  it("admission debit: admin bypass debits nothing (zero ledger rows) for the bootstrap admin", async () => {
+    const db = await createTestDb();
+    state.testDb = db;
+    await insertResume(db, { isActive: true });
+
+    const { started } = await startUrlCheck({ url: "https://example.com/credits-admin-bypass" }, BOOTSTRAP_ADMIN_ID);
+    expect(started).toBe(true);
+
+    const rows = await db.select().from(creditLedger).where(eq(creditLedger.userId, BOOTSTRAP_ADMIN_ID));
+    expect(rows).toHaveLength(0);
   });
 });
 

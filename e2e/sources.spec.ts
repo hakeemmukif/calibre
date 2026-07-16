@@ -31,7 +31,7 @@ test("sources: persona groups render; first remote source toggle persists across
   const db = drizzle(client, { schema });
 
   const apiContext = await playwrightRequest.newContext({ baseURL: BASE_URL });
-  const registerRes = await apiContext.post("/api/auth/register", { data: E2E_ADMIN });
+  const registerRes = await apiContext.post("/api/auth/register", { data: { ...E2E_ADMIN, inviteCode: "e2e-invite" } });
   if (registerRes.status() === 409) {
     const loginRes = await apiContext.post("/api/auth/login", { data: E2E_ADMIN });
     if (!loginRes.ok()) throw new Error(`admin login fallback failed: ${loginRes.status()} ${await loginRes.text()}`);

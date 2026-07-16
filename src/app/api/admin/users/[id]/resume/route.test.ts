@@ -90,7 +90,7 @@ describe("GET /api/admin/users/[id]/resume", () => {
   it("a target with no résumé returns 404 NOT_FOUND, not 500", async () => {
     const [userB] = await state.testDb
       .insert(users)
-      .values({ email: "target-b-no-resume@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "target-b-no-resume@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
     const res = await GET(new NextRequest("http://localhost/api/admin/users/x/resume"), params(userB.id));
     expect(res.status).toBe(404);
@@ -106,7 +106,7 @@ describe("GET /api/admin/users/[id]/resume", () => {
   it("returns target user B's résumé in the same shape GET /api/resume returns", async () => {
     const [userB] = await state.testDb
       .insert(users)
-      .values({ email: "target-b-resume@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "target-b-resume@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
     await insertActiveResume(userB.id);
 
@@ -122,7 +122,7 @@ describe("GET /api/admin/users/[id]/resume", () => {
     await insertActiveResume(BOOTSTRAP_ADMIN_ID, { summary: "Admin's own résumé" });
     const [userB] = await state.testDb
       .insert(users)
-      .values({ email: "target-b-distinct-resume@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "target-b-distinct-resume@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
     const targetResume = await insertActiveResume(userB.id, {
       summary: "User B's own résumé, distinct from the admin's.",

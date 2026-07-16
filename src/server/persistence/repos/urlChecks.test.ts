@@ -240,7 +240,7 @@ describe("urlChecksRepo — cross-tenant isolation", () => {
   async function makeUserB(db: Awaited<ReturnType<typeof createTestDb>>) {
     const [userB] = await db
       .insert(users)
-      .values({ email: `user-b-url-checks-${crypto.randomUUID()}@example.com`, passwordHash: "h", role: "user" })
+      .values({ email: `user-b-url-checks-${crypto.randomUUID()}@example.com`, passwordHash: "h", role: "user", plan: "standard" })
       .returning();
     return userB;
   }

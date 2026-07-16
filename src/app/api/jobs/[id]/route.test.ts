@@ -49,7 +49,7 @@ describe("GET /api/jobs/:id", () => {
   it("returns 404 for a foreign-owned job id (cross-tenant isolation, no existence leak)", async () => {
     const [userB] = await state.testDb
       .insert(users)
-      .values({ email: "user-b-jobs-id-route@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-jobs-id-route@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
     const source = await insertSource(state.testDb);
     const resume = await insertResume(state.testDb);
@@ -119,7 +119,7 @@ describe("DELETE /api/jobs/:id", () => {
   it("returns 404 for a foreign-owned pasted job (cross-tenant isolation), row untouched", async () => {
     const [userB] = await state.testDb
       .insert(users)
-      .values({ email: "user-b-jobs-id-delete@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-jobs-id-delete@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
     const source = await insertSource(state.testDb);
     const job = await insertJob(state.testDb, source.id, { persona: "pasted" });

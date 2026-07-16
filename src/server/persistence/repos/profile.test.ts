@@ -7,7 +7,7 @@ import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 async function insertSecondUser(db: Awaited<ReturnType<typeof createTestDb>>) {
   const [userB] = await db
     .insert(users)
-    .values({ email: "user-b-profile@example.com", passwordHash: "h", role: "user" })
+    .values({ email: "user-b-profile@example.com", passwordHash: "h", role: "user", plan: "standard" })
     .returning();
   return userB.id;
 }

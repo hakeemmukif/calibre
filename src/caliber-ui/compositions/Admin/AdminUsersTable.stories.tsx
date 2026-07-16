@@ -19,6 +19,8 @@ const users: AdminUser[] = [
     resumeCount: 1,
     jobCount: 42,
     applicationCount: 12,
+    balance: 0,
+    plan: "unlimited",
   },
   {
     id: "u2",
@@ -28,6 +30,8 @@ const users: AdminUser[] = [
     resumeCount: 1,
     jobCount: 30,
     applicationCount: 4,
+    balance: 45,
+    plan: "standard",
   },
   {
     id: "u3",
@@ -37,13 +41,18 @@ const users: AdminUser[] = [
     resumeCount: 0,
     jobCount: 12,
     applicationCount: 0,
+    balance: 0,
+    plan: "standard",
   },
 ];
 
+const onGrantLog = (id: string, delta: number) => console.log(id, delta);
+const onTogglePlanLog = (id: string, nextPlan: "standard" | "unlimited") => console.log(id, nextPlan);
+
 export const Populated: Story = {
-  args: { users },
+  args: { users, onGrant: onGrantLog, onTogglePlan: onTogglePlanLog },
 };
 
 export const Empty: Story = {
-  args: { users: [] },
+  args: { users: [], onGrant: onGrantLog, onTogglePlan: onTogglePlanLog },
 };

@@ -54,7 +54,7 @@ describe("POST /api/jobs/:id/evaluate", () => {
   it("returns 404 NOT_FOUND for a foreign-owned job id (cross-tenant isolation)", async () => {
     const [userB] = await state.testDb
       .insert(users)
-      .values({ email: "user-b-evaluate-route@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-evaluate-route@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
     const source = await insertSource(state.testDb);
     const job = await insertJob(state.testDb, source.id, { description: "Backend role at Acme." });
@@ -133,5 +133,23 @@ describe("POST /api/jobs/:id/evaluate", () => {
     expect(JSON.stringify(body)).not.toContain("secret detail");
     expect(consoleError).toHaveBeenCalled();
     consoleError.mockRestore();
+  });
+
+  it("a broke non-admin user returns 402 INSUFFICIENT_CREDITS with feature/required/balance details", async () => {
+    const [user] = await state.testDb
+      .insert(users)
+      .values({ email: "credits-402-evaluate@example.com", passwordHash: "h", role: "user", plan: "standard" })
+      .returning();
+    await insertProfile(state.testDb, { id: "profile-credits-402-evaluate", userId: user.id });
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id, { userId: user.id, description: "Backend role at Acme." });
+    await insertResume(state.testDb, { userId: user.id, isActive: true });
+    requireUser.mockResolvedValue({ id: user.id, email: user.email, role: "user" });
+
+    const res = await POST(req(job.id), { params: Promise.resolve({ id: job.id }) });
+    expect(res.status).toBe(402);
+    const body = await res.json();
+    expect(body.error.code).toBe("INSUFFICIENT_CREDITS");
+    expect(body.error.details).toEqual({ feature: "evaluate", required: 5, balance: 0 });
   });
 });

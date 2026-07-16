@@ -68,8 +68,10 @@ Copy `/backups` off-box.
 ## Image runtime: `next start` (not standalone)
 The Dockerfile runs `next start` and keeps full `node_modules` — deliberate, because the tsx/drizzle-kit one-offs (`db:migrate`, `db:seed`, `migrate-uploads`) run via `docker compose run app ...` and need those binaries. `output: "standalone"` was **removed** from `next.config.mjs` (2026-07-16): it conflicts with `next start` (Next 15.5 warns "does not work") and the runtime image isn't the slim standalone bundle anyway. If you ever want the slimmer standalone image, you'd also need a separate migration path for the one-offs (standalone bundles only traced deps — no tsx/drizzle-kit).
 
-## Pre-public tripwires (locked-decision behaviors — address before public exposure)
-- **Open registration, no email verification** → every account spends real OpenRouter money. Add an invite/allowlist gate before the box is reachable by strangers.
-- **No session expiry** → a leaked token is valid until logout. Add a TTL/sliding expiry.
-- **Global daily cost cap** → one heavy user pauses everyone's queue. Make it per-user before a paying stranger.
+## Pre-public tripwires (closed — membership-credits spec)
+- **Invite-gated registration** — `POST /api/auth/register` requires `inviteCode` to match env `CALIBER_INVITE_CODE` (membership spec §4.5.2); the route fails loud if the env var is unset. Rotate the value to invalidate outstanding invites. A per-IP registration limit (`src/server/auth/registerLimit.ts`) also caps signups from one address.
+- **30-day sliding session TTL** — idle sessions expire and are deleted; a leaked token stops working after 30 days of inactivity, not just at logout.
+- **Per-user spend is bounded by prepaid credits** — every account starts with a 30-credit signup bundle and every scan/tailor/evaluate/extract/answer debits its own wallet (`src/server/credits`); a drained wallet 402s instead of spending more. `CALIBER_DAILY_LLM_USD=5` is no longer a per-user fairness knob — reframe it as the operator's **global wallet circuit-breaker**: a blanket kill-switch against a runaway bug burning OpenRouter spend, not a per-user cap.
 - **url_checks worker surface** was scoped for tenancy here; expect a `drizzle` migration-journal conflict when `feat/parallel-scoring` eventually merges.
+
+**Operator note:** set the real `CALIBER_INVITE_CODE` value in `/opt/caliber/.env.production` on the box before the next deploy — the app fails loud on boot in production if it's unset.

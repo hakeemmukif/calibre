@@ -8,8 +8,12 @@ import type { AdminUser } from "@/types";
 
 afterEach(cleanup);
 
-const { getAdminUsers } = vi.hoisted(() => ({ getAdminUsers: vi.fn() }));
-vi.mock("@/features/admin/client", () => ({ getAdminUsers }));
+const { getAdminUsers, grantCredits, patchUserPlan } = vi.hoisted(() => ({
+  getAdminUsers: vi.fn(),
+  grantCredits: vi.fn(),
+  patchUserPlan: vi.fn(),
+}));
+vi.mock("@/features/admin/client", () => ({ getAdminUsers, grantCredits, patchUserPlan }));
 
 import AdminPage from "./page";
 
@@ -22,6 +26,8 @@ const users: AdminUser[] = [
     resumeCount: 1,
     jobCount: 42,
     applicationCount: 12,
+    balance: 0,
+    plan: "unlimited",
   },
 ];
 

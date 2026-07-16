@@ -47,7 +47,7 @@ describe("GET /api/admin/users", () => {
   });
 
   it("200s for an admin: returns every user with counts and never a passwordHash", async () => {
-    await state.testDb.insert(users).values({ id: crypto.randomUUID(), email: "b@x.co", passwordHash: "h", role: "user" });
+    await state.testDb.insert(users).values({ id: crypto.randomUUID(), email: "b@x.co", passwordHash: "h", role: "user", plan: "standard" });
 
     const res = await GET();
     expect(res.status).toBe(200);

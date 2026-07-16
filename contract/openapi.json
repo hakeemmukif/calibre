@@ -2,9 +2,38 @@
   "components": {
     "parameters": {},
     "schemas": {
+      "AdminGrantRequest": {
+        "properties": {
+          "delta": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "delta"
+        ],
+        "type": "object"
+      },
+      "AdminPlanPatch": {
+        "properties": {
+          "plan": {
+            "enum": [
+              "standard",
+              "unlimited"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "plan"
+        ],
+        "type": "object"
+      },
       "AdminUser": {
         "properties": {
           "applicationCount": {
+            "type": "integer"
+          },
+          "balance": {
             "type": "integer"
           },
           "createdAt": {
@@ -20,6 +49,13 @@
           },
           "jobCount": {
             "type": "integer"
+          },
+          "plan": {
+            "enum": [
+              "standard",
+              "unlimited"
+            ],
+            "type": "string"
           },
           "resumeCount": {
             "type": "integer"
@@ -39,7 +75,9 @@
           "createdAt",
           "resumeCount",
           "jobCount",
-          "applicationCount"
+          "applicationCount",
+          "balance",
+          "plan"
         ],
         "type": "object"
       },
@@ -469,6 +507,25 @@
         ],
         "type": "object"
       },
+      "CreditsResponse": {
+        "properties": {
+          "balance": {
+            "type": "integer"
+          },
+          "plan": {
+            "enum": [
+              "standard",
+              "unlimited"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "balance",
+          "plan"
+        ],
+        "type": "object"
+      },
       "Eligibility": {
         "properties": {
           "summary": {
@@ -514,6 +571,8 @@
                   "PAYLOAD_TOO_LARGE",
                   "FETCH_BLOCKED",
                   "NOT_A_JOB_POSTING",
+                  "RATE_LIMITED",
+                  "INSUFFICIENT_CREDITS",
                   "INTERNAL",
                   "UNAUTHORIZED",
                   "FORBIDDEN"
@@ -905,6 +964,10 @@
             "format": "email",
             "type": "string"
           },
+          "inviteCode": {
+            "minLength": 1,
+            "type": "string"
+          },
           "password": {
             "maxLength": 200,
             "minLength": 8,
@@ -913,7 +976,8 @@
         },
         "required": [
           "email",
-          "password"
+          "password",
+          "inviteCode"
         ],
         "type": "object"
       },
@@ -2264,6 +2328,8 @@
                   "PAYLOAD_TOO_LARGE",
                   "FETCH_BLOCKED",
                   "NOT_A_JOB_POSTING",
+                  "RATE_LIMITED",
+                  "INSUFFICIENT_CREDITS",
                   "INTERNAL",
                   "UNAUTHORIZED",
                   "FORBIDDEN"
@@ -2412,6 +2478,82 @@
         "summary": "Admin: every account with per-user résumé/job/application counts"
       }
     },
+    "/api/admin/users/{id}": {
+      "patch": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminPlanPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUser"
+                }
+              }
+            },
+            "description": "The updated AdminUser"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Caller is not an admin"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unknown/non-uuid user id"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Invalid body (plan must be 'standard' or 'unlimited')"
+          }
+        },
+        "summary": "Admin: toggle a user's plan (standard/unlimited)"
+      }
+    },
     "/api/admin/users/{id}/applications": {
       "get": {
         "parameters": [
@@ -2549,6 +2691,90 @@
           }
         },
         "summary": "Admin: the target user's tracker rows (decision #7 full content access)"
+      }
+    },
+    "/api/admin/users/{id}/credits": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminGrantRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "balance": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "balance"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The user's new balance"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Caller is not an admin"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unknown/non-uuid user id"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Invalid body (delta must be a non-zero integer)"
+          }
+        },
+        "summary": "Admin: grant (or debit) credits by an arbitrary non-zero delta"
       }
     },
     "/api/admin/users/{id}/jobs": {
@@ -3129,6 +3355,16 @@
             },
             "description": "No session"
           },
+          "402": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Insufficient credits"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -3425,6 +3661,16 @@
             },
             "description": "Created + session cookie set"
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Invalid invite code"
+          },
           "409": {
             "content": {
               "application/json": {
@@ -3444,6 +3690,16 @@
               }
             },
             "description": "Validation error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too many registrations from this IP"
           }
         },
         "summary": "Register an account (auto-login)"
@@ -3474,6 +3730,33 @@
           }
         },
         "summary": "Current session"
+      }
+    },
+    "/api/credits": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreditsResponse"
+                }
+              }
+            },
+            "description": "Wallet balance and plan"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          }
+        },
+        "summary": "Wallet balance + plan for the header chip"
       }
     },
     "/api/health": {
@@ -3739,6 +4022,16 @@
             },
             "description": "No session"
           },
+          "402": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Insufficient credits"
+          },
           "409": {
             "content": {
               "application/json": {
@@ -3937,6 +4230,16 @@
               }
             },
             "description": "No session"
+          },
+          "402": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Insufficient credits"
           },
           "404": {
             "content": {
@@ -4185,6 +4488,16 @@
             },
             "description": "No session"
           },
+          "402": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Insufficient credits"
+          },
           "413": {
             "content": {
               "application/json": {
@@ -4341,6 +4654,16 @@
               }
             },
             "description": "No session"
+          },
+          "402": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Insufficient credits"
           },
           "409": {
             "content": {
@@ -4583,6 +4906,16 @@
             },
             "description": "No session"
           },
+          "402": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Insufficient credits"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -4646,6 +4979,16 @@
               }
             },
             "description": "No session"
+          },
+          "402": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Insufficient credits"
           },
           "404": {
             "content": {

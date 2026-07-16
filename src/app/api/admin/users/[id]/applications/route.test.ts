@@ -100,7 +100,7 @@ describe("GET /api/admin/users/[id]/applications", () => {
   it("a target with no applications returns an empty list, not 500", async () => {
     const [userB] = await state.testDb
       .insert(users)
-      .values({ email: "target-b-no-apps@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "target-b-no-apps@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
     const { request, params } = req(userB.id);
     const res = await GET(request, { params });
@@ -118,7 +118,7 @@ describe("GET /api/admin/users/[id]/applications", () => {
   it("returns target user B's applications, not the admin's own or a third user's", async () => {
     const [userB] = await state.testDb
       .insert(users)
-      .values({ email: "target-b-apps@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "target-b-apps@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
 
     await seedAppliedJob(BOOTSTRAP_ADMIN_ID);

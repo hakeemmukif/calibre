@@ -3,6 +3,7 @@
 // runs during a search, just for a single already-persisted job outside a run.
 import { getLlm, type LlmClient } from "@/lib/llm/client";
 import { assembleJob } from "@/features/feed/assemble";
+import { assertAndDebit } from "@/server/credits";
 import { jobsRepo } from "@/server/persistence/repos/jobs";
 import { profileRepo } from "@/server/persistence/repos/profile";
 import { resumesRepo } from "@/server/persistence/repos/resumes";
@@ -25,6 +26,7 @@ export async function evaluateJob(jobId: string, userId: string, deps: { llm?: L
   const resume = await resumesRepo.getActive(userId);
   if (!resume) throw new NoActiveResumeError();
   const profile = await profileRepo.get(userId);
+  await assertAndDebit(userId, "evaluate", { refId: jobId });
   const job = await ensureDescription(found.job, found.source).catch((err) => {
     console.error(`evaluateJob ${jobId}: detail fetch failed:`, err);
     return found.job;

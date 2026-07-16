@@ -14,6 +14,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { UnauthorizedError } from "@/server/auth/errors";
 import { requireUser } from "@/server/auth/session";
+import { InsufficientCreditsError } from "@/server/credits";
 import { NoActiveResumeError } from "@/server/search/run";
 import { listActiveChecks, listChecksByIds, PayloadTooLargeError, startUrlCheck } from "@/server/url-check/run";
 import { UrlCheckRequest, type ErrorEnvelope } from "@/types";
@@ -38,6 +39,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(check, { status: started ? 202 : 200 });
   } catch (err) {
     if (err instanceof UnauthorizedError) return errorResponse(401, "UNAUTHORIZED", err.message);
+    if (err instanceof InsufficientCreditsError) {
+      return errorResponse(402, "INSUFFICIENT_CREDITS", err.message, { feature: err.feature, required: err.required, balance: err.balance });
+    }
     if (err instanceof ZodError) {
       return errorResponse(422, "VALIDATION_ERROR", "Invalid URL-check request.", err.issues);
     }

@@ -9,6 +9,12 @@ import type { UserRow } from "./users";
 // polling/click traffic behind long-running scan writes.
 const LAST_USED_BUMP_MS = 5 * 60_000;
 
+// Sliding session TTL (membership spec §4.5.1): a session idle past this is
+// dead — delete the row and treat the token as unknown. Mirrors the 30-day
+// cookie maxAge in src/server/auth/session.ts (THIRTY_DAYS); change both
+// together.
+const SESSION_TTL_MS = 30 * 24 * 60 * 60_000;
+
 export function createSessionRepo(db: Db) {
   return {
     async create(input: { userId: string; tokenHash: string }): Promise<void> {
@@ -26,6 +32,10 @@ export function createSessionRepo(db: Db) {
         .where(eq(sessions.tokenHash, tokenHash))
         .limit(1);
       if (!row) return null;
+      if (Date.now() - row.lastUsedAt.getTime() > SESSION_TTL_MS) {
+        await db.delete(sessions).where(eq(sessions.tokenHash, tokenHash));
+        return null;
+      }
       if (Date.now() - row.lastUsedAt.getTime() > LAST_USED_BUMP_MS) {
         await db.update(sessions).set({ lastUsedAt: new Date() }).where(eq(sessions.tokenHash, tokenHash));
       }

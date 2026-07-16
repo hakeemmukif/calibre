@@ -39,7 +39,7 @@ describe("tailoredResumesRepo", () => {
     const job = await insertJob(db, source.id);
     const [userB] = await db
       .insert(users)
-      .values({ email: "user-b-tailoredresumes@example.com", passwordHash: "h", role: "user" })
+      .values({ email: "user-b-tailoredresumes@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
 
     const inserted = await repo.insert({

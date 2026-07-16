@@ -5,6 +5,7 @@
 import { z } from "zod";
 import { Job, LegitimacyTier, Persona, SummaryStripStats } from "@/types";
 import { requestJson } from "@/features/http";
+import { refreshCredits } from "@/features/credits/creditsStore";
 
 export interface GetJobsQuery {
   persona?: Persona;
@@ -41,7 +42,9 @@ export async function getJob(id: string): Promise<Job> {
 }
 
 export async function evaluateJob(id: string): Promise<Job> {
-  return requestJson(`/api/jobs/${id}/evaluate`, { method: "POST" }, Job);
+  const job = await requestJson(`/api/jobs/${id}/evaluate`, { method: "POST" }, Job);
+  refreshCredits();
+  return job;
 }
 
 export async function deleteJob(id: string): Promise<void> {

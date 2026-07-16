@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { NextRequest } from "next/server";
 
 const { usersRepo, sessionsRepo, getSession } = vi.hoisted(() => ({
@@ -8,6 +8,8 @@ const { usersRepo, sessionsRepo, getSession } = vi.hoisted(() => ({
 }));
 vi.mock("@/server/persistence/repos/users", () => ({ usersRepo }));
 vi.mock("@/server/persistence/repos/sessions", () => ({ sessionsRepo }));
+const { grant } = vi.hoisted(() => ({ grant: vi.fn() }));
+vi.mock("@/server/credits", () => ({ grant }));
 vi.mock("@/server/auth/session", async (orig) => ({
   ...(await orig<typeof import("@/server/auth/session")>()),
   getSession: () => getSession(),
@@ -20,9 +22,24 @@ import { GET as session } from "./session/route";
 import { hashPassword } from "@/server/auth/password";
 import { hashToken } from "@/server/auth/token";
 import { SESSION_COOKIE } from "@/server/auth/session";
+import { __resetRegisterLimitForTests } from "@/server/auth/registerLimit";
+
+function jsonRequest(body: unknown, headers?: Record<string, string>): Request {
+  return new Request("http://x/api/auth/register", {
+    method: "POST",
+    headers: { "content-type": "application/json", ...headers },
+    body: JSON.stringify(body),
+  });
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
+  process.env.CALIBER_INVITE_CODE = "e2e-invite";
+  __resetRegisterLimitForTests();
+});
+
+afterEach(() => {
+  delete process.env.CALIBER_INVITE_CODE;
 });
 
 describe("POST /api/auth/register", () => {
@@ -31,10 +48,7 @@ describe("POST /api/auth/register", () => {
     usersRepo.create.mockResolvedValue({ id: "u1", email: "a@b.co", role: "user" });
     sessionsRepo.create.mockResolvedValue(undefined);
     const res = await register(
-      new Request("http://x/api/auth/register", {
-        method: "POST",
-        body: JSON.stringify({ email: "a@b.co", password: "longenough" }),
-      }) as any
+      jsonRequest({ email: "a@b.co", password: "longenough", inviteCode: "e2e-invite" }),
     );
     expect(res.status).toBe(201);
     expect(usersRepo.create).toHaveBeenCalledWith(expect.objectContaining({ role: "user" }));
@@ -43,16 +57,15 @@ describe("POST /api/auth/register", () => {
     const cookie = res.headers.get("set-cookie") ?? "";
     expect(cookie).toContain("caliber_session=");
     expect(cookie.toLowerCase()).toContain("httponly");
+    expect(grant).toHaveBeenCalledWith("u1", 30, "signup");
+    expect(grant).toHaveBeenCalledOnce();
   });
 
   it("maps EmailTakenError to 409 CONFLICT", async () => {
     const { EmailTakenError } = await import("@/server/auth/errors");
     usersRepo.create.mockRejectedValue(new EmailTakenError("a@b.co"));
     const res = await register(
-      new Request("http://x/api/auth/register", {
-        method: "POST",
-        body: JSON.stringify({ email: "a@b.co", password: "longenough" }),
-      }) as any
+      jsonRequest({ email: "a@b.co", password: "longenough", inviteCode: "e2e-invite" }),
     );
     expect(res.status).toBe(409);
     expect((await res.json()).error.code).toBe("CONFLICT");
@@ -60,14 +73,52 @@ describe("POST /api/auth/register", () => {
 
   it("maps an invalid body to 422 VALIDATION_ERROR", async () => {
     const res = await register(
-      new Request("http://x/api/auth/register", {
-        method: "POST",
-        body: JSON.stringify({ email: "not-an-email", password: "short" }),
-      }) as any
+      jsonRequest({ email: "not-an-email", password: "short" }),
     );
     expect(res.status).toBe(422);
     expect((await res.json()).error.code).toBe("VALIDATION_ERROR");
     expect(usersRepo.create).not.toHaveBeenCalled();
+  });
+
+  it("403s FORBIDDEN on wrong invite code, creating nothing", async () => {
+    const res = await register(
+      jsonRequest({ email: "a@x.co", password: "hunter2hunter2", inviteCode: "wrong" }),
+    );
+    expect(res.status).toBe(403);
+    expect((await res.json()).error.code).toBe("FORBIDDEN");
+    expect(usersRepo.create).not.toHaveBeenCalled();
+    expect(grant).not.toHaveBeenCalled();
+  });
+
+  it("422s when inviteCode is missing entirely", async () => {
+    const res = await register(
+      jsonRequest({ email: "a@x.co", password: "hunter2hunter2" }),
+    );
+    expect(res.status).toBe(422);
+    expect(grant).not.toHaveBeenCalled();
+  });
+
+  it("429s RATE_LIMITED on the 4th registration from one IP inside an hour", async () => {
+    usersRepo.create.mockResolvedValue({ id: "u1", email: "a@b.co", role: "user" });
+    sessionsRepo.create.mockResolvedValue(undefined);
+    for (let i = 0; i < 3; i++) {
+      const res = await register(
+        jsonRequest(
+          { email: `u${i}@x.co`, password: "hunter2hunter2", inviteCode: "e2e-invite" },
+          { "x-forwarded-for": "203.0.113.9" },
+        ),
+      );
+      expect(res.status).toBe(201);
+    }
+    const res = await register(
+      jsonRequest(
+        { email: "u3@x.co", password: "hunter2hunter2", inviteCode: "e2e-invite" },
+        { "x-forwarded-for": "203.0.113.9" },
+      ),
+    );
+    expect(res.status).toBe(429);
+    expect((await res.json()).error.code).toBe("RATE_LIMITED");
+    expect(grant).toHaveBeenCalledTimes(3);
   });
 });
 

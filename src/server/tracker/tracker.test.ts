@@ -204,7 +204,7 @@ describe("server/tracker", () => {
       const app = await markApplied(BOOTSTRAP_ADMIN_ID, { jobId: job.id });
       const [userB] = await state.testDb
         .insert(users)
-        .values({ email: "user-b-patchapplication@example.com", passwordHash: "h", role: "user" })
+        .values({ email: "user-b-patchapplication@example.com", passwordHash: "h", role: "user", plan: "standard" })
         .returning();
 
       const result = await patchApplication(app.id, userB.id, { stage: 3, note: "hijacked" });
@@ -222,7 +222,7 @@ describe("server/tracker", () => {
       await markApplied(BOOTSTRAP_ADMIN_ID, { jobId: job.id });
       const [userB] = await state.testDb
         .insert(users)
-        .values({ email: "user-b-tracker-isolation@example.com", passwordHash: "h", role: "user" })
+        .values({ email: "user-b-tracker-isolation@example.com", passwordHash: "h", role: "user", plan: "standard" })
         .returning();
 
       const bList = await listApplications({}, userB.id);

@@ -17,14 +17,16 @@ import { renderTemplate } from "@/lib/llm/templates";
 import { htmlToPdf } from "@/lib/pdf";
 import { renderCvHtml } from "@/lib/resume-render";
 import { jobsRepo } from "@/server/persistence/repos/jobs";
+import { jobScoresRepo } from "@/server/persistence/repos/jobScores";
 import { resumesRepo, type ResumeRow } from "@/server/persistence/repos/resumes";
 import { tailoredResumesRepo, type TailoredResumeRow } from "@/server/persistence/repos/tailoredResumes";
 import { correlationReportsRepo, type CorrelationReportRow } from "@/server/persistence/repos/correlationReports";
+import { assertAndDebit } from "@/server/credits";
 import type { ResumeStore } from "@/server/resume/resume-store";
 import { create, release, type RunHandle } from "@/server/runs/registry";
 import { TailoredResume } from "@/types";
 import { toTailoredResume } from "./assemble";
-import { correlate, type CorrelateDeps } from "./correlate";
+import { correlate, NoJdFactsError, type CorrelateDeps } from "./correlate";
 import { atsPresentCount, fabricationViolations } from "./correlate-metrics";
 import { NoActiveResumeError, TailorFabricationError, UnknownJobError, UnknownReportError } from "./errors";
 import { applyAcceptedDiff, applyEdits, DiffEntrySchema, InvalidDiffIndexError, MalformedDiffEditError, UnknownDiffSectionError } from "./merge";
@@ -140,6 +142,19 @@ export async function startTailor(
     assertReportMatchesRun(report, { jobId: input.jobId, baseResumeId: resumeRow.id });
   }
 
+  if (!input.reportId) {
+    // Direct-tailor path: correlate runs later inside the background job, so
+    // its own validations (including this one) would fire after admission —
+    // pre-check the one that gates the whole flow (same check correlate
+    // does) BEFORE charging, and charge here since this IS the flow's
+    // synchronous admission point. The background job's own internal
+    // correlate call is marked prepaid (resolveReport below) so it never
+    // charges again.
+    const scoreRow = await jobScoresRepo.getLatestByJobId(input.jobId);
+    if (!scoreRow?.jdFacts) throw new NoJdFactsError(input.jobId);
+    await assertAndDebit(userId, "tailor", { refId: input.jobId });
+  }
+
   const inserted = await tailoredResumesRepo.insert({
     userId,
     jobId: input.jobId,
@@ -234,7 +249,7 @@ async function resolveReport(row: TailoredResumeRow, deps: CorrelateDeps): Promi
     return report;
   }
 
-  const started = await correlate(row.userId, { jobId: row.jobId }, deps);
+  const started = await correlate(row.userId, { jobId: row.jobId }, deps, { prepaid: true });
   const report = await pollCorrelationUntilTerminal(started.id, row.userId);
   assertReportMatchesRun(report, row);
   return report;

@@ -103,7 +103,7 @@ describe("url-check worker", () => {
 
     const [userB] = await db
       .insert(users)
-      .values({ email: `user-b-worker-leak-${crypto.randomUUID()}@example.com`, passwordHash: "h", role: "user" })
+      .values({ email: `user-b-worker-leak-${crypto.randomUUID()}@example.com`, passwordHash: "h", role: "user", plan: "standard" })
       .returning();
     await insertResume(db, { isActive: true, userId: userB.id });
     await insertProfile(db, { id: `profile-b-worker-leak-${crypto.randomUUID()}`, userId: userB.id });

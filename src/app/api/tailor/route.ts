@@ -6,7 +6,9 @@ import { z, ZodError } from "zod";
 import { UuidParam } from "@/server/http/params";
 import { UnauthorizedError } from "@/server/auth/errors";
 import { requireUser } from "@/server/auth/session";
+import { InsufficientCreditsError } from "@/server/credits";
 import { NoActiveResumeError, UnknownJobError, UnknownReportError, startTailor } from "@/server/tailor";
+import { NoJdFactsError } from "@/server/tailor/correlate";
 import type { ErrorEnvelope } from "@/types";
 
 const RequestBody = z.object({ jobId: UuidParam, reportId: UuidParam.optional() });
@@ -42,6 +44,12 @@ export async function POST(request: NextRequest) {
     }
     if (err instanceof NoActiveResumeError) {
       return errorResponse(409, "CONFLICT", err.message);
+    }
+    if (err instanceof NoJdFactsError) {
+      return errorResponse(409, "CONFLICT", err.message, { reason: "no-jdfacts" });
+    }
+    if (err instanceof InsufficientCreditsError) {
+      return errorResponse(402, "INSUFFICIENT_CREDITS", err.message, { feature: err.feature, required: err.required, balance: err.balance });
     }
     throw err;
   }

@@ -7,6 +7,7 @@ import { NoActiveResumeError, UnknownJobError, UpstreamLlmError, draftAnswers } 
 import { UuidParam } from "@/server/http/params";
 import { UnauthorizedError } from "@/server/auth/errors";
 import { requireUser } from "@/server/auth/session";
+import { InsufficientCreditsError } from "@/server/credits";
 import { ApplicationQuestion, type ErrorEnvelope } from "@/types";
 
 const RequestBody = z.object({
@@ -45,6 +46,9 @@ export async function POST(request: NextRequest) {
     }
     if (err instanceof UpstreamLlmError) {
       return errorResponse(502, "UPSTREAM_LLM_ERROR", err.message);
+    }
+    if (err instanceof InsufficientCreditsError) {
+      return errorResponse(402, "INSUFFICIENT_CREDITS", err.message, { feature: err.feature, required: err.required, balance: err.balance });
     }
     throw err;
   }
