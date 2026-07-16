@@ -2,10 +2,10 @@
 // (api-contract.md §3 "POST /api/tailor", "GET /api/tailor/:id",
 // "POST /api/tailor/:id/finalize", "GET /api/tailor/:id/pdf"). Never imports
 // server/* or lib/llm.
-import { SseEvent, TailoredResume } from "@/types";
+import { CorrelationReport, SseEvent, TailoredResume } from "@/types";
 import { requestJson } from "@/features/http";
 
-export async function startTailor(input: { jobId: string }): Promise<TailoredResume> {
+export async function startTailor(input: { jobId: string; reportId?: string }): Promise<TailoredResume> {
   return requestJson(
     "/api/tailor",
     { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) },
@@ -15,6 +15,18 @@ export async function startTailor(input: { jobId: string }): Promise<TailoredRes
 
 export async function getTailor(id: string): Promise<TailoredResume> {
   return requestJson(`/api/tailor/${id}`, undefined, TailoredResume);
+}
+
+export async function startCorrelate(input: { jobId: string }): Promise<CorrelationReport> {
+  return requestJson(
+    "/api/tailor/correlate",
+    { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) },
+    CorrelationReport,
+  );
+}
+
+export async function getCorrelate(id: string): Promise<CorrelationReport> {
+  return requestJson(`/api/tailor/correlate/${id}`, undefined, CorrelationReport);
 }
 
 // Same content-negotiated SSE pattern as features/search/client.ts.
