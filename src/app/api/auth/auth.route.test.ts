@@ -8,6 +8,8 @@ const { usersRepo, sessionsRepo, getSession } = vi.hoisted(() => ({
 }));
 vi.mock("@/server/persistence/repos/users", () => ({ usersRepo }));
 vi.mock("@/server/persistence/repos/sessions", () => ({ sessionsRepo }));
+const { grant } = vi.hoisted(() => ({ grant: vi.fn() }));
+vi.mock("@/server/credits", () => ({ grant }));
 vi.mock("@/server/auth/session", async (orig) => ({
   ...(await orig<typeof import("@/server/auth/session")>()),
   getSession: () => getSession(),
@@ -55,6 +57,8 @@ describe("POST /api/auth/register", () => {
     const cookie = res.headers.get("set-cookie") ?? "";
     expect(cookie).toContain("caliber_session=");
     expect(cookie.toLowerCase()).toContain("httponly");
+    expect(grant).toHaveBeenCalledWith("u1", 30, "signup");
+    expect(grant).toHaveBeenCalledOnce();
   });
 
   it("maps EmailTakenError to 409 CONFLICT", async () => {
@@ -83,6 +87,7 @@ describe("POST /api/auth/register", () => {
     expect(res.status).toBe(403);
     expect((await res.json()).error.code).toBe("FORBIDDEN");
     expect(usersRepo.create).not.toHaveBeenCalled();
+    expect(grant).not.toHaveBeenCalled();
   });
 
   it("422s when inviteCode is missing entirely", async () => {
@@ -90,6 +95,7 @@ describe("POST /api/auth/register", () => {
       jsonRequest({ email: "a@x.co", password: "hunter2hunter2" }),
     );
     expect(res.status).toBe(422);
+    expect(grant).not.toHaveBeenCalled();
   });
 
   it("429s RATE_LIMITED on the 4th registration from one IP inside an hour", async () => {
@@ -112,6 +118,7 @@ describe("POST /api/auth/register", () => {
     );
     expect(res.status).toBe(429);
     expect((await res.json()).error.code).toBe("RATE_LIMITED");
+    expect(grant).toHaveBeenCalledTimes(3);
   });
 });
 
