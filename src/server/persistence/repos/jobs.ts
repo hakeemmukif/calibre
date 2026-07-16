@@ -51,11 +51,17 @@ const DEFAULT_LIMIT = 25;
 // — unique key is (jobId, resumeId, policyVersion)). Joins must pick exactly
 // one — the latest by created_at — so a job never fans out into duplicate
 // rows and getById never returns an arbitrary score.
-// GLOBAL-BY-DECISION: this DISTINCT ON subquery carries no user_id filter of
-// its own (perf-only, not a leak) — every caller inner-joins it back onto
-// the already userId-scoped `jobs` rows (see listScored/getById/statsForQuery
-// below), so a foreign user's job_scores row can never surface through it.
-function latestJobScores(db: Db) {
+// perf/scan-overhead: scoped to the caller's own jobs via a join back to
+// `jobs` (not jobScores.userId — the join is the trustworthy owner) so the
+// row_number() window only ranks the caller's rows on every feed load,
+// instead of the entire table across every tenant. Semantics are unchanged:
+// the window is PARTITION BY job_id, and job_id is globally unique to one
+// owner, so narrowing the ranking domain to the caller's jobs never drops or
+// reorders rows within any partition the caller could see — every caller
+// still inner-joins this back onto the already userId-scoped `jobs` rows
+// (see listScored/getById/statsForQuery below), so a foreign user's
+// job_scores row can never surface through it either way.
+function latestJobScores(db: Db, userId: string) {
   const ranked = db
     .select({
       id: jobScores.id,
@@ -67,6 +73,8 @@ function latestJobScores(db: Db) {
       ),
     })
     .from(jobScores)
+    .innerJoin(jobs, eq(jobs.id, jobScores.jobId))
+    .where(eq(jobs.userId, userId))
     .as("ranked_job_scores");
   return db.select({ id: ranked.id }).from(ranked).where(eq(ranked.rn, 1)).as("latest_job_scores");
 }
@@ -185,7 +193,7 @@ export function createJobsRepo(db: Db) {
         );
       }
 
-      const latest = latestJobScores(db);
+      const latest = latestJobScores(db, q.userId);
 
       const rows = await db
         .select({ job: jobs, score: jobScores, source: sources })
@@ -204,7 +212,7 @@ export function createJobsRepo(db: Db) {
     },
 
     async getById(id: string, userId: string): Promise<JobJoinScore | null> {
-      const latest = latestJobScores(db);
+      const latest = latestJobScores(db, userId);
       const [row] = await db
         .select({ job: jobs, score: jobScores, source: sources })
         .from(jobs)
@@ -326,7 +334,7 @@ export function createJobsRepo(db: Db) {
       sinceLastCutoff?: Date | null,
     ): Promise<{ scanned: number; worth: number; ghosts: number; flagged: number; sinceLast: number }> {
       const conditions = buildFilterConditions(q);
-      const latest = latestJobScores(db);
+      const latest = latestJobScores(db, q.userId);
 
       const rows = await db
         .select({

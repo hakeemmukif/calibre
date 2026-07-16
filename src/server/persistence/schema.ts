@@ -172,7 +172,12 @@ export const jobs = sqliteTable(
     tzBand: text("tz_band", { enum: ["apac", "emea", "americas"] }),
     hiringStructure: text("hiring_structure", { enum: ["local-entity", "eor", "contractor"] }),
   },
-  (table) => [unique("jobs_user_id_dedupe_key_unique").on(table.userId, table.dedupeKey)],
+  (table) => [
+    unique("jobs_user_id_dedupe_key_unique").on(table.userId, table.dedupeKey),
+    // perf/scan-overhead: covers the feed's filter+sort path (listScored/
+    // statsForQuery WHERE user_id = ? ORDER BY first_seen_at DESC).
+    index("jobs_user_id_first_seen_at_idx").on(table.userId, table.firstSeenAt),
+  ],
 );
 
 export const jobScores = sqliteTable(
@@ -198,7 +203,12 @@ export const jobScores = sqliteTable(
     policyVersion: text("policy_version").notNull(),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
   },
-  (table) => [unique("job_scores_job_resume_policy_unique").on(table.jobId, table.resumeId, table.policyVersion)],
+  (table) => [
+    unique("job_scores_job_resume_policy_unique").on(table.jobId, table.resumeId, table.policyVersion),
+    // perf/scan-overhead: sumCostUsdSince (jobScores.ts) full-scans this
+    // table by createdAt on every worker kick when CALIBER_DAILY_LLM_USD is set.
+    index("job_scores_created_at_idx").on(table.createdAt),
+  ],
 );
 
 export const applicationAnswers = sqliteTable("application_answers", {
@@ -290,7 +300,12 @@ export const urlChecks = sqliteTable(
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
     finishedAt: integer("finished_at", { mode: "timestamp_ms" }),
   },
-  (t) => [index("url_checks_queued_idx").on(t.status, t.createdAt).where(sql`${t.status} = 'queued'`)],
+  (t) => [
+    index("url_checks_queued_idx").on(t.status, t.createdAt).where(sql`${t.status} = 'queued'`),
+    // perf/scan-overhead: sweepExpiredLeases/requeueOrphanedRunning scan
+    // status='running' rows — mirrors the queued partial index above.
+    index("url_checks_running_idx").on(t.status, t.leaseExpiresAt).where(sql`${t.status} = 'running'`),
+  ],
 );
 
 export const applications = sqliteTable("applications", {
