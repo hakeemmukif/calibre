@@ -33,7 +33,7 @@ describe("correlation contract", () => {
   it("parses a TailoredResume diff entry with target addressing", () => {
     const t = TailoredResume.parse({
       id: "t1", jobId: "j1", resumeId: "cv1", status: "completed", progress: null,
-      reportId: "r1", resume: null,
+      reportId: "r1", atsDelta: null, resume: null,
       diff: [{ section: "experience", op: "modify", before: "b", after: "a",
         reason: "why", requirement: "distributed systems",
         target: { index: 0, bulletIndex: 1 } }],

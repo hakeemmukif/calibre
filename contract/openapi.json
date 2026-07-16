@@ -1946,6 +1946,28 @@
       },
       "TailoredResume": {
         "properties": {
+          "atsDelta": {
+            "properties": {
+              "after": {
+                "type": "integer"
+              },
+              "before": {
+                "type": "integer"
+              },
+              "total": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "before",
+              "after",
+              "total"
+            ],
+            "type": [
+              "object",
+              "null"
+            ]
+          },
           "completedAt": {
             "format": "date-time",
             "type": [
@@ -2198,6 +2220,7 @@
           "status",
           "progress",
           "reportId",
+          "atsDelta",
           "resume",
           "diff",
           "model",

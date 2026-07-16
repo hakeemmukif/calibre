@@ -48,6 +48,7 @@ export async function toTailoredResume(row: TailoredResumeRow): Promise<Tailored
     status: row.status,
     progress: null,
     reportId: row.reportId,
+    atsDelta: row.atsDelta ?? null,
     resume: resumeStore ? toResumeSummaryView(resumeStore, row.finalizedAt ?? row.completedAt ?? row.createdAt) : null,
     diff: row.diff,
     model: row.model,

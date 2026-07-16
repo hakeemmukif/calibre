@@ -380,6 +380,7 @@ export const tailored: TailoredResume = TailoredResume.parse({
   status: "completed",
   progress: null,
   reportId: null,
+  atsDelta: null,
   model: "openrouter/deepseek-v3.1",
   createdAt: "2026-07-08T05:40:00Z",
   completedAt: "2026-07-08T05:41:30Z",

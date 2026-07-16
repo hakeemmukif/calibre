@@ -236,6 +236,7 @@ export const tailoredResumes = pgTable("tailored_resumes", {
   // first finalize; DB-internal, never on the wire (`TailoredResume` shape
   // unchanged).
   acceptedIndices: jsonb("accepted_indices").$type<number[]>(),
+  atsDelta: jsonb("ats_delta").$type<{ before: number; after: number; total: number }>(),
   // B8: frozen `TailoredResume.model` (src/types) is a required string, even on
   // the queued/202 draft — populated from config/models.yml's static "tailor"
   // task routing at insert time, then overwritten with the LLM call's actual

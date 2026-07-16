@@ -310,6 +310,9 @@ export const TailoredResume = z.object({
   id: z.string(), jobId: z.string(), resumeId: z.string(), status: RunStatus,
   progress: Progress.nullable(),
   reportId: z.string().nullable(),
+  atsDelta: z
+    .object({ before: z.number().int(), after: z.number().int(), total: z.number().int() })
+    .nullable(),
   resume: Resume.omit({ id: true, rawText: true }).nullable(),
   diff: z.array(z.object({
     section: z.string(), op: z.enum(["add", "remove", "modify"]),

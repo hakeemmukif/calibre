@@ -1,0 +1,1 @@
+ALTER TABLE "tailored_resumes" ADD COLUMN "ats_delta" jsonb;

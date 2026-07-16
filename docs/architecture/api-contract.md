@@ -258,6 +258,7 @@ export const TailoredResume = z.object({
   id: z.string(), jobId: z.string(), resumeId: z.string(), status: RunStatus,
   progress: Progress.nullable(),
   reportId: z.string().nullable(),
+  atsDelta: z.object({ before: z.number().int(), after: z.number().int(), total: z.number().int() }).nullable(),   // literal ATS keyword-present counts, base résumé vs. accepted merge; total = report's term count; null until finalized / for legacy rows
   resume: Resume.omit({ id: true, rawText: true }).nullable(),   // null until completed
   diff: z.array(z.object({ section: z.string(), op: z.enum(['add','remove','modify']),
     before: z.string().optional(), after: z.string().optional(),
