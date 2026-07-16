@@ -28,7 +28,7 @@ Caliber is a standalone AI job-search + application-tracking web app (Next.js 15
 ## Architecture rules
 - **Layering:** UI → `features/*` → `server/*`. Only `server/*` touches the DB or the LLM.
 - **LLM:** OpenRouter only (OpenAI-compatible), cheapest viable model per task, template-guided (`config/models.yml`). No `claude -p` subprocesses.
-- **Persistence:** Drizzle + Postgres (SQLite dev). **Fail loud** — validate at boundaries (`Schema.parse`); no fallback defaults, no silent `0`/`""`/`unknown`.
+- **Persistence:** Drizzle + SQLite via libsql (embedded file locally; Turso-ready). **Fail loud** — validate at boundaries (`Schema.parse`); no fallback defaults, no silent `0`/`""`/`unknown`.
 - **Storybook is the component/page gallery** (`npm run storybook`). Figma is deferred; code is canon.
 
 ## Product
