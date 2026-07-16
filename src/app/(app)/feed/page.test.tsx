@@ -22,11 +22,12 @@ const { getJobs, deleteJob, startSearch } = vi.hoisted(() => ({
 }));
 vi.mock("@/features/feed/client", () => ({ getJobs, deleteJob }));
 vi.mock("@/features/search/client", () => ({ startSearch }));
+const doneCountState = vi.hoisted(() => ({ value: 0 }));
 vi.mock("@/features/url-check/checksStore", () => ({
   useUrlChecks: () => ({
     runs: [],
     active: [],
-    doneCount: 0,
+    doneCount: doneCountState.value,
     submit: vi.fn(),
     submitEvaluate: vi.fn(),
     retryWithText: vi.fn(),
@@ -47,6 +48,7 @@ beforeEach(() => {
   getJobs.mockReset();
   getJobs.mockResolvedValue(EMPTY_FEED);
   startSearch.mockReset();
+  doneCountState.value = 0;
 });
 
 describe("FeedPage 'Scan now'", () => {
@@ -69,5 +71,32 @@ describe("FeedPage 'Scan now'", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Scan now" }));
 
     await waitFor(() => expect(push).toHaveBeenCalledWith("/scans/r-active"));
+  });
+});
+
+describe("FeedPage doneCount reload coalescing", () => {
+  it("coalesces rapid doneCount bumps during an in-flight load into a single trailing fetch", async () => {
+    let resolveFirst!: (v: typeof EMPTY_FEED) => void;
+    const first = new Promise<typeof EMPTY_FEED>((resolve) => { resolveFirst = resolve; });
+    getJobs.mockReturnValueOnce(first);
+
+    const { rerender } = render(<FeedPage />);
+    await waitFor(() => expect(getJobs).toHaveBeenCalledTimes(1));
+
+    // Three rapid doneCount bumps while the mount's load() is still in flight.
+    doneCountState.value = 1;
+    rerender(<FeedPage />);
+    doneCountState.value = 2;
+    rerender(<FeedPage />);
+    doneCountState.value = 3;
+    rerender(<FeedPage />);
+
+    expect(getJobs).toHaveBeenCalledTimes(1); // bumps queued, not fired
+
+    resolveFirst(EMPTY_FEED);
+    await waitFor(() => expect(getJobs).toHaveBeenCalledTimes(2)); // one trailing reload
+
+    await new Promise((r) => setTimeout(r, 0));
+    expect(getJobs).toHaveBeenCalledTimes(2); // no further calls leak out
   });
 });

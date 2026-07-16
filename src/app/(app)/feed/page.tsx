@@ -48,7 +48,15 @@ export default function FeedPage() {
   const [error, setError] = React.useState<string | undefined>();
   const [scanLaunching, setScanLaunching] = React.useState(false);
 
+  // loadInFlightRef/reloadPendingRef coalesce trailing reloads: a batch of N
+  // doneCount bumps arriving while a load() is running must not fire N
+  // requests — the bumps queue at most one trailing load after the current
+  // one finishes.
+  const loadInFlightRef = React.useRef(false);
+  const reloadPendingRef = React.useRef(false);
+
   const load = React.useCallback(async () => {
+    loadInFlightRef.current = true;
     setLoading(true);
     setError(undefined);
     try {
@@ -59,6 +67,11 @@ export default function FeedPage() {
       setError(err instanceof Error ? err.message : "Couldn't load the feed.");
     } finally {
       setLoading(false);
+      loadInFlightRef.current = false;
+      if (reloadPendingRef.current) {
+        reloadPendingRef.current = false;
+        void load();
+      }
     }
   }, [persona]);
 
@@ -70,7 +83,11 @@ export default function FeedPage() {
 
   const prevDone = React.useRef(0);
   React.useEffect(() => {
-    if (checks.doneCount > prevDone.current) { prevDone.current = checks.doneCount; void load(); }
+    if (checks.doneCount > prevDone.current) {
+      prevDone.current = checks.doneCount;
+      if (loadInFlightRef.current) reloadPendingRef.current = true;
+      else void load();
+    }
   }, [checks.doneCount, load]);
 
   const latestPaste = checks.runs.find((r) => r.origin === "paste");
