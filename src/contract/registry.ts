@@ -60,6 +60,8 @@ import {
   SessionResponse,
   AdminUser,
   AdminUsersResponse,
+  AdminPlanPatch,
+  AdminGrantRequest,
   CreditsResponse,
 } from "@/types";
 
@@ -100,6 +102,8 @@ const entitySchemas: Record<string, z.ZodType> = {
   SessionResponse,
   AdminUser,
   AdminUsersResponse,
+  AdminPlanPatch,
+  AdminGrantRequest,
   CreditsResponse,
 };
 
@@ -802,6 +806,43 @@ registry.registerPath({
     401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
     403: { description: "Caller is not an admin", content: { "application/json": { schema: ErrorEnvelope } } },
     404: { description: "Non-uuid user id", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/admin/users/{id}",
+  summary: "Admin: toggle a user's plan (standard/unlimited)",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: { content: { "application/json": { schema: AdminPlanPatch } } },
+  },
+  responses: {
+    200: { description: "The updated AdminUser", content: { "application/json": { schema: AdminUser } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    403: { description: "Caller is not an admin", content: { "application/json": { schema: ErrorEnvelope } } },
+    404: { description: "Unknown/non-uuid user id", content: { "application/json": { schema: ErrorEnvelope } } },
+    422: { description: "Invalid body (plan must be 'standard' or 'unlimited')", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/admin/users/{id}/credits",
+  summary: "Admin: grant (or debit) credits by an arbitrary non-zero delta",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: { content: { "application/json": { schema: AdminGrantRequest } } },
+  },
+  responses: {
+    200: {
+      description: "The user's new balance",
+      content: { "application/json": { schema: z.object({ balance: z.number().int() }) } },
+    },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    403: { description: "Caller is not an admin", content: { "application/json": { schema: ErrorEnvelope } } },
+    404: { description: "Unknown/non-uuid user id", content: { "application/json": { schema: ErrorEnvelope } } },
+    422: { description: "Invalid body (delta must be a non-zero integer)", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
 

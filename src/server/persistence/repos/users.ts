@@ -1,6 +1,6 @@
 import { asc, eq, sql } from "drizzle-orm";
 import { getDb } from "../db";
-import { applications, jobs, resumes, users } from "../schema";
+import { applications, creditLedger, jobs, resumes, users } from "../schema";
 import type { Db } from "./db";
 import { EmailTakenError } from "@/server/auth/errors";
 
@@ -14,6 +14,8 @@ export type AdminUserRow = {
   resumeCount: number;
   jobCount: number;
   applicationCount: number;
+  balance: number;
+  plan: "standard" | "unlimited";
 };
 
 function normalizeEmail(email: string): string {
@@ -70,30 +72,43 @@ export function createUserRepo(db: Db) {
     // (plan 2026-07-14-multitenant-admin.md Task 1), not a per-tenant leak.
     async listWithCounts(): Promise<AdminUserRow[]> {
       const allUsers = await db
-        .select({ id: users.id, email: users.email, role: users.role, createdAt: users.createdAt })
+        .select({ id: users.id, email: users.email, role: users.role, plan: users.plan, createdAt: users.createdAt })
         .from(users)
         .orderBy(asc(users.createdAt));
 
-      const [resumeRows, jobRows, applicationRows] = await Promise.all([
+      const [resumeRows, jobRows, applicationRows, ledgerRows] = await Promise.all([
         db.select({ userId: resumes.userId, count: sql<string>`count(*)` }).from(resumes).groupBy(resumes.userId),
         db.select({ userId: jobs.userId, count: sql<string>`count(*)` }).from(jobs).groupBy(jobs.userId),
         db
           .select({ userId: applications.userId, count: sql<string>`count(*)` })
           .from(applications)
           .groupBy(applications.userId),
+        db
+          .select({ userId: creditLedger.userId, sum: sql<string>`COALESCE(SUM(${creditLedger.delta}), 0)` })
+          .from(creditLedger)
+          .groupBy(creditLedger.userId),
       ]);
       const toCountMap = (rows: { userId: string; count: string }[]) =>
         new Map(rows.map((r) => [r.userId, Number(r.count)]));
       const resumeCounts = toCountMap(resumeRows);
       const jobCounts = toCountMap(jobRows);
       const applicationCounts = toCountMap(applicationRows);
+      const balanceMap = new Map(ledgerRows.map((r) => [r.userId, Number(r.sum)]));
 
       return allUsers.map((u) => ({
         ...u,
         resumeCount: resumeCounts.get(u.id) ?? 0,
         jobCount: jobCounts.get(u.id) ?? 0,
         applicationCount: applicationCounts.get(u.id) ?? 0,
+        balance: balanceMap.get(u.id) ?? 0,
       }));
+    },
+    // GLOBAL-BY-DECISION: admin plan toggle — `id` is the users.id primary
+    // key, the same identity-table dimension as findById above.
+    async updatePlan(id: string, plan: "standard" | "unlimited"): Promise<UserRow> {
+      const [row] = await db.update(users).set({ plan }).where(eq(users.id, id)).returning();
+      if (!row) throw new Error(`updatePlan: unknown user ${id}`);
+      return row;
     },
   };
 }
@@ -104,4 +119,5 @@ export const usersRepo: ReturnType<typeof createUserRepo> = {
   findById: (i) => createUserRepo(getDb()).findById(i),
   list: () => createUserRepo(getDb()).list(),
   listWithCounts: () => createUserRepo(getDb()).listWithCounts(),
+  updatePlan: (id, plan) => createUserRepo(getDb()).updatePlan(id, plan),
 };

@@ -2,9 +2,38 @@
   "components": {
     "parameters": {},
     "schemas": {
+      "AdminGrantRequest": {
+        "properties": {
+          "delta": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "delta"
+        ],
+        "type": "object"
+      },
+      "AdminPlanPatch": {
+        "properties": {
+          "plan": {
+            "enum": [
+              "standard",
+              "unlimited"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "plan"
+        ],
+        "type": "object"
+      },
       "AdminUser": {
         "properties": {
           "applicationCount": {
+            "type": "integer"
+          },
+          "balance": {
             "type": "integer"
           },
           "createdAt": {
@@ -20,6 +49,13 @@
           },
           "jobCount": {
             "type": "integer"
+          },
+          "plan": {
+            "enum": [
+              "standard",
+              "unlimited"
+            ],
+            "type": "string"
           },
           "resumeCount": {
             "type": "integer"
@@ -39,7 +75,9 @@
           "createdAt",
           "resumeCount",
           "jobCount",
-          "applicationCount"
+          "applicationCount",
+          "balance",
+          "plan"
         ],
         "type": "object"
       },
@@ -2440,6 +2478,82 @@
         "summary": "Admin: every account with per-user résumé/job/application counts"
       }
     },
+    "/api/admin/users/{id}": {
+      "patch": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminPlanPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUser"
+                }
+              }
+            },
+            "description": "The updated AdminUser"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Caller is not an admin"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unknown/non-uuid user id"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Invalid body (plan must be 'standard' or 'unlimited')"
+          }
+        },
+        "summary": "Admin: toggle a user's plan (standard/unlimited)"
+      }
+    },
     "/api/admin/users/{id}/applications": {
       "get": {
         "parameters": [
@@ -2577,6 +2691,90 @@
           }
         },
         "summary": "Admin: the target user's tracker rows (decision #7 full content access)"
+      }
+    },
+    "/api/admin/users/{id}/credits": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminGrantRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "balance": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "balance"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The user's new balance"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Caller is not an admin"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unknown/non-uuid user id"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Invalid body (delta must be a non-zero integer)"
+          }
+        },
+        "summary": "Admin: grant (or debit) credits by an arbitrary non-zero delta"
       }
     },
     "/api/admin/users/{id}/jobs": {

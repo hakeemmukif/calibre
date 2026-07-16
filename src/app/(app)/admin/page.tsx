@@ -10,7 +10,7 @@ import * as React from "react";
 import { AdminUsersTable } from "@/caliber-ui/compositions/Admin/AdminUsersTable";
 import { Button } from "@/caliber-ui/components/Button";
 import { Icon } from "@/caliber-ui/components/Icon";
-import { getAdminUsers } from "@/features/admin/client";
+import { getAdminUsers, grantCredits, patchUserPlan } from "@/features/admin/client";
 import { ApiError } from "@/features/http";
 import type { AdminUser } from "@/types";
 
@@ -39,6 +39,26 @@ export default function AdminPage() {
   React.useEffect(() => {
     void load();
   }, [load]);
+
+  async function handleGrant(id: string, delta: number) {
+    setError(undefined);
+    try {
+      await grantCredits(id, delta);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't grant credits.");
+    }
+  }
+
+  async function handleTogglePlan(id: string, nextPlan: "standard" | "unlimited") {
+    setError(undefined);
+    try {
+      await patchUserPlan(id, nextPlan);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't update that user's plan.");
+    }
+  }
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg-app)" }}>
@@ -79,7 +99,7 @@ export default function AdminPage() {
                 </Button>
               </div>
             )}
-            {loaded && <AdminUsersTable users={users} />}
+            {loaded && <AdminUsersTable users={users} onGrant={handleGrant} onTogglePlan={handleTogglePlan} />}
           </>
         )}
       </div>

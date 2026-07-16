@@ -476,8 +476,19 @@ export const AdminUser = z.object({
   resumeCount: z.number().int(),
   jobCount: z.number().int(),
   applicationCount: z.number().int(),
+  balance: z.number().int(),
+  plan: z.enum(["standard", "unlimited"]),
 });
 export type AdminUser = z.infer<typeof AdminUser>;
 
 export const AdminUsersResponse = z.object({ items: z.array(AdminUser) });
 export type AdminUsersResponse = z.infer<typeof AdminUsersResponse>;
+
+// AdminPlanPatch — PATCH /api/admin/users/:id body (admin plan toggle).
+export const AdminPlanPatch = z.object({ plan: z.enum(["standard", "unlimited"]) });
+export type AdminPlanPatch = z.infer<typeof AdminPlanPatch>;
+
+// AdminGrantRequest — POST /api/admin/users/:id/credits body (admin credit
+// grant, ±delta). Zero is meaningless as a grant, so it's rejected here.
+export const AdminGrantRequest = z.object({ delta: z.number().int().refine((n) => n !== 0) });
+export type AdminGrantRequest = z.infer<typeof AdminGrantRequest>;
