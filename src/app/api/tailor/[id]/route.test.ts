@@ -131,8 +131,9 @@ describe("GET /api/tailor/:id", () => {
   it("returns a 200 JSON snapshot by default", async () => {
     const source = await insertSource(state.testDb);
     const job = await insertJob(state.testDb, source.id);
-    await insertResume(state.testDb, { isActive: true });
-    llm.scripted = { tailor: TAILOR_RESULT };
+    const resume = await insertResume(state.testDb, { isActive: true });
+    await seedJdFacts(job.id, resume.id);
+    llm.scripted = { tailor: TAILOR_RESULT, correlate: CORRELATE_RESULT };
 
     const created = await POST(postRequest({ jobId: job.id }));
     const run = await created.json();

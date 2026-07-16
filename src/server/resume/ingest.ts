@@ -9,6 +9,7 @@ import { getLlm, type LlmClient } from "@/lib/llm/client";
 import { renderTemplate } from "@/lib/llm/templates";
 import { rasterizePdfPages } from "@/lib/rasterize";
 import { resumesRepo, type ResumeRow } from "@/server/persistence/repos/resumes";
+import { assertAndDebit } from "@/server/credits";
 import type { Resume } from "@/types";
 import { assertResumeViewDerivable, ParseFailedError, toResumeView } from "./derive-view";
 import { computeAtsScore } from "./atsScore";
@@ -120,6 +121,12 @@ export async function ingestResume(
   input: IngestResumeInput,
   deps: IngestResumeDeps = {},
 ): Promise<Resume> {
+  // Admission-time debit, before extraction: the résumé row doesn't exist
+  // yet, so there is no id for refId — the ledger still carries user/
+  // feature/time. The route already Zod-validates mime/size/text-length, so
+  // the common bad-input cases are rejected free before this ever runs.
+  await assertAndDebit(userId, "resume");
+
   const rawText = await extractText(input);
 
   const isVisionCandidate =

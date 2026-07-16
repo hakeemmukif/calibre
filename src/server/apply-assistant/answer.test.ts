@@ -1,8 +1,10 @@
+import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { LlmClient } from "@/lib/llm/client";
 import { makeMockLlm } from "@/lib/llm/mock";
+import { balance, grant, InsufficientCreditsError } from "@/server/credits";
 import { insertJob, insertJobScore, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
-import { applicationAnswers, jobs, jobScores, resumes, sources, users } from "@/server/persistence/schema";
+import { applicationAnswers, creditLedger, jobs, jobScores, resumes, sources, users } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import { applicationAnswersRepo } from "@/server/persistence/repos/applicationAnswers";
 import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
@@ -153,6 +155,100 @@ describe("draftAnswers", () => {
     await expect(
       draftAnswers(BOOTSTRAP_ADMIN_ID, { jobId: job.id, questions: [{ id: "q1", prompt: "x", kind: "text", required: true }] }, { llm: failingLlm }),
     ).rejects.toBeInstanceOf(UpstreamLlmError);
+  });
+});
+
+// Membership-credits Task 7: draftAnswers debits 1 credit per question
+// (units = questions.length), at admission, before the LLM call.
+// BOOTSTRAP_ADMIN_ID (used throughout the suite above) is admin/unlimited
+// and bypasses credits entirely, so these need their own non-admin,
+// standard-plan users to actually exercise the ledger.
+describe("draftAnswers — credit debit", () => {
+  beforeAll(async () => {
+    state.testDb = await createTestDb();
+  });
+
+  afterEach(async () => {
+    await state.testDb.delete(applicationAnswers);
+    await state.testDb.delete(jobScores);
+    await state.testDb.delete(jobs);
+    await state.testDb.delete(resumes);
+    await state.testDb.delete(sources);
+  });
+
+  async function seedUser(): Promise<string> {
+    const id = crypto.randomUUID();
+    await state.testDb.insert(users).values({ id, email: `${id}@example.com`, passwordHash: "h", role: "user", plan: "standard" });
+    return id;
+  }
+
+  it("debits units = questions.length (3 questions -> 3), no refId", async () => {
+    const userId = await seedUser();
+    await grant(userId, 3, "admin");
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id, { userId });
+    await insertResume(state.testDb, { userId, isActive: true });
+
+    const llm = makeMockLlm({
+      "question-answer": {
+        answers: [
+          { questionId: "q1", prompt: "a", answer: "x", grounding: [] },
+          { questionId: "q2", prompt: "b", answer: "y", grounding: [] },
+          { questionId: "q3", prompt: "c", answer: "z", grounding: [] },
+        ],
+      },
+    });
+
+    await draftAnswers(
+      userId,
+      {
+        jobId: job.id,
+        questions: [
+          { id: "q1", prompt: "a", kind: "text", required: true },
+          { id: "q2", prompt: "b", kind: "text", required: true },
+          { id: "q3", prompt: "c", kind: "text", required: true },
+        ],
+      },
+      { llm },
+    );
+
+    expect(await balance(userId)).toBe(0);
+    const rows = await state.testDb.select().from(creditLedger).where(eq(creditLedger.userId, userId));
+    const debitRow = rows.find((r) => r.reason === "debit");
+    expect(debitRow?.delta).toBe(-3);
+    expect(debitRow?.feature).toBe("answers");
+    expect(debitRow?.refId).toBeNull();
+  });
+
+  it("insufficient credits -> InsufficientCreditsError before the LLM call; no applicationAnswers row inserted", async () => {
+    const userId = await seedUser();
+    await grant(userId, 2, "admin"); // needs 3 (one per question)
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id, { userId });
+    await insertResume(state.testDb, { userId, isActive: true });
+
+    const complete = vi.fn();
+    const llm = { complete } as unknown as LlmClient;
+
+    await expect(
+      draftAnswers(
+        userId,
+        {
+          jobId: job.id,
+          questions: [
+            { id: "q1", prompt: "a", kind: "text", required: true },
+            { id: "q2", prompt: "b", kind: "text", required: true },
+            { id: "q3", prompt: "c", kind: "text", required: true },
+          ],
+        },
+        { llm },
+      ),
+    ).rejects.toBeInstanceOf(InsufficientCreditsError);
+
+    expect(complete).not.toHaveBeenCalled();
+    expect(await balance(userId)).toBe(2);
+    const persisted = await state.testDb.select().from(applicationAnswers).where(eq(applicationAnswers.jobId, job.id));
+    expect(persisted).toHaveLength(0);
   });
 });
 

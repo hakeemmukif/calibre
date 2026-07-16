@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeMockLlm } from "@/lib/llm/mock";
 import { insertJob, insertJobScore, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
-import { correlationReports, jobScores, jobs, resumes, sources } from "@/server/persistence/schema";
+import { correlationReports, jobScores, jobs, resumes, sources, users } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 import { UnauthorizedError } from "@/server/auth/errors";
@@ -122,6 +122,31 @@ describe("POST /api/tailor/correlate", () => {
     expect(body.rows).toEqual([]);
 
     await waitForTerminal(body.id);
+  });
+
+  // Membership-credits Task 7: the default requireUser mock above is admin,
+  // which bypasses credits entirely — this needs its own non-admin,
+  // standard-plan, zero-balance user to actually reach the 402 branch.
+  it("insufficient credits -> 402 INSUFFICIENT_CREDITS with feature/required/balance", async () => {
+    const [userB] = await state.testDb
+      .insert(users)
+      .values({ email: "user-b-correlate-broke@example.com", passwordHash: "h", role: "user", plan: "standard" })
+      .returning();
+    requireUser.mockResolvedValue({ id: userB.id, email: userB.email, role: "user" });
+
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id, { userId: userB.id });
+    const resume = await insertResume(state.testDb, { userId: userB.id, isActive: true });
+    await insertJobScore(state.testDb, job.id, resume.id, {
+      userId: userB.id,
+      jdFacts: { title: "Backend Engineer", mustHaves: ["distributed"], niceToHaves: [], responsibilities: [], redFlags: [] },
+    });
+
+    const res = await POST(jsonRequest({ jobId: job.id }));
+    expect(res.status).toBe(402);
+    const body = await res.json();
+    expect(body.error.code).toBe("INSUFFICIENT_CREDITS");
+    expect(body.error.details).toEqual({ feature: "tailor", required: 8, balance: 0 });
   });
 
   it("invalid JSON body -> 422 VALIDATION_ERROR", async () => {

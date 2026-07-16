@@ -13,6 +13,7 @@ import { applicationAnswersRepo, type ApplicationAnswersRow } from "@/server/per
 import { jobsRepo } from "@/server/persistence/repos/jobs";
 import { jobScoresRepo } from "@/server/persistence/repos/jobScores";
 import { resumesRepo } from "@/server/persistence/repos/resumes";
+import { assertAndDebit } from "@/server/credits";
 import { ApplicationAnswer, ApplicationAnswers, type ApplicationQuestion } from "@/types";
 
 export class UnknownJobError extends Error {
@@ -65,6 +66,10 @@ export async function draftAnswers(
 
   const resumeRow = await resumesRepo.getActive(userId);
   if (!resumeRow) throw new NoActiveResumeError();
+
+  // units = questions.length — the route Zod-requires questions.min(1), so
+  // units >= 1 is safe.
+  await assertAndDebit(userId, "answers", { units: input.questions.length });
 
   const scoreRow = await jobScoresRepo.getLatestByJobId(input.jobId);
   const jdFactsText = scoreRow?.jdFacts

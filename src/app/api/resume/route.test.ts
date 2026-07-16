@@ -10,6 +10,7 @@ import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 import { UnauthorizedError } from "@/server/auth/errors";
 import { users } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
+import { grant } from "@/server/credits";
 import { resolveUpload } from "@/server/resume/uploads";
 import type { ResumeStoreEmit } from "@/server/resume/resume-store";
 
@@ -145,6 +146,7 @@ describe("/api/resume", () => {
       .insert(users)
       .values({ email: "user-b-resume-route@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
+    await grant(userB.id, 30, "admin");
 
     const uploaded = await POST(jsonRequest({ text: "a".repeat(120) }));
     const resumeA = await uploaded.json();
@@ -189,6 +191,28 @@ describe("/api/resume", () => {
 
     expect(res.status).toBe(413);
     expect((await res.json()).error.code).toBe("PAYLOAD_TOO_LARGE");
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  // Membership-credits Task 7: the default requireUser mock above is admin,
+  // which bypasses credits entirely — this needs its own non-admin,
+  // standard-plan, zero-balance user to actually reach the 402 branch.
+  it("insufficient credits -> 402 INSUFFICIENT_CREDITS with feature/required/balance, before the LLM call", async () => {
+    const [userB] = await state.testDb
+      .insert(users)
+      .values({ email: "user-b-resume-broke@example.com", passwordHash: "h", role: "user", plan: "standard" })
+      .returning();
+    requireUser.mockResolvedValue({ id: userB.id, email: userB.email, role: "user" });
+
+    const create = vi.fn();
+    state.llm = { complete: create } as unknown as LlmClient;
+
+    const res = await POST(jsonRequest({ text: "a".repeat(120) }));
+
+    expect(res.status).toBe(402);
+    const body = await res.json();
+    expect(body.error.code).toBe("INSUFFICIENT_CREDITS");
+    expect(body.error.details).toEqual({ feature: "resume", required: 3, balance: 0 });
     expect(create).not.toHaveBeenCalled();
   });
 
@@ -306,6 +330,7 @@ describe("/api/resume", () => {
       .insert(users)
       .values({ email: "user-b-upload@example.com", passwordHash: "h", role: "user", plan: "standard" })
       .returning();
+    await grant(userB.id, 30, "admin");
 
     const bytes = new Uint8Array(readFileSync(PDF_FIXTURE));
 

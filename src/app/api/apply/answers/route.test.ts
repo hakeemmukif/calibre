@@ -116,6 +116,34 @@ describe("POST /api/apply/answers", () => {
     expect(body.answers[0].grounding).toEqual([{ source: "summary", quote: "Backend engineer." }]);
   });
 
+  // Membership-credits Task 7: the default requireUser mock above is admin,
+  // which bypasses credits entirely — this needs its own non-admin,
+  // standard-plan, zero-balance user to actually reach the 402 branch.
+  it("insufficient credits -> 402 INSUFFICIENT_CREDITS with feature/required/balance (units = questions.length)", async () => {
+    const [userB] = await state.testDb
+      .insert(users)
+      .values({ email: "user-b-answers-broke@example.com", passwordHash: "h", role: "user", plan: "standard" })
+      .returning();
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id, { userId: userB.id });
+    await insertResume(state.testDb, { userId: userB.id, isActive: true });
+    requireUser.mockResolvedValue({ id: userB.id, email: userB.email, role: "user" });
+
+    const res = await POST(
+      jsonRequest({
+        jobId: job.id,
+        questions: [
+          { id: "q1", prompt: "Why us?", kind: "text", required: true },
+          { id: "q2", prompt: "Why you?", kind: "text", required: true },
+        ],
+      }),
+    );
+    expect(res.status).toBe(402);
+    const body = await res.json();
+    expect(body.error.code).toBe("INSUFFICIENT_CREDITS");
+    expect(body.error.details).toEqual({ feature: "answers", required: 2, balance: 0 });
+  });
+
   it("empty questions[] -> 422 VALIDATION_ERROR", async () => {
     const res = await POST(jsonRequest({ jobId: "some-id", questions: [] }));
     expect(res.status).toBe(422);

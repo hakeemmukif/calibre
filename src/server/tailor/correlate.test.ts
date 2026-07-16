@@ -1,7 +1,9 @@
+import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { makeMockLlm } from "@/lib/llm/mock";
+import { balance, grant, InsufficientCreditsError } from "@/server/credits";
 import { insertJob, insertJobScore, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
-import { correlationReports, jobScores, jobs, resumes, sources } from "@/server/persistence/schema";
+import { correlationReports, creditLedger, jobScores, jobs, resumes, sources, users } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
@@ -228,5 +230,112 @@ describe("correlate", () => {
 
     await expect(correlate(crypto.randomUUID(), { jobId: job.id }, { llm: makeMockLlm({}) }))
       .rejects.toBeInstanceOf(UnknownJobError);
+  });
+});
+
+// Flow invariant (membership-credits Task 7): correlate debits 8 exactly
+// once, at admission, AFTER the last validation throw — so a 409
+// (NoJdFactsError) never charges, and the internal (prepaid) call from the
+// direct-tailor flow (tailor/index.ts's resolveReport) never double-charges.
+// BOOTSTRAP_ADMIN_ID (used above) is admin/unlimited and bypasses credits
+// entirely, so these need their own non-admin, standard-plan users.
+describe("correlate — credit debit (flow invariant)", () => {
+  beforeAll(async () => {
+    state.testDb = await createTestDb();
+  });
+
+  afterEach(async () => {
+    __resetForTests();
+    await state.testDb.delete(correlationReports);
+    await state.testDb.delete(jobScores);
+    await state.testDb.delete(jobs);
+    await state.testDb.delete(resumes);
+    await state.testDb.delete(sources);
+  });
+
+  async function seedUser(): Promise<string> {
+    const id = crypto.randomUUID();
+    await state.testDb.insert(users).values({ id, email: `${id}@example.com`, passwordHash: "h", role: "user", plan: "standard" });
+    return id;
+  }
+
+  it("debits 8 once at admission, refId = the report id", async () => {
+    const userId = await seedUser();
+    await grant(userId, 8, "admin");
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id, { userId });
+    const resume = await insertResume(state.testDb, { userId, isActive: true });
+    await insertJobScore(state.testDb, job.id, resume.id, {
+      userId,
+      jdFacts: { title: "Backend Engineer", mustHaves: ["distributed"], niceToHaves: [], responsibilities: [], redFlags: [] },
+    });
+
+    const llm = makeMockLlm({
+      correlate: { rows: [{ id: 0, term: "distributed", status: "gap", evidence: null, reason: "r", note: null }] },
+    });
+
+    const queued = await correlate(userId, { jobId: job.id }, { llm });
+
+    expect(await balance(userId)).toBe(0);
+    const rows = await state.testDb.select().from(creditLedger).where(eq(creditLedger.userId, userId));
+    const debitRow = rows.find((r) => r.reason === "debit");
+    expect(debitRow?.delta).toBe(-8);
+    expect(debitRow?.feature).toBe("tailor");
+    expect(debitRow?.refId).toBe(queued.id);
+  });
+
+  it("does not charge when NoJdFactsError throws (the 409 path — the debit runs after this check, never before)", async () => {
+    const userId = await seedUser();
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id, { userId });
+    await insertResume(state.testDb, { userId, isActive: true });
+    // No job score inserted -> NoJdFactsError, before the debit is ever reached.
+
+    await expect(correlate(userId, { jobId: job.id }, { llm: makeMockLlm({}) })).rejects.toBeInstanceOf(NoJdFactsError);
+
+    expect(await balance(userId)).toBe(0);
+    const rows = await state.testDb.select().from(creditLedger).where(eq(creditLedger.userId, userId));
+    expect(rows).toHaveLength(0);
+  });
+
+  it("insufficient credits -> InsufficientCreditsError when the job IS scored; no correlation_reports row is inserted", async () => {
+    const userId = await seedUser();
+    // No grant — balance stays 0.
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id, { userId });
+    const resume = await insertResume(state.testDb, { userId, isActive: true });
+    await insertJobScore(state.testDb, job.id, resume.id, {
+      userId,
+      jdFacts: { title: "Backend Engineer", mustHaves: ["distributed"], niceToHaves: [], responsibilities: [], redFlags: [] },
+    });
+
+    await expect(correlate(userId, { jobId: job.id }, { llm: makeMockLlm({}) })).rejects.toBeInstanceOf(InsufficientCreditsError);
+
+    const rows = await state.testDb.select().from(creditLedger).where(eq(creditLedger.userId, userId));
+    expect(rows).toHaveLength(0);
+    const reports = await state.testDb.select().from(correlationReports).where(eq(correlationReports.jobId, job.id));
+    expect(reports).toHaveLength(0);
+  });
+
+  it("opts.prepaid skips the debit entirely (the internal call the direct-tailor flow makes after already charging at its own admission)", async () => {
+    const userId = await seedUser();
+    // No grant — 0 balance; prepaid must still succeed despite insufficient credits.
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id, { userId });
+    const resume = await insertResume(state.testDb, { userId, isActive: true });
+    await insertJobScore(state.testDb, job.id, resume.id, {
+      userId,
+      jdFacts: { title: "Backend Engineer", mustHaves: ["distributed"], niceToHaves: [], responsibilities: [], redFlags: [] },
+    });
+
+    const llm = makeMockLlm({
+      correlate: { rows: [{ id: 0, term: "distributed", status: "gap", evidence: null, reason: "r", note: null }] },
+    });
+
+    const queued = await correlate(userId, { jobId: job.id }, { llm }, { prepaid: true });
+    expect(queued.status).toBe("queued");
+
+    const rows = await state.testDb.select().from(creditLedger).where(eq(creditLedger.userId, userId));
+    expect(rows).toHaveLength(0);
   });
 });

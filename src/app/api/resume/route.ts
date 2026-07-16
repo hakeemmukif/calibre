@@ -7,6 +7,7 @@ import type { ErrorEnvelope } from "@/types";
 import { PdfParseError } from "@/lib/pdf-text";
 import { requireUser } from "@/server/auth/session";
 import { UnauthorizedError } from "@/server/auth/errors";
+import { InsufficientCreditsError } from "@/server/credits";
 import { ParseFailedError } from "@/server/resume/derive-view";
 import { ResumeTooLongError, UnsupportedMimeError } from "@/server/resume/extract-text";
 import { getActiveResume, ingestResume } from "@/server/resume/ingest";
@@ -65,6 +66,9 @@ export async function POST(request: NextRequest) {
     }
     if (err instanceof PdfParseError || err instanceof ParseFailedError) {
       return errorResponse(502, "PARSE_FAILED", err.message);
+    }
+    if (err instanceof InsufficientCreditsError) {
+      return errorResponse(402, "INSUFFICIENT_CREDITS", err.message, { feature: err.feature, required: err.required, balance: err.balance });
     }
     throw err;
   }
