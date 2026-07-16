@@ -20,19 +20,28 @@ import type { Db } from "./repos/db";
 
 const migrationsDir = join(__dirname, "../../../drizzle");
 
-const tempDbFiles: string[] = [];
-let cleanupRegistered = false;
+// Vitest reloads this module per test file (isolate: true), so module-level
+// state resets while `process` stays shared. Anchor the file list + the single
+// exit listener on globalThis so we register exactly one listener across all
+// test files (no MaxListenersExceededWarning) and it still sees every temp file.
+const g = globalThis as typeof globalThis & {
+  __caliberTestDbFiles?: string[];
+  __caliberTestDbCleanupRegistered?: boolean;
+};
+const tempDbFiles: string[] = (g.__caliberTestDbFiles ??= []);
 
 export type TestDb = Db;
 
 export async function createTestDb(): Promise<TestDb> {
   const path = join(tmpdir(), `caliber-test-${randomUUID()}.db`);
   tempDbFiles.push(path);
-  if (!cleanupRegistered) {
-    cleanupRegistered = true;
-    process.on("exit", () => {
+  if (!g.__caliberTestDbCleanupRegistered) {
+    g.__caliberTestDbCleanupRegistered = true;
+    process.once("exit", () => {
       for (const f of tempDbFiles) {
-        for (const suffix of ["", "-wal", "-shm"]) rmSync(f + suffix, { force: true });
+        // "" + rollback-journal / WAL siblings — default mode uses -journal;
+        // -wal/-shm are harmless no-ops unless WAL is ever enabled here.
+        for (const suffix of ["", "-journal", "-wal", "-shm"]) rmSync(f + suffix, { force: true });
       }
     });
   }
