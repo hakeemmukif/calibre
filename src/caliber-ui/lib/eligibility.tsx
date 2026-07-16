@@ -22,7 +22,7 @@ export function eligibilityLabel(tier: EligibilityTier): string {
     eligible: "Hires from Malaysia",
     local: "Malaysia",
     abroad: "Relocation",
-    unknown: "Eligibility unverified",
+    unknown: "Location unverified",
   };
   return map[tier];
 }

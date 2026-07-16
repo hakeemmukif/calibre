@@ -9,7 +9,7 @@ A remote-global job the user sees should be as applyable as a local one. Geograp
 
 ## 2. Operator decisions (locked)
 
-1. **Undecidable stays visible.** The predecessor contract holds: only *provably* restricted jobs are hidden; postings that state nothing keep the "Eligibility unverified" warn pill. No strict allowlist.
+1. **Undecidable stays visible.** The predecessor contract holds: only *provably* restricted jobs are hidden; postings that state nothing keep the "Location unverified" warn pill. No strict allowlist.
 2. **Schedule tolerance is an ordered 3-level scale**: `base-hours` / `flex-evenings` / `any-hours`. Higher tolerance includes lower. Not binary, not a region checklist.
 3. **Archetypes are presets, not state.** "Malaysia-only remote / Global remote / Digital nomad / Open to relocate" are preset cards that set the dials; the dials are the only stored truth.
 4. **Calendar (working to the employer country's holidays): extract + display only.** No dial in v1 — postings almost never state it, and inferring it from employer country would hide nearly everything for a "no". Revisit only if stated-calendar facts prove common.

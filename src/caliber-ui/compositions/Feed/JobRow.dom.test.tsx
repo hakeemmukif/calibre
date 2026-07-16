@@ -23,9 +23,9 @@ describe("JobRow eligibility pill (spec §8)", () => {
     expect(screen.getByText("Work anywhere")).toBeInTheDocument();
   });
 
-  it("renders the warn 'Eligibility unverified' pill for the unknown tier", () => {
+  it("renders the warn 'Location unverified' pill for the unknown tier", () => {
     render(<JobRow job={unknownJob} onOpen={noop} onSave={noop} onDismiss={noop} />);
-    expect(screen.getByText("Eligibility unverified")).toBeInTheDocument();
+    expect(screen.getByText("Location unverified")).toBeInTheDocument();
   });
 
   it("suppresses the pill for the local tier — no 'Malaysia' noise on MY rows", () => {

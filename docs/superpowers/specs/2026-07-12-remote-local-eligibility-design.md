@@ -15,7 +15,7 @@ Sources and algorithms are organized along this axis so eligibility is hardened 
 
 ## 2. Operator decisions (locked)
 
-1. **Unknown-eligibility jobs under `stay`: shown**, wearing an "Eligibility unverified" warn pill. Never silently eligible, never silently hidden.
+1. **Unknown-eligibility jobs under `stay`: shown**, wearing a "Location unverified" warn pill. Never silently eligible, never silently hidden.
 2. **`open` reveals everything located elsewhere** — one `abroad` tier folds onsite/hybrid-elsewhere and geo-fenced remote (e.g. "Remote — US only") together.
 3. **Region-scoped remote**: APAC / SEA / ASEAN / Asia → eligible from MY. Explicit foreign-timezone-overlap requirements ("4h overlap with PST") → `unknown`.
 4. **Coverage**: classifier + profile + feed over the existing 13 sources first; **phase 2** adds one Remotive-class remote-aggregator connector (live-verified before build).
@@ -132,7 +132,7 @@ Rules: the prior is consulted **only when posting-level evidence is inconclusive
   - `stay` → admit `anywhere, eligible, local, unknown`; `abroad` rows persisted but never rendered.
   - `open` → all tiers.
 - Summary strip shows the excluded count: "N excluded — not eligible from Malaysia" (`SummaryStripStats.excluded`) — the trust/audit signal for what vanished.
-- **`EligibilityTag`** in `src/caliber-ui/lib`, mirroring `LegitimacyTag` (Tag primitive + tone map + label map, `title={summary}`): "Work anywhere" / "Hires from Malaysia" / "Relocation" / "Eligibility unverified". **Suppressed when tier is `local`** (stamping "Malaysia" on every JobStreet row is noise). Rendered beside the legitimacy pill in `JobRow`; also pushed as a `Job.tags` entry in `assembleJob` so the detail page shows it for free.
+- **`EligibilityTag`** in `src/caliber-ui/lib`, mirroring `LegitimacyTag` (Tag primitive + tone map + label map, `title={summary}`): "Work anywhere" / "Hires from Malaysia" / "Relocation" / "Location unverified". **Suppressed when tier is `local`** (stamping "Malaysia" on every JobStreet row is noise). Rendered beside the legitimacy pill in `JobRow`; also pushed as a `Job.tags` entry in `assembleJob` so the detail page shows it for free.
 - Filter chips: "Remote" (persona-based) → **"Work anywhere"** (`eligibility = anywhere`). §11.8 chip list updated accordingly.
 - No re-ranking in MVP.
 
