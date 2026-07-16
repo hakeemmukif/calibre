@@ -781,7 +781,9 @@ In `checksStore.submit`'s `.catch`, keep the run's `START_FAILED` terminal state
 
 - [ ] **Step 3: Contract regen + run + commit** — `npm run contract && npx vitest run src/server/persistence/repos src/app/api/admin src/caliber-ui/compositions/Admin` → PASS. `git commit -m "feat(admin): wallet columns, plan toggle, credit grants"`
 
----### Task 11: e2e + docs + deploy hygiene
+---
+
+### Task 11: e2e + docs + deploy hygiene
 
 **Files:**
 - Modify: `e2e/authSetup.ts` (invite code in `E2E_USER` register payload), `playwright.config.ts` (webServer env — add `CALIBER_INVITE_CODE`; if no env block exists on webServer, add one), any other spec registering users (grep `"/api/auth/register"` under `e2e/`)
