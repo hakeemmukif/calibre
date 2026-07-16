@@ -1,4 +1,4 @@
-// Real-libsql smoke: repo tests run against an in-memory libsql client
+// Real-libsql smoke: repo tests run against a temp-file libsql test DB
 // (src/server/persistence/test-db.ts) which the real `@libsql/client` driver
 // (src/server/persistence/db.ts) never exercises. This is the only place that does.
 import { describe, expect, it } from "vitest";

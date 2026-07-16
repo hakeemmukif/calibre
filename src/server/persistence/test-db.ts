@@ -46,6 +46,12 @@ export async function createTestDb(): Promise<TestDb> {
     });
   }
   const client = createClient({ url: `file:${path}` });
+  // Set once here for clarity, but FK enforcement inside a later
+  // db.transaction() doesn't depend on this call persisting: libsql's local
+  // driver opens every recreated connection with foreign_keys ON by default
+  // (the SQLite fork's default), so it holds regardless. Only the schema
+  // (via the shared temp file, see header comment) needs to survive the
+  // connection recreation.
   await client.execute("PRAGMA foreign_keys = ON");
   const files = readdirSync(migrationsDir)
     .filter((f) => f.endsWith(".sql"))

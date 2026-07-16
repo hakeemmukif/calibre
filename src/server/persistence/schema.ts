@@ -3,7 +3,7 @@
 // reconciliations from .superpowers/sdd/task-B1-brief.md applied
 // (search_runs.status / tailored_resumes.status+finalizedAt / tailored_resumes.diff /
 // application_answers shape+resumeId). libsql everywhere — see db.ts (real
-// client) / test-db.ts (in-memory client).
+// client) / test-db.ts (temp-file libsql test client).
 import { sql } from "drizzle-orm";
 import {
   index,

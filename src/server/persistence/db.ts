@@ -17,11 +17,13 @@ export function getDb(): LibSQLDatabase<typeof schema> {
 }
 
 function applyPragmas(client: Client, url: string): void {
-  // FK enforcement is OFF by default in SQLite; our cascades/set-null need it.
-  void client.execute("PRAGMA foreign_keys = ON");
-  // WAL + busy_timeout only apply to a local file DB; remote libsql handles
-  // concurrency server-side.
+  // Only a local file DB needs client-issued pragmas: FK enforcement is OFF by
+  // default in SQLite (our cascades/set-null need it on), and WAL + busy_timeout
+  // tune local file concurrency. A remote libsql (Turso) url gets none of these —
+  // the remote server already defaults foreign_keys ON and manages concurrency
+  // itself, so issuing them here would be a no-op and an unhandled-rejection risk.
   if (url.startsWith("file:")) {
+    void client.execute("PRAGMA foreign_keys = ON");
     void client.execute("PRAGMA journal_mode = WAL");
     void client.execute("PRAGMA busy_timeout = 5000");
   }

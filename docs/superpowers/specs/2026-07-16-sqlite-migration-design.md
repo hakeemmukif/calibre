@@ -41,6 +41,8 @@ connection-string only). No data migration (fresh start — see D5).
 | D4 | Migrations | Regenerate one clean SQLite baseline; delete `drizzle/*.sql` + `drizzle/meta/` |
 | D5 | Existing data | **Fresh start** — no data migration. Drop Postgres, create `caliber.db`, `db:seed`, re-upload résumé |
 | D6 | Env | Keep var name `DATABASE_URL` (now `file:./caliber.db`); add optional `DATABASE_AUTH_TOKEN` for the future Turso step |
+
+> **Tripwire (D6):** the Turso/remote step is not purely a connection-string swap — before switching, re-verify: (1) FK enforcement on the remote, (2) that the unique-violation catches in `users.ts`/`applications.ts` (which key on `cause.extendedCode === 'SQLITE_CONSTRAINT_UNIQUE'`, the LOCAL driver's error shape) still fire over hrana/HTTP, (3) pragma handling.
 | D7 | JSON columns | `text({ mode: "json" }).$type<T>()` — drizzle stringifies on write, parses on read (×22 columns) |
 
 ## Change surface
