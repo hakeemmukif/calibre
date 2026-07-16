@@ -206,7 +206,7 @@ export const ScanResult = z.object({
   legitimacyTier: LegitimacyTier.optional(),
   fit: z.number().min(0).max(5).optional(),
   scoredMs: z.number().int().optional(),
-  reason: z.literal("dailyCap").optional(), // only when outcome === "skipped"
+  reason: z.enum(["dailyCap", "alreadyScored"]).optional(), // only when outcome === "skipped"
   error: z.string().optional(),             // only when outcome === "error"
 });
 export type ScanResult = z.infer<typeof ScanResult>;

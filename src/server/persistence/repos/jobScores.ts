@@ -1,6 +1,6 @@
-import { desc, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, sql } from "drizzle-orm";
 import { getDb } from "../db";
-import { jobScores } from "../schema";
+import { jobs, jobScores } from "../schema";
 import type { Db } from "./db";
 
 export type NewJobScore = typeof jobScores.$inferInsert;
@@ -35,6 +35,32 @@ export function createJobScoresRepo(db: Db) {
         })
         .returning();
       return upserted;
+    },
+    // Rescan skip gate (perf/scan-overhead): server/search/run.ts checks this
+    // before spending an LLM call on a top candidate — a job already scored
+    // for the exact (job, résumé, policy version) tuple is served from the
+    // cache untouched. Scoped via a join back to `jobs` (mirrors
+    // jobsRepo.hasAnyScore), so a foreign jobId can never answer true.
+    async existsByJobResumePolicy(
+      jobId: string,
+      resumeId: string,
+      policyVersion: string,
+      userId: string,
+    ): Promise<boolean> {
+      const [row] = await db
+        .select({ id: jobScores.id })
+        .from(jobScores)
+        .innerJoin(jobs, eq(jobs.id, jobScores.jobId))
+        .where(
+          and(
+            eq(jobScores.jobId, jobId),
+            eq(jobScores.resumeId, resumeId),
+            eq(jobScores.policyVersion, policyVersion),
+            eq(jobs.userId, userId),
+          ),
+        )
+        .limit(1);
+      return row !== undefined;
     },
     // GLOBAL-BY-DECISION: no production call site (test-only round-trip
     // accessor) — nothing routes untrusted input into this lookup today, so
@@ -77,6 +103,8 @@ export function createJobScoresRepo(db: Db) {
 
 export const jobScoresRepo: ReturnType<typeof createJobScoresRepo> = {
   upsertByJobResumePolicy: (row) => createJobScoresRepo(getDb()).upsertByJobResumePolicy(row),
+  existsByJobResumePolicy: (jobId, resumeId, policyVersion, userId) =>
+    createJobScoresRepo(getDb()).existsByJobResumePolicy(jobId, resumeId, policyVersion, userId),
   getById: (id) => createJobScoresRepo(getDb()).getById(id),
   sumCostUsdSince: (cutoff) => createJobScoresRepo(getDb()).sumCostUsdSince(cutoff),
   getLatestByJobId: (jobId) => createJobScoresRepo(getDb()).getLatestByJobId(jobId),

@@ -1232,7 +1232,8 @@
           },
           "reason": {
             "enum": [
-              "dailyCap"
+              "dailyCap",
+              "alreadyScored"
             ],
             "type": "string"
           },

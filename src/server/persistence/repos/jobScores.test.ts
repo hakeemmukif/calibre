@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createTestDb } from "../test-db";
-import { insertJob, insertResume, insertSource } from "./__fixtures__/helpers";
+import { insertJob, insertJobScore, insertResume, insertSource } from "./__fixtures__/helpers";
 import { createJobScoresRepo } from "./jobScores";
 import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
@@ -35,6 +35,23 @@ describe("jobScoresRepo", () => {
     expect(row.score).toBe(4);
     const fetched = await repo.getById(row.id);
     expect(fetched?.id).toBe(row.id);
+  });
+
+  it("existsByJobResumePolicy is false until a matching (job,resume,policy) row exists, and stays false for a different résumé or policy version", async () => {
+    const db = await createTestDb();
+    const repo = createJobScoresRepo(db);
+    const source = await insertSource(db);
+    const resumeA = await insertResume(db);
+    const resumeB = await insertResume(db);
+    const job = await insertJob(db, source.id);
+
+    expect(await repo.existsByJobResumePolicy(job.id, resumeA.id, "v1", BOOTSTRAP_ADMIN_ID)).toBe(false);
+
+    await insertJobScore(db, job.id, resumeA.id, { policyVersion: "v1" });
+
+    expect(await repo.existsByJobResumePolicy(job.id, resumeA.id, "v1", BOOTSTRAP_ADMIN_ID)).toBe(true);
+    expect(await repo.existsByJobResumePolicy(job.id, resumeB.id, "v1", BOOTSTRAP_ADMIN_ID)).toBe(false);
+    expect(await repo.existsByJobResumePolicy(job.id, resumeA.id, "v2", BOOTSTRAP_ADMIN_ID)).toBe(false);
   });
 
   it("re-scoring the same (jobId,resumeId,policyVersion) tuple updates in place, not duplicates", async () => {

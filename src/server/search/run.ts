@@ -535,6 +535,10 @@ async function scoreTopCandidates(
   if (topCandidates.length === 0) return { scored, worth, ghosts, unscored, capStopped, costUsd: spentCost };
 
   const isNewCutoff = await resolveIsNewCutoff(userId, persona);
+  // Hoisted once per run — policyVersion() reads the template file + hashes
+  // it on every call; every candidate's skip-gate check needs the same
+  // value, so compute it once rather than up to TOP_N_CANDIDATES times.
+  const scorePolicyVersion = policyVersion("match-score");
   const llm = deps.llm ?? getLlm();
   const dailyCapUsd =
     deps.dailyCapUsd ?? (process.env.CALIBER_DAILY_LLM_USD ? Number(process.env.CALIBER_DAILY_LLM_USD) : undefined);
@@ -601,6 +605,30 @@ async function scoreTopCandidates(
         emitPhase("fetching");
         const jobStartedAt = Date.now();
         try {
+          // Rescan skip gate (perf/scan-overhead): a job already scored for
+          // this exact (résumé, policy version) combo needs zero LLM spend —
+          // a résumé swap or policy-version bump still legitimately rescores
+          // since the unique tuple has changed. Checked here, before
+          // ensureDescription's detail fetch, so neither it nor scoreJob run.
+          const alreadyScored = await jobScoresRepo.existsByJobResumePolicy(
+            job.id,
+            resume.id,
+            scorePolicyVersion,
+            userId,
+          );
+          if (alreadyScored) {
+            emitPhase("done");
+            await searchRunsRepo.appendResult(row.id, userId, {
+              jobId: job.id,
+              title: job.title,
+              company: job.company,
+              source: source.id,
+              outcome: "skipped",
+              reason: "alreadyScored",
+            });
+            return;
+          }
+
           const jobToScore = await ensureDescription(job, source).catch((err) => {
             console.error(`search run ${row.id}: detail fetch for job ${job.id} failed:`, err);
             return job; // scoreJob will throw EmptyJobDescriptionError -> counted unscored

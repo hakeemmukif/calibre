@@ -134,9 +134,16 @@ vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
 // No real liveness probe (no network in tests) — scoreTopCandidates calls
 // this for every candidate it scores.
 vi.mock("@/server/score/liveness", () => ({ probeLivenessDeep: vi.fn().mockResolvedValue("active") }));
+// Rescan skip-gate tests need to assert scoreJob was/wasn't called without
+// changing its real behavior — wrap it in a vi.fn() rather than replacing it.
+vi.mock("@/server/score", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/server/score")>();
+  return { ...actual, scoreJob: vi.fn(actual.scoreJob) };
+});
 
 const { startSearch, ActiveRunConflictError, NoActiveResumeError, UnknownSourceIdsError } = await import("./run");
 const { __resetForTests, get: getRunHandle, getActiveRunForPersona } = await import("@/server/runs/registry");
+const { scoreJob: scoreJobSpy } = await import("@/server/score");
 
 type StubBehavior = RawPosting[] | { fail: Error } | "hang-until-aborted";
 
@@ -776,5 +783,66 @@ describe("startSearch", () => {
     const skipped = finalRow.results.filter((r) => r.outcome === "skipped" && r.reason === "dailyCap");
     expect(scored).toHaveLength(2);
     expect(skipped).toHaveLength(2); // the 2 candidates the gate bailed on are recorded, not dropped
+  });
+
+  it("rescan skip gate: a job already scored for the active résumé+policy is not re-scored (perf/scan-overhead)", async () => {
+    const runsRepo = createSearchRunsRepo(state.testDb);
+    await insertResume(state.testDb, { ...resumeFixture, isActive: true });
+    const good = await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
+    const posting: RawPosting = {
+      sourceId: good.id,
+      url: "https://example.com/jobs/rescan-skip",
+      title: "Data Engineer",
+      company: "Acme",
+      location: "Remote",
+      description: "Build data pipelines with SQL.",
+    };
+    const deps = { llm: testLlm, connectorForSource: (source: SourceRow) => stubConnector(source, [posting]) };
+
+    const run1 = await startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" }, deps);
+    await waitForTerminal(runsRepo, run1.id);
+
+    vi.mocked(scoreJobSpy).mockClear();
+    const run2 = await startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" }, deps);
+    const finalRow2 = await waitForTerminal(runsRepo, run2.id);
+
+    expect(finalRow2.status).toBe("completed");
+    expect(finalRow2.stats.scored).toBe(0);
+    expect(vi.mocked(scoreJobSpy)).not.toHaveBeenCalled();
+    expect(finalRow2.results).toHaveLength(1);
+    expect(finalRow2.results[0]).toMatchObject({ outcome: "skipped", reason: "alreadyScored" });
+  });
+
+  it("rescan skip gate: a résumé swap still triggers a real rescore for the same job (different resumeId, same policy)", async () => {
+    const runsRepo = createSearchRunsRepo(state.testDb);
+    const resumeA = await insertResume(state.testDb, { ...resumeFixture, isActive: true });
+    const good = await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
+    const posting: RawPosting = {
+      sourceId: good.id,
+      url: "https://example.com/jobs/rescan-resume-swap",
+      title: "Data Engineer",
+      company: "Acme",
+      location: "Remote",
+      description: "Build data pipelines with SQL.",
+    };
+    const deps = { llm: testLlm, connectorForSource: (source: SourceRow) => stubConnector(source, [posting]) };
+
+    const run1 = await startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" }, deps);
+    await waitForTerminal(runsRepo, run1.id);
+
+    // Swap the active résumé — mirrors resumesRepo.create's deactivate-then-
+    // insert; done directly since insertResume is a raw fixture insert, not
+    // routed through the repo.
+    await state.testDb.update(resumes).set({ isActive: false }).where(eq(resumes.id, resumeA.id));
+    await insertResume(state.testDb, { ...resumeFixture, isActive: true });
+
+    vi.mocked(scoreJobSpy).mockClear();
+    const run2 = await startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" }, deps);
+    const finalRow2 = await waitForTerminal(runsRepo, run2.id);
+
+    expect(finalRow2.status).toBe("completed");
+    expect(finalRow2.stats.scored).toBe(1);
+    expect(vi.mocked(scoreJobSpy)).toHaveBeenCalledTimes(1);
+    expect(finalRow2.results[0]).toMatchObject({ outcome: "scored" });
   });
 });
