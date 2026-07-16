@@ -33,6 +33,18 @@ COPY --from=build /app/public ./public
 COPY --from=build /app/next.config.mjs ./
 COPY --from=build /app/drizzle ./drizzle
 COPY --from=build /app/drizzle.config.ts ./
+# config/ is read from disk at RUNTIME: src/lib/llm/models.ts + templates.ts do
+# readFileSync(cwd()/config/...) per LLM call. `output: standalone` cannot trace
+# these dynamic fs reads, so they are NOT bundled — copy config/ explicitly or
+# every scoring/tailor/extract call ENOENTs.
+COPY --from=build /app/config ./config
+# src/ is needed by the runbook's tsx one-offs: `npm run db:seed`
+# (tsx src/server/persistence/seed.ts) and the uploads migration
+# (tsx src/server/resume/migrate-uploads.ts).
+COPY --from=build /app/src ./src
+# tsconfig.json: those tsx one-offs import via the `@/*` -> `./src/*` path alias,
+# which tsx only resolves when tsconfig.json is present at the runtime cwd.
+COPY --from=build /app/tsconfig.json ./
 # Uploads root (Step 5) — bind-mounted from the host in compose. Create the dir
 # so the app can write even before the mount (the mount overlays it).
 RUN mkdir -p /var/lib/caliber/uploads

@@ -1,0 +1,31 @@
+# Build context excludes. CRITICAL: node_modules and .next are host (macOS/arm64)
+# artifacts — the Dockerfile runs `npm ci` for a linux image, then `COPY . .`.
+# Without excluding these, COPY overlays host node_modules (incl. the native
+# @napi-rs/canvas skia binary) onto the freshly-installed linux ones and breaks
+# the runtime. Do not remove node_modules / .next from this list.
+node_modules
+.next
+.next.stale-*
+
+# Secrets — never bake into the image (compose provides them via env_file).
+.env
+.env.*
+!.env.production.example
+
+# VCS / tooling
+.git
+.gitignore
+.github
+
+# Tests, coverage, e2e artifacts, Storybook build
+coverage
+playwright-report
+test-results
+e2e/.auth
+storybook-static
+
+# Docs & local scratch (not needed at build time)
+docs
+*.log
+.DS_Store
+scratchpad
