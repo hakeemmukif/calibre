@@ -107,7 +107,7 @@ interface DraftedAnswer { questionId: string; text: string;
 
 **Recommendation: diff-review.** (1) the MVP interaction is *approve LLM changes*, not free-form authoring; (2) the kit already owns a split editor (Resume Builder) — duplicating it violates "one canon"; (3) diff-review makes grounding auditable — the product's trust posture (same muscle as F4). The split editor remains the Phase-C Resume Builder; TailorResume outputs into it.
 
-**Breakdown:** `TailorControls` (emphasis chips from `job.gaps`/`fit`, "Generate") → `ChangeList` grouped by section → **`ChangeCard`** `{ change: TailorChange; onToggle(accept) }` (before/after text, one-line rationale, accept/reject) → `TailorPreview` (paper preview of accepted-only state) → `ExportBar` (accepted count · Save copy · Export PDF).
+**Breakdown:** `TailorControls` (emphasis chips from `job.gaps`/`fit`, "Generate") → `TailorReport` (the "measure" step — a `CorrelationReport` readout: two separate signals, semantic coverage + ATS keyword presence, never fused into one score; requirement rows grouped Buried→Met→Gap; a single "Rewrite to close these" CTA; segment bars via the local `SignalBar` helper) → `ChangeList` grouped by section → **`ChangeCard`** `{ change: TailorChange; onToggle(accept) }` (before/after text, one-line rationale, accept/reject) → `TailorPreview` (paper preview of accepted-only state) → `ExportBar` (accepted count · Save copy · Export PDF).
 
 ```ts
 interface TailorChange { id: string; section: string; op: 'rewrite'|'add'|'remove'|'reorder';
@@ -133,7 +133,7 @@ Compositions/
   Eval/            EvalResultCard
   Resume/          ResumeUpload · ResumeView
   Apply/           AppliedButton · AnswerCard · GroundingChips · QuestionListEditor · ApplyQuestionsAssistant
-  Tailor/          ChangeCard · TailorResume
+  Tailor/          ChangeCard · TailorReport · TailorResume
   Tracker/         StagePips · TrackerTable
 Pages/             Resume · Feed (hero A·Signal Pill) · JobDetail · ApplyAssistant · Tailor · Tracker
 Explorations/

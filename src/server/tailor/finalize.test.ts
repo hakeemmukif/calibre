@@ -292,4 +292,110 @@ describe("finalizeTailor", () => {
     const row = await tailoredResumesRepo.getById(draft.id, BOOTSTRAP_ADMIN_ID);
     expect(row?.atsDelta).toBeNull();
   });
+
+  // Review fix (Finding 5): the test above accepts only DIFF[1] ("add Go"),
+  // and TAILORED_STORE (row.structured, the FULL tailored résumé with every
+  // edit applied) also already contains "Go" — so a buggy finalize that
+  // measured `after` off row.structured instead of the accepted-only merge
+  // would happen to pass it too. Discriminate by calling finalize twice with
+  // DIFFERENT accepted subsets of the SAME draft: "Go" is absent from
+  // BASE_STORE but DIFF[1]'s `after` introduces it, so accepting nothing vs.
+  // accepting DIFF[1] must move `after` by exactly one — a measurement of
+  // row.structured would return the same `after` both times.
+  it("atsDelta.after reflects the accepted-only merge, not the full row.structured", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id);
+    const resume = await insertResume(state.testDb, { isActive: true, structured: BASE_STORE });
+
+    const report = await correlationReportsRepo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
+      jobId: job.id,
+      resumeId: resume.id,
+      rows: [],
+      status: "queued",
+      model: "openai/gpt-4.1",
+    });
+    await correlationReportsRepo.complete(report.id, {
+      rows: [
+        { requirement: "TypeScript experience", term: "TypeScript", kind: "must", status: "met", evidence: "TypeScript", atsPresent: true, reason: "r", note: null },
+        { requirement: "Go experience", term: "Go", kind: "nice", status: "gap", evidence: null, atsPresent: false, reason: "r", note: null },
+      ],
+      semantic: { met: 1, buried: 0, gap: 1, total: 2 },
+      ats: { present: 1, total: 2, missing: ["Go"] },
+      model: "mock",
+      costUsd: 0.01,
+      completedAt: new Date(),
+    });
+
+    const draft = await tailoredResumesRepo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
+      jobId: job.id,
+      baseResumeId: resume.id,
+      reportId: report.id,
+      diff: DIFF,
+      status: "queued",
+      model: "openai/gpt-4.1",
+    });
+    await tailoredResumesRepo.complete(draft.id, {
+      structured: TAILORED_STORE,
+      diff: DIFF,
+      model: "mock",
+      costUsd: 0.03,
+      completedAt: new Date(),
+      reportId: report.id,
+    });
+
+    // Accept nothing: the merge is BASE_STORE verbatim — "Go" stays absent.
+    const acceptNone = await finalizeTailor(draft.id, BOOTSTRAP_ADMIN_ID, []);
+    expect(acceptNone.atsDelta).toEqual({ before: 1, after: 1, total: 2 });
+
+    // Re-finalize accepting only DIFF[1] (the "add Go" edit) — the merge now
+    // introduces "Go".
+    const acceptGo = await finalizeTailor(draft.id, BOOTSTRAP_ADMIN_ID, [1]);
+    expect(acceptGo.atsDelta).toEqual({ before: 1, after: 2, total: 2 });
+
+    expect(acceptGo.atsDelta!.after - acceptNone.atsDelta!.after).toBe(1);
+    expect(acceptGo.atsDelta!.before).toBe(acceptNone.atsDelta!.before);
+    expect(acceptGo.atsDelta!.total).toBe(acceptNone.atsDelta!.total);
+  });
+
+  it("finalizeTailor rejects (fail loud) when the linked report has no ats signal", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id);
+    const resume = await insertResume(state.testDb, { isActive: true, structured: BASE_STORE });
+
+    // "completed" but `ats` was never populated (nullable column) — finalize
+    // must refuse to silently compute a delta against a signal that doesn't
+    // exist rather than defaulting to null/0.
+    const report = await correlationReportsRepo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
+      jobId: job.id,
+      resumeId: resume.id,
+      rows: [],
+      status: "completed",
+      model: "mock",
+    });
+
+    const draft = await tailoredResumesRepo.insert({
+      userId: BOOTSTRAP_ADMIN_ID,
+      jobId: job.id,
+      baseResumeId: resume.id,
+      reportId: report.id,
+      diff: DIFF,
+      status: "queued",
+      model: "openai/gpt-4.1",
+    });
+    await tailoredResumesRepo.complete(draft.id, {
+      structured: TAILORED_STORE,
+      diff: DIFF,
+      model: "mock",
+      costUsd: 0.03,
+      completedAt: new Date(),
+      reportId: report.id,
+    });
+
+    await expect(finalizeTailor(draft.id, BOOTSTRAP_ADMIN_ID, [])).rejects.toThrow(
+      `report ${report.id} has no ats signal`,
+    );
+  });
 });
