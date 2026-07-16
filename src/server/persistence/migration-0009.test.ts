@@ -24,7 +24,7 @@ describe("0009 user_id migration (empty-DB replay)", () => {
         id: "p2", userId: ADMIN, baseCountry: "MY", relocation: "stay",
         scheduleFlex: "any-hours", employmentPref: "any",
       }),
-    ).rejects.toMatchObject({ cause: { code: "23505" } });
+    ).rejects.toMatchObject({ cause: { extendedCode: "SQLITE_CONSTRAINT_UNIQUE" } });
   });
 
   it("resumes allows one active per user, rejects a second (partial unique)", async () => {
@@ -33,7 +33,7 @@ describe("0009 user_id migration (empty-DB replay)", () => {
     await db.insert(resumes).values({ ...base, isActive: true });
     await db.insert(resumes).values({ ...base, isActive: false }); // inactive is fine
     await expect(db.insert(resumes).values({ ...base, isActive: true })).rejects.toMatchObject({
-      cause: { code: "23505" },
+      cause: { extendedCode: "SQLITE_CONSTRAINT_UNIQUE" },
     });
   });
 
@@ -67,6 +67,6 @@ describe("0009 user_id migration (empty-DB replay)", () => {
     };
 
     await db.insert(jobs).values(base);
-    await expect(db.insert(jobs).values(base)).rejects.toMatchObject({ cause: { code: "23505" } });
+    await expect(db.insert(jobs).values(base)).rejects.toMatchObject({ cause: { extendedCode: "SQLITE_CONSTRAINT_UNIQUE" } });
   });
 });

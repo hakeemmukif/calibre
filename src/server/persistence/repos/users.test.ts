@@ -33,12 +33,12 @@ describe("usersRepo", () => {
       .rejects.toBeInstanceOf(EmailTakenError);
   });
 
-  it("users_email_unique constraint fires a 23505 on a direct duplicate insert (foundation for the race-safety catch in create())", async () => {
+  it("users_email_unique constraint fires a SQLITE_CONSTRAINT_UNIQUE on a direct duplicate insert (foundation for the race-safety catch in create())", async () => {
     const db = await createTestDb();
     await db.insert(users).values({ email: "race@x.co", passwordHash: "h", role: "user" });
     await expect(
       db.insert(users).values({ email: "race@x.co", passwordHash: "h", role: "user" }),
-    ).rejects.toMatchObject({ cause: { code: "23505" } });
+    ).rejects.toMatchObject({ cause: { extendedCode: "SQLITE_CONSTRAINT_UNIQUE" } });
   });
 
   it("findById returns the row; list() returns all (including the migration-seeded admin)", async () => {

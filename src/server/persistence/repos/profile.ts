@@ -5,7 +5,7 @@
 // country/relocation. `upsert` is the onboarding path — a fresh registrant
 // has no row yet, so PUT /api/profile must create-or-replace, not just
 // replace.
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getDb } from "../db";
 import { profile } from "../schema";
 import type { Db } from "./db";
@@ -39,7 +39,7 @@ export function createProfileRepo(db: Db) {
         .set({
           baseCountry: input.baseCountry, relocation: input.relocation,
           scheduleFlex: input.scheduleFlex, employmentPref: input.employmentPref,
-          updatedAt: sql`now()`,
+          updatedAt: new Date(),
         })
         .where(eq(profile.userId, userId))
         .returning();
@@ -63,7 +63,7 @@ export function createProfileRepo(db: Db) {
           set: {
             baseCountry: input.baseCountry, relocation: input.relocation,
             scheduleFlex: input.scheduleFlex, employmentPref: input.employmentPref,
-            updatedAt: sql`now()`,
+            updatedAt: new Date(),
           },
         })
         .returning();
