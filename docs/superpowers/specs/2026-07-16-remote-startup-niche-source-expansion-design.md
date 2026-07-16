@@ -83,10 +83,13 @@ Two root causes in `src/server/search/roleMatch.ts` (both inherited from the don
 `GoToGroup` (lever), `shopback-2` (lever), `bjakcareer` (ashby). **Aspire's slug is NOT
 `aspire`** — 404'd live.
 
-**Research gap — declared:** the dedicated **ATS-platform enumeration** and
-**exec/fractional** sweeps died before completing. Workable/SmartRecruiters/Recruitee
-endpoint mechanics, rate limits, and ToS posture are therefore **UNKNOWN**; so is the
-exec-marketplace landscape. Both are gated on verification (§4.2 Tier 2), not assumed.
+**Research gap — CLOSED (gap-fill sweep, 2026-07-16).** The ATS-platform and
+exec/fractional sweeps that first died were re-run as standalone agents (the Workflow
+orchestrator crashed mid-run twice — agents healthy, parent process gone — so they were
+respawned directly). Both completed with live-endpoint verification. Results are folded
+into §4.2 Tier 2 (Workable et al. — mechanics now confirmed, not UNKNOWN) and §8 (the
+exec ceiling). Remaining unknowns are narrow and named there (SmartRecruiters hit-rate;
+Teamtailor/Pinpoint function-breadth on thin samples; Consider's obfuscated endpoint).
 
 ## 4. Design
 
@@ -129,20 +132,61 @@ survivors by `(stage1Score desc, postedAt desc, stableKey asc)` before the slice
 | **Verified SEA seeds** — `GoToGroup`, `shopback-2`, `bjakcareer` | SEA + function-diverse, slugs live-verified | S | None. Resolve Aspire's real token first |
 | **yc-oss/api** (6,043 YC cos, daily JSON, `isHiring`) + **remoteintech/remote-jobs** (883 cos, ships `careers_url`, 40k★, pushed 2026-07-15) + **topstartups.io** (1,261) | Startup/remote signal; `careers_url` feeds ATS auto-detection | S | yc-oss has no LICENSE file (mirrors YC public data); remoteintech is NOASSERTION — fine for internal seeding, **read before redistributing** |
 
-**Tier 2 — later, each behind a verification gate:**
-- **Workable** — 4,269 slugs already in the jobhive CSV, the largest startup ATS not
-  covered. **Mechanics/ToS UNKNOWN** (sweep died). One day of verification before any build.
-  Same for **SmartRecruiters** (2,214), **Recruitee**/**Personio** (EU startups).
+**Tier 2 — new connectors, in verified priority order** (gap-fill research 2026-07-16
+resolved the mechanics; these are no longer UNKNOWN):
+
+1. **Workable** — *build this first among new connectors.* Live-verified:
+   `GET apply.workable.com/api/v1/widget/accounts/{slug}` (`?details=true` for full HTML
+   description), **no auth**, `robots.txt` fully open (`Disallow:` empty). Payload carries
+   a distinct **`function` field** *and* `department`, `telecommuting` bool, `locations[]`,
+   `application_url`, stable `shortcode`, full description. All-function coverage confirmed
+   on live pulls (Apna 139 jobs: sales/marketing/eng/product/data/HR/ops/community; Pavago
+   200 jobs: Attorney, Accountant, Legal, Property Manager, Graphic Design). It is the
+   *mechanism behind Workable's own vendor-documented job-widget embed*, so
+   undocumented-as-an-API but sanctioned in practice. **4,269 slugs already in jobhive.**
+   No pagination param (full list in one call). Effort **S** (one connector, JSON, no auth).
+2. **Recruitee** — `GET https://{slug}.recruitee.com/api/offers/`, no auth, **officially
+   vendor-documented** as the "Careers Site API" (built for third-party embedding),
+   `robots.txt` doesn't block `/api/offers/`. Full text + `careers_apply_url` + remote flag.
+   Effort **S**.
+3. **Personio** — `GET https://{slug}.jobs.personio.com/xml?language=en`, no auth,
+   vendor-documented syndication feature, all-functions confirmed live (1NCE: CEO/COO/CTO
+   Office depts incl. Accounting, Legal, Marketing). **XML not JSON** (small parser cost);
+   remote is embedded in the office string, no boolean flag. Effort **S–M**.
+4. **Pinpoint** — `GET https://{slug}.pinpointhq.com/postings.json`, no auth, **the
+   cleanest legal footing found** (officially documented "Job Postings JSON Endpoint",
+   CORS-open by design, `robots.txt` doesn't block it). Function-coverage breadth
+   confirmed only on a thin live sample. Effort **S**.
+5. **Rippling** — `GET https://ats.rippling.com/api/v2/board/{slug}/jobs`, no auth,
+   all-functions confirmed live (joinroot: CFO Org, Product & Design, PR & Comms, …). Two
+   caveats: **undocumented surface** (Rippling's official docs point to a gated host), and
+   **descriptions require an N+1 call** per posting (`/jobs/{id}`). Effort **M**.
+- **SmartRecruiters** — *downgraded below Workable, deliberately.*
+  `GET api.smartrecruiters.com/v1/companies/{id}/postings` works unauthenticated (contra
+  its own docs), but two problems: `robots.txt` reads `Disallow: /` for everyone except
+  `LinkedInBot` — a legal signal none of the above carry — and **5 of 7 jobhive slugs
+  tested returned zero postings** (staleness or slug/identifier mismatch, unresolved).
+  2,214 slugs on paper; real hit-rate unproven. Verify a 20–30 slug batch before building.
+- **Teamtailor** — public RSS at `https://{slug}.teamtailor.com/jobs.rss` (no auth); the
+  REST API needs a key. EU-startup-heavy. RSS mechanics confirmed; multi-function breadth
+  not (only sample was a design agency). Effort **S** if RSS suffices.
 - **Himalayas API** — free, documented, no auth, ~108k remote jobs, explicit
-  Finance/Legal/HR/Sales categories. The only general remote board both permissive and
-  useful. **Gap-fill, not backbone**: no ATS/careers field, 24h-stale, 20/page. Needs a
-  startup filter + attribution.
+  Finance/Legal/HR/Sales categories. **Gap-fill, not backbone**: no ATS/careers field,
+  24h-stale, 20/page. Needs a startup filter + attribution.
 - **Glints** — most favourable robots.txt of any SEA board (job pages crawlable; only
   personalized/tracking paths blocked), startup-leaning. **The legal growth path for the
   local persona**, superseding JobStreet volume growth.
-- **Getro-powered VC boards** (`jobs.a16z.com` et al.) — high-leverage but unverified.
-  If apply links resolve to greenhouse/lever/ashby URLs, one pass yields company + ATS +
-  slug together. One afternoon to check; **do not build ahead of it**.
+- **Getro-powered VC portfolio boards** — *high-leverage and now verified viable, as a
+  company-discovery source, not a connector.* No usable public API
+  (`api.getro.com/v2/networks/{id}/jobs` exists but is gated behind a paid Getro contract —
+  401 unauthenticated). **But every Getro board is scrapable without the API**, verified
+  live on two: `GET {board}/sitemap.xml` → job-page shards → each page is Next.js SSR with
+  a `__NEXT_DATA__` JSON blob (plain fetch, no JS execution). **The apply URL in that blob
+  resolves straight to the underlying ATS** — confirmed `jobs.ashbyhq.com/G2/…` (Accel→Ashby)
+  and `boards.greenhouse.io/a16z/…` (a16z-network→Greenhouse). So one sitemap scrape yields
+  company→ATS-vendor→slug triples that **feed the existing greenhouse/lever/ashby
+  connectors** — it belongs in the §4.3 company-list engine, not as a new connector. Getro
+  claims 700+ VC networks. Effort **M** (a discovery scraper + ATS-URL parser).
 
 **Tier 3 — never / trap:**
 - **LinkedIn / Indeed / Glassdoor** — explicit ToS+robots bans, litigated enforcement
@@ -155,9 +199,18 @@ survivors by `(stage1Score desc, postedAt desc, stableKey asc)` before the slice
   live roles**), Coroflot (64), TopCSJobs, HR Chief, GoInhouse, AccountingFly, Support
   Driven, Dribbble (write-only API). **The math is unambiguous: one seeded Stripe ≈ 280
   non-eng postings; one Mind the Product connector = 27 product postings.** Adding
-  companies dominates adding function boards in every case examined. Sole conditional
-  exception: Chief of Staff Network (5,000 jobs self-reported, access unverified) — one
-  verification hour, because the exec sweep died. Nothing more.
+  companies dominates adding function boards in every case examined.
+- **Exec marketplaces — none have an ingestible job object** (gap-fill confirmed the
+  Toptal/MarketerHire pattern generalises): **Bolster**, **Continuum**, **On Deck Talent**
+  are matching/recruiting services with no listing+apply flow. **Pallet** *shut down its
+  job-board product entirely* mid-2025 (pivoted to contingency recruiting) — dead lead.
+  **Chief of Staff Network** (~48 roles, not 5,000; no schema.org markup, ATS links behind
+  JS) — not worth it. "Exec.com" is an unrelated AI-sales SaaS, not an exec marketplace.
+- **Consider-powered VC boards** (a16z's primary board, Sequoia, First Round) — the *other*
+  VC-board vendor, and a **documented dead-end**: client-rendered React with an obfuscated
+  `/mendel/{hash}/boards` bundle, no discoverable data endpoint on static inspection. Vendor
+  is a coin-flip (Accel=Getro=scrapable; a16z/Sequoia/First Round=Consider=not cracked), so
+  the Getro scrape (Tier 2) covers only the Getro subset, not the whole VC ecosystem.
 - **Toptal / MarketerHire** — matching marketplaces, **no ingestible job object**.
 - **Remotive free API** — explicit anti-aggregator ToS clause.
 - **jobdataapi.com** ($295–1,650/mo, 45.5M ATS-sourced jobs) — the "buy" option. It
@@ -288,6 +341,14 @@ when the admin UI needs to query them.
 3. **Decoupling** — global `postings` pool, scheduled crawler with per-vendor
    politeness, global dedupe, `jobs` re-cast as match view, `run.ts` split into crawl
    and match loops. **Then flip on the full validated list.** **L, ~1.5–2 weeks.**
+4. **New connectors, in order (post-decoupling, optional reach)** — **Workable** first
+   (S, verified all-function, 4,269 slugs waiting), then Recruitee → Personio → Pinpoint
+   (all S, vendor-documented), then Rippling (M, N+1 descriptions). SmartRecruiters only
+   after a batch hit-rate check. Each rides the same seed/validate/crawl machinery from
+   steps 2–3 — the connector is the only new code. **S–M each; sequence, don't batch.**
+5. **Getro discovery scraper (optional)** — sitemap → `__NEXT_DATA__` → ATS-URL parser,
+   feeding company→ATS→slug triples into the step-2 engine. Covers the Getro-vendor VC
+   subset only (Consider boards excluded). **M.** Do after the connector set proves out.
 
 ## 7. Legal posture
 
@@ -322,24 +383,35 @@ targets the *commercially successful* — risk grows with traction, so cap this 
 
 ## 8. The honest ceiling
 
-The exec/fractional sweep died, so this is **partly inference and flagged as such**.
-Evidence *does* show posted exec roles on ATS boards (Stripe live: Chief Compliance
-Officer, Head of Finance Operations, Head of Marketing Operations, 6+ exec-titled).
+The ceiling is **title-dependent, not uniform** — this is the load-bearing finding, now
+grounded rather than inferred. The widely-repeated "70–85% of jobs are never posted" stat
+is **debunked** as applied to today's market (it traces to 1980s pre-internet research);
+current analysis puts genuinely-unadvertised roles under ~10% overall — **but executive and
+confidential searches are explicitly named as one of the few categories that still
+qualify.** So:
 
-Structurally never captured: **seed-stage founding-exec searches** (run via investors and
-retained search, never posted — *inference, unverified*); **fractional roles**
-(Toptal/MarketerHire have no job object — verified structural misfit); community-gated
-postings (Chief of Staff Network — unverified); referral-only roles; **LinkedIn-only
-postings** (many startups post nowhere else — real, permanent leakage);
-Wellfound-exclusive listings (130k, best fit, hard-blocked); non-English SEA boards;
-companies too small to run any ATS. Closable later: Workable/SmartRecruiters/Recruitee
-startups (~6,500 slugs already resolved in jobhive) are invisible until those connectors
-exist — mechanics **UNKNOWN** because that sweep died.
+- **VP / Director / Head-of / Chief-of-Staff** roles post at close to normal rates and
+  **already reach the ATS fan-out in volume** (Stripe live: Chief Compliance Officer, Head
+  of Finance Operations, Head of Marketing Operations, 6+ exec-titled). These are *in scope
+  and covered.*
+- **True whole-company CEO/CFO/COO hires at VC-backed startups** are the genuine blind spot:
+  multiple executive-search sources describe these as routinely filled by retained search
+  with shortlists built *before* a role is open — structurally proactive and non-public by
+  design. No defensible hard percentage exists (every number in circulation is either the
+  debunked generic stat or firm marketing copy); the *directional* claim — CXO ≫ Head-of in
+  hidden-ness — is the only one the evidence supports.
+
+Also structurally never captured: **fractional roles** (Bolster/Continuum/Toptal/MarketerHire
+are matching services with no job object — verified); **referral-only** roles; **LinkedIn-only
+postings** (many startups post nowhere else — real, permanent leakage); Wellfound-exclusive
+listings (130k, best fit, hard-blocked); the **Consider-vendor slice of VC portfolio boards**
+(§4.2 Tier 3); non-English SEA boards; companies too small to run any ATS.
 
 **Does this kill the niche? No.** *"If we have a résumé, the job should be visible"* is
-satisfiable for the **postable** universe, which spans every function including
-Head-of/VP/Chief titles at funded startups. It is **not** satisfiable for C-suite-at-seed
-or fractional work. **Ship the niche; do not market CEO-search coverage.**
+satisfiable for the **postable** universe, which spans every function **including
+Head-of/VP/Chief-of-Staff titles at funded startups** — exactly where most users with a
+résumé are looking. It is **not** satisfiable for whole-company C-suite-at-seed or fractional
+work. **Ship the niche; do not market CEO-search coverage.**
 
 ## 9. Reconciliation with prior specs
 
@@ -360,8 +432,13 @@ or fractional work. **Ship the niche; do not market CEO-search coverage.**
 
 ## 10. Explicitly not built (YAGNI — agreed)
 
-- Any single-function board connector (§4.2 Tier 3).
-- Workable/SmartRecruiters/Recruitee connectors — **gated on verification**, not in this program.
+- Any single-function board connector, and any exec marketplace (§4.2 Tier 3 — none
+  have an ingestible job object).
+- New ATS connectors (Workable et al.) **before** steps 1–3 land. They are verified and
+  sequenced as step 4, but the matching fix + company engine + decoupling come first —
+  the existing three connectors already reach the whole niche once pointed at more companies.
+- Consider-vendor VC boards (obfuscated, not cracked — §4.2 Tier 3); the Getro scraper is
+  step 5, optional, and covers only the Getro subset.
 - Buying jobdataapi.com or any paid feed.
 - Wellfound/LinkedIn/Indeed/Glassdoor access of any kind.
 - A user-facing source picker — sources stay admin-managed global reference data.
