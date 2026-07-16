@@ -26,7 +26,7 @@ async function bootstrapRemoteJob(request: APIRequestContext): Promise<{ id: str
   throw new Error("bootstrapRemoteJob: GET /api/jobs?persona=remote stayed empty after 20s");
 }
 
-test("tailor: correlate report -> generate rewrite -> diff review -> save finalizes -> real Chromium PDF", async ({
+test("tailor: analyze fit report -> rewrite -> diff review -> save finalizes with ATS delta -> real Chromium PDF", async ({
   page,
   request,
 }) => {
@@ -35,41 +35,32 @@ test("tailor: correlate report -> generate rewrite -> diff review -> save finali
   // no separate seeding call is needed before correlate.
   const job = await bootstrapRemoteJob(request);
 
-  // Correlate step (server/tailor/correlate.ts, POST /api/tailor/correlate):
-  // its own run, own `correlation_reports` row, independent of the tailor
-  // run started below. Drive it directly and assert the report's rows —
-  // there is no UI surface for CorrelationReport, so this is API-only.
-  const correlateStart = await request.post("/api/tailor/correlate", { data: { jobId: job.id } });
-  expect(correlateStart.status()).toBe(202);
-  const correlateRun = (await correlateStart.json()) as { id: string };
-
-  let report: { status: string; rows: { requirement: string; status: string }[] } | undefined;
-  const correlateDeadline = Date.now() + 20_000;
-  while (Date.now() < correlateDeadline) {
-    const reportRes = await request.get(`/api/tailor/correlate/${correlateRun.id}`);
-    expect(reportRes.ok()).toBeTruthy();
-    report = await reportRes.json();
-    if (report?.status === "completed" || report?.status === "failed") break;
-    await new Promise((r) => setTimeout(r, 250));
-  }
-  expect(report?.status).toBe("completed");
-  expect(report?.rows.length).toBeGreaterThan(0);
-
   await page.goto(`/jobs/${job.id}`);
   await page.getByRole("button", { name: "Tailor résumé" }).click();
   await expect(page).toHaveURL(new RegExp(`/jobs/${job.id}/tailor$`));
 
+  // Measure step (TailorReport, POST /api/tailor/correlate under the hood):
+  // "Analyze fit" starts a correlate run and the page polls it to
+  // completion — assert the two separate signal readouts (semantic coverage
+  // and ATS keyword presence, never fused into one percentage) and the
+  // rewrite CTA they unlock. Generous timeout: correlate is a real server
+  // round-trip even with a doubled LLM.
+  await page.getByRole("button", { name: "Analyze fit" }).click();
+  await expect(page.getByText("Requirements covered")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("ATS keywords present")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Rewrite to close these" })).toBeVisible();
+
   // Capture the started run's id straight off the POST /api/tailor response
   // — there's no list-by-job route, and the id isn't otherwise rendered.
-  // The page's "Generate" button drives the full correlate -> rewrite ->
-  // render pipeline server-side in one call (no reportId supplied, so
-  // startTailor runs its own internal correlate) — the report checked above
-  // proves the underlying correlate step independently.
+  // "Rewrite to close these" posts { jobId, reportId }, so this run is
+  // constrained to rewrite the report just asserted above
+  // (server/tailor/index.ts's resolveReport), not an independent internal
+  // correlate.
   const [tailorResponse] = await Promise.all([
     page.waitForResponse(
       (res) => res.request().method() === "POST" && new URL(res.url()).pathname === "/api/tailor",
     ),
-    page.getByRole("button", { name: "Generate" }).click(),
+    page.getByRole("button", { name: "Rewrite to close these" }).click(),
   ]);
   const tailorRun = (await tailorResponse.json()) as { id: string };
 
@@ -92,6 +83,16 @@ test("tailor: correlate report -> generate rewrite -> diff review -> save finali
   // sets `finalizedAt`) — a prerequisite for the PDF route, not a separate draft.
   await page.getByRole("button", { name: "Save copy" }).click();
   await expect(page.getByText("Saved a copy of your tailored résumé.")).toBeVisible({ timeout: 10_000 });
+
+  // ATS-delta proof (tailor-correlation-engine design): finalizeTailor
+  // computes this deterministically off the linked report — `before`/`total`
+  // are frozen at report completion, `after` is recomputed against the
+  // accepted-only merge. With the scripted doubles (scripted-fixtures.ts's
+  // CORRELATE_RESULT against RESUME_STORE) none of the 4 correlated terms
+  // are literal résumé text, and TAILOR_RESULT's summary rewrite doesn't
+  // introduce any of them either, so before === after === 0 of 4 — still a
+  // real, computed readout, just a flat one for this fixture.
+  await expect(page.getByText(/ATS keywords\s+0\s+→\s+0\s+of\s+4/)).toBeVisible();
 
   // Real in-process Chromium render (src/lib/pdf.ts) — never mocked in this
   // env. A launch failure must fail this test, not be caught and skipped.
