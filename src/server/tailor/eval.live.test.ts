@@ -22,7 +22,6 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { getLlm } from "@/lib/llm/client";
-import { renderTemplate } from "@/lib/llm/templates";
 import type { ResumeStore } from "@/server/resume/resume-store";
 import type { JdFacts } from "@/server/score/jdFacts";
 import { classifyAndVerify } from "./correlate";
@@ -31,7 +30,7 @@ import {
   falseGapRate, statusAccuracy, verifyEvidence,
 } from "./correlate-metrics";
 import { applyEdits } from "./merge";
-import { TailorResultSchema } from "./index";
+import { emitTailorRewrite } from "./index";
 
 interface Golden {
   id: string;
@@ -78,19 +77,12 @@ describe("requirement correlation eval (live)", () => {
         .map((r) => ({ requirement: r.requirement, term: r.term, status: r.status, evidence: r.evidence, reason: r.reason }));
       const gaps = rows.filter((r) => r.status === "gap").map((r) => r.requirement);
 
-      const rewrite = await llm.complete({
-        task: "tailor",
-        messages: renderTemplate("tailor", {
-          resume: JSON.stringify(g.resume),
-          report: JSON.stringify({ candidates, gaps }),
-        }),
-        responseSchema: TailorResultSchema,
-      });
+      const rewrite = await emitTailorRewrite(llm, { resume: g.resume, candidates, gaps });
 
-      const fabrications = fabricationViolations(rewrite.data.diff, g.resume);
+      const fabrications = fabricationViolations(rewrite.diff, g.resume);
       expect(fabrications, `fabricated number(s) in rewrite: ${JSON.stringify(fabrications)}`).toEqual([]);
 
-      const rewritten = applyEdits(g.resume, rewrite.data.diff);
+      const rewritten = applyEdits(g.resume, rewrite.diff);
       const before = atsSignal(rows).present;
       const afterRows = verifyEvidence(rows.map(({ atsPresent: _atsPresent, ...r }) => r), rewritten);
       const after = atsSignal(afterRows).present;

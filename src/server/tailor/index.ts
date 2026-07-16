@@ -10,8 +10,8 @@
 // run tailors. The model returns EDITS ONLY (`diff[]`, addressable at
 // bullet granularity); the tailored `structured` is always DERIVED
 // server-side via `applyEdits`, never emitted by the model directly.
-import { z } from "zod";
-import { getLlm, type LlmClient } from "@/lib/llm/client";
+import { z, ZodError } from "zod";
+import { getLlm, type LlmClient, type LlmMessage } from "@/lib/llm/client";
 import { modelFor } from "@/lib/llm/models";
 import { renderTemplate } from "@/lib/llm/templates";
 import { htmlToPdf } from "@/lib/pdf";
@@ -20,13 +20,14 @@ import { jobsRepo } from "@/server/persistence/repos/jobs";
 import { resumesRepo, type ResumeRow } from "@/server/persistence/repos/resumes";
 import { tailoredResumesRepo, type TailoredResumeRow } from "@/server/persistence/repos/tailoredResumes";
 import { correlationReportsRepo, type CorrelationReportRow } from "@/server/persistence/repos/correlationReports";
+import type { ResumeStore } from "@/server/resume/resume-store";
 import { create, type RunHandle } from "@/server/runs/registry";
 import { TailoredResume } from "@/types";
 import { toTailoredResume } from "./assemble";
 import { correlate, type CorrelateDeps } from "./correlate";
 import { atsPresentCount, fabricationViolations } from "./correlate-metrics";
 import { NoActiveResumeError, UnknownJobError, UnknownReportError } from "./errors";
-import { applyAcceptedDiff, applyEdits, DiffEntrySchema } from "./merge";
+import { applyAcceptedDiff, applyEdits, DiffEntrySchema, InvalidDiffIndexError, MalformedDiffEditError, UnknownDiffSectionError } from "./merge";
 
 export { NoActiveResumeError, UnknownJobError, UnknownReportError } from "./errors";
 
@@ -238,6 +239,83 @@ async function resolveReport(row: TailoredResumeRow, deps: CorrelateDeps): Promi
   return report;
 }
 
+// Emission errors this function's corrective retry treats as "the model's
+// fault, worth one re-ask" — a structurally invalid diff (e.g. a list-section
+// modify with a null target.bulletIndex, the intermittent ~1-in-4 failure
+// this retry exists for) rather than a caller/config bug. Fabrication and
+// requirement-allowlist violations are NOT retried here — those are honesty
+// guards runTailorJob applies AFTER this function returns, not emission
+// noise a re-ask can fix.
+function isRetryableEmitError(err: unknown): boolean {
+  return (
+    err instanceof ZodError ||
+    err instanceof MalformedDiffEditError ||
+    err instanceof InvalidDiffIndexError ||
+    err instanceof UnknownDiffSectionError
+  );
+}
+
+// Shared by runTailorJob and the live eval harness (eval.live.test.ts) so
+// both drive the SAME emit-side schema (TailorEmitSchema) and the SAME
+// bounded corrective retry — the eval harness used to hand-roll its own
+// llm.complete call against TailorResultSchema (the WIRE schema), which
+// reproduced the exact emit-omission bug TailorEmitSchema exists to fix.
+export async function emitTailorRewrite(
+  llm: LlmClient,
+  input: { resume: ResumeStore; candidates: unknown; gaps: string[] },
+): Promise<{ diff: TailorResult["diff"]; model: string; costUsd: number }> {
+  const messages: LlmMessage[] = renderTemplate("tailor", {
+    resume: JSON.stringify(input.resume),
+    report: JSON.stringify({ candidates: input.candidates, gaps: input.gaps }),
+  });
+
+  let attemptMessages = messages;
+  let totalCostUsd = 0;
+
+  for (let attempt = 1; ; attempt++) {
+    const result = await llm.complete({
+      task: "tailor",
+      messages: attemptMessages,
+      responseSchema: TailorEmitSchema,
+    });
+    totalCostUsd += result.costUsd;
+
+    try {
+      // Normalise the emit shape's null-modelled absence back onto the wire
+      // shape (before/after optional) and re-validate — TailorResultSchema's
+      // superRefine (a non-empty before/after on every `modify`) stays the
+      // real enforcement point.
+      const normalised = result.data.diff.map(({ before, after, ...rest }) => ({
+        ...rest,
+        ...(before !== null ? { before } : {}),
+        ...(after !== null ? { after } : {}),
+      }));
+      const { diff } = TailorResultSchema.parse({ diff: normalised });
+
+      // Deterministic pre-validation: a dry-run of the merge this diff will
+      // eventually drive (applyEdits structuredClones the base internally),
+      // discarded here — this is what catches a list-section modify/remove
+      // with a null target.bulletIndex, which TailorResultSchema's own
+      // nullable target shape does not reject on its own.
+      applyEdits(input.resume, diff);
+
+      return { diff, model: result.model, costUsd: totalCostUsd };
+    } catch (err) {
+      if (attempt >= 2 || !isRetryableEmitError(err)) throw err;
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`tailor rewrite attempt 1 rejected: ${message} — retrying once with corrective feedback`);
+      attemptMessages = [
+        ...messages,
+        { role: "assistant", content: JSON.stringify(result.data) },
+        {
+          role: "user",
+          content: `That response was rejected by a deterministic validator: ${message}. Re-emit the ENTIRE corrected {"diff": [...]} JSON. Every modify/remove on a list section (experience, projects, skills) MUST carry a non-null integer target.index AND target.bulletIndex; scalar sections (summary, headline) use null for both; every modify MUST carry non-empty before AND after.`,
+        },
+      ];
+    }
+  }
+}
+
 async function runTailorJob(
   row: TailoredResumeRow,
   resumeRow: ResumeRow,
@@ -268,25 +346,7 @@ async function runTailorJob(
   const gaps = report.rows.filter((r) => r.status === "gap").map((r) => r.requirement);
 
   const llm = deps.llm ?? getLlm();
-  const result = await llm.complete({
-    task: "tailor",
-    messages: renderTemplate("tailor", {
-      resume: JSON.stringify(resumeRow.structured),
-      report: JSON.stringify({ candidates, gaps }),
-    }),
-    responseSchema: TailorEmitSchema,
-  });
-
-  // Normalise the emit shape's null-modelled absence back onto the wire
-  // shape (before/after optional) and re-validate — TailorResultSchema's
-  // superRefine (a non-empty before/after on every `modify`) stays the real
-  // enforcement point.
-  const normalised = result.data.diff.map(({ before, after, ...rest }) => ({
-    ...rest,
-    ...(before !== null ? { before } : {}),
-    ...(after !== null ? { after } : {}),
-  }));
-  const { diff } = TailorResultSchema.parse({ diff: normalised });
+  const { diff, model, costUsd } = await emitTailorRewrite(llm, { resume: resumeRow.structured, candidates, gaps });
 
   // Fabrication guard (design §6, deterministic, fail-loud): an edit's
   // `after` may not introduce a number/metric absent from the base résumé.
@@ -321,8 +381,8 @@ async function runTailorJob(
   const completed = await tailoredResumesRepo.complete(row.id, {
     structured: applyEdits(resumeRow.structured, diff),
     diff,
-    model: result.model,
-    costUsd: result.costUsd,
+    model,
+    costUsd,
     completedAt,
     reportId: report.id,
   });

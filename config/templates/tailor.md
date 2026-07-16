@@ -28,11 +28,22 @@ Each edit must have:
 - `section`: one of `summary` | `headline` | `experience` | `projects` |
   `skills` (the résumé field it targets).
 - `op`: the operation ("add" | "remove" | "modify").
-- `target`: `{ index, bulletIndex }` — for `summary`/`headline` (scalar
-  sections) both are `null`; otherwise `index` is the entry's position in
-  that section's array (e.g. which `experience[]` role) and `bulletIndex`
-  is the position within that entry's bullets/items (`null` for `add`,
-  which appends).
+- `target`: `{ index, bulletIndex }`. For `summary`/`headline` (scalar
+  sections) both are `null`. For a LIST section (`experience`, `projects`,
+  `skills`), a `modify` or `remove` MUST carry BOTH `index` AND
+  `bulletIndex` as non-null integers — `null` `bulletIndex` is ONLY valid
+  for `add` (which appends). `index` selects which entry in the section's
+  array (which `experience[]` role, which `projects[]` project, which
+  `skills[]` GROUP). `bulletIndex` selects which item WITHIN that entry —
+  which bullet in that role's/project's `bullets`, or which item in that
+  skills group's `items`.
+
+  Example — reword the 2nd bullet of the 1st experience role:
+  ```
+  { "section": "experience", "op": "modify", "target": { "index": 0, "bulletIndex": 1 },
+    "before": "<exact current bullet text>", "after": "<rewritten text>",
+    "reason": "...", "requirement": "<verbatim requirement>" }
+  ```
 - `before` / `after`: the exact existing text and its replacement. For a
   `modify` edit, `before` is **REQUIRED** — the exact current text,
   verbatim, character-for-character as it appears in the résumé — and

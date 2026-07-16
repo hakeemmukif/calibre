@@ -580,4 +580,75 @@ describe("startTailor", () => {
     const row = await tailoredResumesRepo.getById(draft.id, BOOTSTRAP_ADMIN_ID);
     expect(row?.status).toBe("failed");
   });
+
+  // Corrective retry (emitTailorRewrite, index.ts): a structurally invalid
+  // diff — a list-section `modify` with `target.bulletIndex: null` — passes
+  // TailorEmitSchema/TailorResultSchema (bulletIndex is nullable at the wire
+  // level too) but fails applyEdits's own dry-run (InvalidDiffIndexError,
+  // merge.ts), which is exactly the intermittent bug this retry exists for.
+  const BULLETINDEX_NULL_DIFF = [{ ...TAILOR_DIFF[0], target: { index: 0, bulletIndex: null } }];
+
+  it("retries once on a structurally invalid first attempt (list-section modify with null bulletIndex) and persists the corrected second attempt", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id);
+    const resume = await insertResume(state.testDb, { isActive: true, structured: BASE_STRUCTURED });
+    const report = await insertCompletedReport(job.id, resume.id);
+
+    let tailorCalls = 0;
+    const llm = makeMockLlm(({ task }) => {
+      if (task !== "tailor") throw new Error(`unexpected task "${task}"`);
+      tailorCalls++;
+      return tailorCalls === 1 ? { diff: BULLETINDEX_NULL_DIFF } : { diff: TAILOR_DIFF };
+    });
+
+    const draft = await startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id, reportId: report.id }, { llm });
+    await waitForTerminal(draft.id);
+
+    const row = await tailoredResumesRepo.getById(draft.id, BOOTSTRAP_ADMIN_ID);
+    expect(row?.status).toBe("completed");
+    expect(row?.diff).toEqual(TAILOR_DIFF);
+    expect(tailorCalls).toBe(2);
+  });
+
+  it("fails the run loudly when the corrective retry's second attempt is also structurally invalid (bounded to one retry)", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id);
+    const resume = await insertResume(state.testDb, { isActive: true, structured: BASE_STRUCTURED });
+    const report = await insertCompletedReport(job.id, resume.id);
+
+    let tailorCalls = 0;
+    const llm = makeMockLlm(({ task }) => {
+      if (task !== "tailor") throw new Error(`unexpected task "${task}"`);
+      tailorCalls++;
+      return { diff: BULLETINDEX_NULL_DIFF };
+    });
+
+    const draft = await startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id, reportId: report.id }, { llm });
+    await waitForTerminal(draft.id);
+
+    const row = await tailoredResumesRepo.getById(draft.id, BOOTSTRAP_ADMIN_ID);
+    expect(row?.status).toBe("failed");
+    expect(tailorCalls).toBe(2);
+  });
+
+  it("does not retry a structurally valid diff that only fails the fabrication guard (an honesty guard, not emission noise)", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id);
+    const resume = await insertResume(state.testDb, { isActive: true, structured: BASE_STRUCTURED });
+    const report = await insertCompletedReport(job.id, resume.id);
+
+    let tailorCalls = 0;
+    const llm = makeMockLlm(({ task }) => {
+      if (task !== "tailor") throw new Error(`unexpected task "${task}"`);
+      tailorCalls++;
+      return { diff: FABRICATED_DIFF };
+    });
+
+    const draft = await startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id, reportId: report.id }, { llm });
+    await waitForTerminal(draft.id);
+
+    const row = await tailoredResumesRepo.getById(draft.id, BOOTSTRAP_ADMIN_ID);
+    expect(row?.status).toBe("failed");
+    expect(tailorCalls).toBe(1);
+  });
 });
