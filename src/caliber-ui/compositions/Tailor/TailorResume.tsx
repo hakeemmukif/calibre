@@ -85,7 +85,9 @@ export function TailorResume({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      <TailorControls job={job} status={status === "correlating" ? "analyzing" : "configuring"} onAnalyze={onAnalyze} />
+      {(status === "configuring" || status === "correlating" || status === "error") && (
+        <TailorControls job={job} status={status === "correlating" ? "analyzing" : "configuring"} onAnalyze={onAnalyze} />
+      )}
 
       {(status === "correlating" || status === "rewriting") && (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>

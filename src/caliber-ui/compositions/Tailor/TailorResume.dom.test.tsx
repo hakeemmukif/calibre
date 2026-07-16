@@ -41,4 +41,17 @@ describe("TailorResume (F6 phase 2)", () => {
     render(<TailorResume {...base} status="needs-score" needsScoreMessage="Score this job first." />);
     expect(screen.getByText(/score this job first/i)).toBeInTheDocument();
   });
+
+  it("shows Analyze fit in configuring but not in review or rewriting (no re-entrant run)", () => {
+    const { unmount } = render(<TailorResume {...base} status="configuring" />);
+    expect(screen.getByRole("button", { name: /analyze fit/i })).toBeInTheDocument();
+    unmount();
+
+    render(<TailorResume {...base} status="review" tailored={tailored} />);
+    expect(screen.queryByRole("button", { name: /analyze fit/i })).not.toBeInTheDocument();
+    cleanup();
+
+    render(<TailorResume {...base} status="rewriting" />);
+    expect(screen.queryByRole("button", { name: /analyze fit/i })).not.toBeInTheDocument();
+  });
 });

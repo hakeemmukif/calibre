@@ -49,4 +49,18 @@ describe("TailorReport (spec §5)", () => {
     fireEvent.click(screen.getByRole("button", { name: /rewrite to close these/i }));
     expect(onRewrite).toHaveBeenCalledOnce();
   });
+
+  it("disables the rewrite CTA when there are no candidates (all rows are gap)", () => {
+    const onRewrite = vi.fn();
+    const allGapReport = {
+      ...correlationReport,
+      semantic: { ...correlationReport.semantic, met: 0, buried: 0, gap: correlationReport.semantic.total },
+      rows: correlationReport.rows.map((r) => ({ ...r, status: "gap" as const, evidence: null })),
+    };
+    render(<TailorReport report={allGapReport} rewriting={false} onRewrite={onRewrite} />);
+    const button = screen.getByRole("button", { name: /rewrite to close these/i });
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(onRewrite).not.toHaveBeenCalled();
+  });
 });

@@ -27,6 +27,7 @@ export function TailorReport({ report, rewriting, onRewrite }: TailorReportProps
   const { semantic, ats, rows } = report;
   const covered = semantic.met + semantic.buried;
   const atsPct = ats.total === 0 ? 0 : Math.round((ats.present / ats.total) * 100);
+  const noCandidates = semantic.met + semantic.buried === 0;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -85,8 +86,8 @@ export function TailorReport({ report, rewriting, onRewrite }: TailorReportProps
             <div style={{ font: "var(--type-eyebrow)", textTransform: "uppercase", letterSpacing: "var(--tracking-caps)", color: "var(--text-muted)" }}>
               {heading} · {groupRows.length}
             </div>
-            {groupRows.map((r) => (
-              <div key={r.requirement} style={{ borderTop: "1px solid var(--border-faint)", paddingTop: 8 }}>
+            {groupRows.map((r, i) => (
+              <div key={`${r.requirement}-${i}`} style={{ borderTop: "1px solid var(--border-faint)", paddingTop: 8 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                   <Tag tone={STATUS_TONE[r.status]}>{r.status}</Tag>
                   <span style={{ font: "600 14px/1.4 var(--font-body)", color: "var(--text-strong)" }}>{r.requirement}</span>
@@ -111,11 +112,13 @@ export function TailorReport({ report, rewriting, onRewrite }: TailorReportProps
       })}
 
       <div style={{ display: "flex", alignItems: "center", gap: 12, borderTop: "1px solid var(--border-faint)", paddingTop: 14 }}>
-        <Button variant="soft-accent" iconLeft="sparkles" onClick={onRewrite} disabled={rewriting}>
+        <Button variant="soft-accent" iconLeft="sparkles" onClick={onRewrite} disabled={rewriting || noCandidates}>
           {rewriting ? "Rewriting…" : "Rewrite to close these"}
         </Button>
         <span style={{ font: "var(--type-caption)", color: "var(--text-muted)" }}>
-          Rewrites the {semantic.buried} buried + {semantic.met} met rows. Gaps stay untouched.
+          {noCandidates
+            ? "No buried or met requirements to surface — nothing to rewrite honestly."
+            : `Rewrites the ${semantic.buried} buried + ${semantic.met} met rows. Gaps stay untouched.`}
         </span>
       </div>
     </div>
