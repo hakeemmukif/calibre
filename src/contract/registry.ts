@@ -60,6 +60,7 @@ import {
   SessionResponse,
   AdminUser,
   AdminUsersResponse,
+  CreditsResponse,
 } from "@/types";
 
 const entitySchemas: Record<string, z.ZodType> = {
@@ -99,6 +100,7 @@ const entitySchemas: Record<string, z.ZodType> = {
   SessionResponse,
   AdminUser,
   AdminUsersResponse,
+  CreditsResponse,
 };
 
 for (const [name, schema] of Object.entries(entitySchemas)) {
@@ -143,6 +145,16 @@ registry.registerPath({
     200: { description: "The created/updated profile", content: { "application/json": { schema: Profile } } },
     401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
     422: { description: "Invalid body", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/credits",
+  summary: "Wallet balance + plan for the header chip",
+  responses: {
+    200: { description: "Wallet balance and plan", content: { "application/json": { schema: CreditsResponse } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
 

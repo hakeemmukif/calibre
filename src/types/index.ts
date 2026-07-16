@@ -339,6 +339,7 @@ export const ErrorCode = z.enum([
   "FETCH_BLOCKED",
   "NOT_A_JOB_POSTING",
   "RATE_LIMITED",
+  "INSUFFICIENT_CREDITS",
   "INTERNAL",
   "UNAUTHORIZED",
   "FORBIDDEN",
@@ -444,6 +445,9 @@ export const AuthUser = z.object({
   role: z.enum(["user", "admin"]),
 }); // .parse() strips unknown keys (e.g. passwordHash) by default
 export type AuthUser = z.infer<typeof AuthUser>;
+
+export const CreditsResponse = z.object({ balance: z.number().int(), plan: z.enum(["standard", "unlimited"]) });
+export type CreditsResponse = z.infer<typeof CreditsResponse>;
 
 export const RegisterRequest = z.object({
   email: z.string().email(),

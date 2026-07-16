@@ -469,6 +469,25 @@
         ],
         "type": "object"
       },
+      "CreditsResponse": {
+        "properties": {
+          "balance": {
+            "type": "integer"
+          },
+          "plan": {
+            "enum": [
+              "standard",
+              "unlimited"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "balance",
+          "plan"
+        ],
+        "type": "object"
+      },
       "Eligibility": {
         "properties": {
           "summary": {
@@ -515,6 +534,7 @@
                   "FETCH_BLOCKED",
                   "NOT_A_JOB_POSTING",
                   "RATE_LIMITED",
+                  "INSUFFICIENT_CREDITS",
                   "INTERNAL",
                   "UNAUTHORIZED",
                   "FORBIDDEN"
@@ -2271,6 +2291,7 @@
                   "FETCH_BLOCKED",
                   "NOT_A_JOB_POSTING",
                   "RATE_LIMITED",
+                  "INSUFFICIENT_CREDITS",
                   "INTERNAL",
                   "UNAUTHORIZED",
                   "FORBIDDEN"
@@ -3481,6 +3502,33 @@
           }
         },
         "summary": "Current session"
+      }
+    },
+    "/api/credits": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreditsResponse"
+                }
+              }
+            },
+            "description": "Wallet balance and plan"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          }
+        },
+        "summary": "Wallet balance + plan for the header chip"
       }
     },
     "/api/health": {
