@@ -19,6 +19,7 @@ import type { FeedFilter } from "@/caliber-ui/compositions/Feed/FilterChips";
 import { getJobs, deleteJob } from "@/features/feed/client";
 import { startSearch } from "@/features/search/client";
 import { ApiError } from "@/features/http";
+import { showDenial } from "@/features/credits/creditsStore";
 import { useUrlChecks } from "@/features/url-check/checksStore";
 import type { Job, Persona, SummaryStripStats } from "@/types";
 
@@ -129,6 +130,10 @@ export default function FeedPage() {
       const run = await startSearch({ persona });
       router.push(`/scans/${run.id}`);
     } catch (err) {
+      if (err instanceof ApiError && err.code === "INSUFFICIENT_CREDITS") {
+        const d = err.details as { feature: string; required: number; balance: number };
+        showDenial(d);
+      }
       if (err instanceof ApiError && err.status === 409 && err.code === "CONFLICT") {
         const activeRunId =
           typeof err.details === "object" && err.details !== null && "activeRunId" in err.details

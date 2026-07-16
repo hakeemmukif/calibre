@@ -3,6 +3,8 @@ import { useSyncExternalStore } from "react";
 import type { Job, UrlCheck } from "@/types";
 import { getJob, evaluateJob } from "@/features/feed/client";
 import { startCheck, getChecksByIds } from "./client";
+import { ApiError } from "@/features/http";
+import { showDenial } from "@/features/credits/creditsStore";
 
 export type CheckRunPhase = "starting" | "queued" | "fetching" | "scoring" | "done" | "needsText" | "failed";
 
@@ -167,7 +169,13 @@ function submit(url: string, text?: string): string {
         if (!TERMINAL.has(phaseFor(c))) ensureTimer(); // don't spin the timer for an already-terminal start
       }
     })
-    .catch(() => { upsert(key, { phase: "failed", error: { code: "START_FAILED", message: "Couldn't start the check." }, finishedAt: Date.now() }); trimTerminal(); });
+    .catch((err) => {
+      if (err instanceof ApiError && err.code === "INSUFFICIENT_CREDITS") {
+        showDenial(err.details as { feature: string; required: number; balance: number });
+      }
+      upsert(key, { phase: "failed", error: { code: "START_FAILED", message: "Couldn't start the check." }, finishedAt: Date.now() });
+      trimTerminal();
+    });
   return key;
 }
 
@@ -185,7 +193,13 @@ function submitEvaluate(jobId: string): string {
       emit(); // single notification carries both the run and doneCount
       trimTerminal();
     })
-    .catch(() => { upsert(key, { phase: "failed", error: { code: "EVALUATE_FAILED", message: "Re-scoring failed." }, finishedAt: Date.now() }); trimTerminal(); });
+    .catch((err) => {
+      if (err instanceof ApiError && err.code === "INSUFFICIENT_CREDITS") {
+        showDenial(err.details as { feature: string; required: number; balance: number });
+      }
+      upsert(key, { phase: "failed", error: { code: "EVALUATE_FAILED", message: "Re-scoring failed." }, finishedAt: Date.now() });
+      trimTerminal();
+    });
   return key;
 }
 

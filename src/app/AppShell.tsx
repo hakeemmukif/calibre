@@ -3,9 +3,26 @@ import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { AppSidebar } from "@/caliber-ui/compositions/Shell/AppSidebar";
 import { CheckDock } from "@/caliber-ui/compositions/Shell/CheckDock";
+import { InsufficientCreditsDialog } from "@/caliber-ui/compositions/Shell/InsufficientCreditsDialog";
+import { Chip } from "@/caliber-ui/components/Chip";
 import type { AuthUser } from "@/types";
 import { logout } from "@/features/auth/client";
 import { __resetChecksStore } from "@/features/url-check/checksStore";
+import { __resetCreditsStore, refreshCredits, useCredits } from "@/features/credits/creditsStore";
+
+// CreditsChip — mounted once in the shell; refreshes on mount and hides
+// while the balance hasn't loaded yet or the user is on the unlimited plan
+// (spec §4.4). Sits one z-index below CheckDock's fixed corner tray (40).
+function CreditsChip() {
+  React.useEffect(() => { refreshCredits(); }, []);
+  const { balance, plan } = useCredits();
+  if (balance === null || plan === "unlimited") return null;
+  return (
+    <div style={{ position: "fixed", top: 16, right: 24, zIndex: 39 }}>
+      <Chip>⬡ {balance} credits</Chip>
+    </div>
+  );
+}
 
 // Wired tabs. To light up a hidden tab later: add its id here + a routeFor entry.
 const routeFor: Record<string, string> = {
@@ -43,6 +60,7 @@ export function AppShell({ children, user }: { children: React.ReactNode; user?:
   React.useEffect(() => {
     if (prevUserId.current !== undefined && prevUserId.current !== user?.id) {
       __resetChecksStore();
+      __resetCreditsStore();
     }
     prevUserId.current = user?.id;
   }, [user?.id]);
@@ -54,6 +72,7 @@ export function AppShell({ children, user }: { children: React.ReactNode; user?:
       // Session likely already invalid server-side — proceed to clear + redirect anyway.
     }
     __resetChecksStore();
+    __resetCreditsStore();
     router.push("/login");
   }
 
@@ -69,7 +88,9 @@ export function AppShell({ children, user }: { children: React.ReactNode; user?:
         onLogout={() => void handleLogout()}
       />
       <main style={{ flex: 1, overflow: "auto", height: "100vh" }}>{children}</main>
+      <CreditsChip />
       <CheckDock />
+      <InsufficientCreditsDialog />
     </div>
   );
 }

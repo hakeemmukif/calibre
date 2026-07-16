@@ -10,6 +10,7 @@ import { useParams, useRouter } from "next/navigation";
 import { TailorResume, type TailorUiState } from "@/caliber-ui/compositions/Tailor/TailorResume";
 import { finalizeTailor, getCorrelate, getTailor, startCorrelate, startTailor, tailorPdfUrl } from "@/features/tailor/client";
 import { ApiError } from "@/features/http";
+import { showDenial } from "@/features/credits/creditsStore";
 import { getJob } from "@/features/feed/client";
 import { getResume } from "@/features/resume/client";
 import type { CorrelationReport, Job, Resume, TailoredResume } from "@/types";
@@ -91,6 +92,10 @@ export default function TailorPage() {
       const started = await startCorrelate({ jobId: job.id });
       await pollCorrelateUntilTerminal(started.id);
     } catch (err) {
+      if (err instanceof ApiError && err.code === "INSUFFICIENT_CREDITS") {
+        const d = err.details as { feature: string; required: number; balance: number };
+        showDenial(d);
+      }
       if (err instanceof ApiError && err.code === "CONFLICT" && (err.details as { reason?: string } | undefined)?.reason === "no-jdfacts") {
         setNeedsScoreMessage(err.message);
         setStatus("needs-score");
@@ -110,6 +115,10 @@ export default function TailorPage() {
       setTailored(draft);
       await pollUntilTerminal(draft.id);
     } catch (err) {
+      if (err instanceof ApiError && err.code === "INSUFFICIENT_CREDITS") {
+        const d = err.details as { feature: string; required: number; balance: number };
+        showDenial(d);
+      }
       setError(err instanceof Error ? err.message : "Couldn't start rewriting.");
       setStatus("error");
     }

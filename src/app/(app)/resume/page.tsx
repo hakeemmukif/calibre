@@ -13,6 +13,8 @@ import { Button } from "@/caliber-ui/components/Button";
 import { Icon } from "@/caliber-ui/components/Icon";
 import { getResume, uploadResume } from "@/features/resume/client";
 import { startSearch } from "@/features/search/client";
+import { ApiError } from "@/features/http";
+import { showDenial } from "@/features/credits/creditsStore";
 import type { Resume } from "@/types";
 
 export default function ResumePage() {
@@ -34,6 +36,10 @@ export default function ResumePage() {
       const run = await startSearch({ persona });
       router.push(`/scans/${run.id}`);
     } catch (err) {
+      if (err instanceof ApiError && err.code === "INSUFFICIENT_CREDITS") {
+        const d = err.details as { feature: string; required: number; balance: number };
+        showDenial(d);
+      }
       setSearchError(err instanceof Error ? err.message : "Scan failed to start.");
       setScanLaunching(null);
     }

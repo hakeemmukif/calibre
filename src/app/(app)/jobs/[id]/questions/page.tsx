@@ -22,6 +22,8 @@ import { Icon } from "@/caliber-ui/components/Icon";
 import { draftAnswers, extractQuestions, patchAnswers } from "@/features/apply/client";
 import { getJob } from "@/features/feed/client";
 import { getResume } from "@/features/resume/client";
+import { ApiError } from "@/features/http";
+import { showDenial } from "@/features/credits/creditsStore";
 import type { ApplicationAnswer, ApplicationQuestion, Job, Resume } from "@/types";
 
 export default function ApplyAssistantPage() {
@@ -78,19 +80,35 @@ export default function ApplyAssistantPage() {
 
   async function onDraft(questions: ApplicationQuestion[]) {
     remember(questions);
-    const result = await draftAnswers({ jobId: id, questions });
-    answersId.current = result.id;
-    return result;
+    try {
+      const result = await draftAnswers({ jobId: id, questions });
+      answersId.current = result.id;
+      return result;
+    } catch (err) {
+      if (err instanceof ApiError && err.code === "INSUFFICIENT_CREDITS") {
+        const d = err.details as { feature: string; required: number; balance: number };
+        showDenial(d);
+      }
+      throw err;
+    }
   }
 
   async function onRegenerate(questionId: string, mode: RegenerateMode): Promise<ApplicationAnswer> {
     void mode;
     const question = questionsById.current[questionId];
     if (!question) throw new Error(`Unknown question "${questionId}" — cannot regenerate without its prompt/kind.`);
-    const result = await draftAnswers({ jobId: id, questions: [question] });
-    const answer = result.answers.find((a) => a.questionId === questionId);
-    if (!answer) throw new Error(`No drafted answer returned for question "${questionId}".`);
-    return answer;
+    try {
+      const result = await draftAnswers({ jobId: id, questions: [question] });
+      const answer = result.answers.find((a) => a.questionId === questionId);
+      if (!answer) throw new Error(`No drafted answer returned for question "${questionId}".`);
+      return answer;
+    } catch (err) {
+      if (err instanceof ApiError && err.code === "INSUFFICIENT_CREDITS") {
+        const d = err.details as { feature: string; required: number; balance: number };
+        showDenial(d);
+      }
+      throw err;
+    }
   }
 
   function onSaveAnswers(answers: ApplicationAnswer[]) {

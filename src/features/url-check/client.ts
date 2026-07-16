@@ -3,6 +3,7 @@
 // server/* or lib/llm.
 import { UrlCheck, UrlChecksSnapshot } from "@/types";
 import { requestJson } from "@/features/http";
+import { refreshCredits } from "@/features/credits/creditsStore";
 
 export interface StartCheckInput {
   url: string;
@@ -10,11 +11,13 @@ export interface StartCheckInput {
 }
 
 export async function startCheck(input: StartCheckInput): Promise<UrlCheck> {
-  return requestJson(
+  const check = await requestJson(
     "/api/jobs/check",
     { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) },
     UrlCheck,
   );
+  refreshCredits();
+  return check;
 }
 
 export async function getCheck(id: string): Promise<UrlCheck> {

@@ -4,6 +4,7 @@
 import { z } from "zod";
 import { Persona, ScanDetail, SearchRun, SearchRunSummary, SseEvent } from "@/types";
 import { requestJson } from "@/features/http";
+import { refreshCredits } from "@/features/credits/creditsStore";
 
 export interface StartSearchInput {
   persona: Persona;
@@ -11,11 +12,13 @@ export interface StartSearchInput {
 }
 
 export async function startSearch(input: StartSearchInput): Promise<SearchRun> {
-  return requestJson(
+  const run = await requestJson(
     "/api/search",
     { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) },
     SearchRun,
   );
+  refreshCredits();
+  return run;
 }
 
 const ListScansResponse = z.object({ items: SearchRunSummary.array(), nextCursor: z.string().nullable() });
