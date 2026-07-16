@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { urlChecks, users } from "../schema";
 import { createTestDb } from "../test-db";
@@ -176,22 +176,17 @@ describe("requeueOrphanedRunning", () => {
 });
 
 describe("sweepExpiredLeases", () => {
-  // Drive lease timestamps with SQL intervals (the Postgres time frame), NOT
-  // JS Dates: `lease_expires_at` is a tz-naive `timestamp`, so a JS Date
-  // round-trips shifted by the local UTC offset (deferred TZ bug, spec §8 #3).
-  // Production is unaffected — claimNextQueued writes `now()+interval` and this
-  // sweep compares `< now()`, both server-side.
   it("requeues an expired-lease row under the cap, fails it at the cap, leaves a future lease alone", async () => {
     const db = await createTestDb();
     const repo = createUrlChecksRepo(db);
-    const setLease = (id: string, expr: ReturnType<typeof sql>) =>
-      db.update(urlChecks).set({ leaseExpiresAt: expr }).where(eq(urlChecks.id, id));
+    const setLease = (id: string, value: Date) =>
+      db.update(urlChecks).set({ leaseExpiresAt: value }).where(eq(urlChecks.id, id));
     const requeue = await repo.insert(queuedRow({ status: "running", attempts: 1, stage: "scoring" }));
     const fail = await repo.insert(queuedRow({ status: "running", attempts: 2 }));
     const healthy = await repo.insert(queuedRow({ status: "running", attempts: 1 }));
-    await setLease(requeue.id, sql`now() - interval '1 minute'`);
-    await setLease(fail.id, sql`now() - interval '1 minute'`);
-    await setLease(healthy.id, sql`now() + interval '10 minutes'`);
+    await setLease(requeue.id, new Date(Date.now() - 60_000));
+    await setLease(fail.id, new Date(Date.now() - 60_000));
+    await setLease(healthy.id, new Date(Date.now() + 10 * 60_000));
 
     const result = await repo.sweepExpiredLeases();
 

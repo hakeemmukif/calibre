@@ -22,24 +22,24 @@ export function createUrlChecksRepo(db: Db) {
     // GLOBAL-BY-DECISION: worker infra, all-users queue — the worker claims
     // across every tenant's rows, not one caller's.
     // Atomic claim (spec §4.4). One autocommit UPDATE — never wrapped in a
-    // transaction (that would hold a connection across the ~30s run and defeat
-    // SKIP LOCKED). The subquery is a raw sql fragment (mirrors the
-    // sql`...` fragments already used in jobs.ts/applications.ts); .returning()
-    // maps back to a typed UrlCheckRow.
+    // transaction (that would hold a connection across the ~30s run). SQLite
+    // is single-writer: writers serialize, so this single UPDATE ... RETURNING
+    // is atomic and no two workers can claim the same row. The subquery is a
+    // raw sql fragment (mirrors the sql`...` fragments already used in
+    // jobs.ts/applications.ts); .returning() maps back to a typed UrlCheckRow.
     async claimNextQueued(): Promise<UrlCheckRow | null> {
       const [claimed] = await db
         .update(urlChecks)
         .set({
           status: "running",
           attempts: sql`${urlChecks.attempts} + 1`,
-          leaseExpiresAt: sql`now() + interval '8 minutes'`,
+          leaseExpiresAt: new Date(Date.now() + 8 * 60_000),
         })
         .where(
           sql`${urlChecks.id} = (
             SELECT id FROM url_checks
             WHERE status = 'queued'
             ORDER BY created_at
-            FOR UPDATE SKIP LOCKED
             LIMIT 1
           )`,
         )
@@ -75,7 +75,7 @@ export function createUrlChecksRepo(db: Db) {
     // Runtime sweeper (spec §4.3) — only reaps running rows whose lease has
     // expired, so a healthy peer's in-flight rows (future lease) are left alone.
     async sweepExpiredLeases(maxAttempts = 2): Promise<{ requeued: number; failed: number }> {
-      const expired = sql`${urlChecks.leaseExpiresAt} < now()`;
+      const expired = lt(urlChecks.leaseExpiresAt, new Date());
       const requeued = await db
         .update(urlChecks)
         .set({ status: "queued", stage: null, leaseExpiresAt: null })
