@@ -48,11 +48,17 @@ const DEFAULT_LIMIT = 25;
 // one — the latest by created_at — so an application never fans out into
 // duplicate rows and getJoined never returns an arbitrary score.
 function latestJobScores(db: Db) {
-  return db
-    .selectDistinctOn([jobScores.jobId], { id: jobScores.id })
+  const ranked = db
+    .select({
+      id: jobScores.id,
+      jobId: jobScores.jobId,
+      rn: sql<number>`row_number() OVER (PARTITION BY ${jobScores.jobId} ORDER BY ${jobScores.createdAt} DESC, ${jobScores.id} DESC)`.as(
+        "rn",
+      ),
+    })
     .from(jobScores)
-    .orderBy(jobScores.jobId, desc(jobScores.createdAt), desc(jobScores.id))
-    .as("latest_job_scores");
+    .as("ranked_job_scores");
+  return db.select({ id: ranked.id }).from(ranked).where(eq(ranked.rn, 1)).as("latest_job_scores");
 }
 
 function metaOf(location: string, salaryRaw: string | null): string {
@@ -66,10 +72,10 @@ export function createApplicationsRepo(db: Db) {
         const [inserted] = await db.insert(applications).values(row).returning();
         return inserted;
       } catch (err: unknown) {
-        // drizzle wraps driver errors in a "Failed query" error; the pg
-        // unique_violation code is on the original error at `.cause`.
-        const code = (err as { code?: string; cause?: { code?: string } })?.cause?.code;
-        if (code === "23505") {
+        // drizzle wraps driver errors in a "Failed query" error; the libsql
+        // unique-violation extendedCode is on the original error at `.cause`.
+        const code = (err as { cause?: { extendedCode?: string } })?.cause?.extendedCode;
+        if (code === "SQLITE_CONSTRAINT_UNIQUE") {
           // Scoped by userId (mechanical audit fix, Step 3 Task 6): jobId is
           // already unique per owning user (each user's scanned job is its
           // own row), so this can't currently resolve to a foreign
@@ -168,7 +174,7 @@ export function createApplicationsRepo(db: Db) {
     async patch(id: string, userId: string, p: Partial<AppPatch>): Promise<AppRow | null> {
       const [updated] = await db
         .update(applications)
-        .set({ ...p, updatedAt: sql`now()` })
+        .set({ ...p, updatedAt: new Date() })
         .where(and(eq(applications.id, id), eq(applications.userId, userId)))
         .returning();
       return updated ?? null;
