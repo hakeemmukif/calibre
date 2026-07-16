@@ -32,7 +32,8 @@ function TailorPage() {
           status="review"
           accepted={tailored.diff.map(() => true)}
           onToggle={(index, accept) => console.log("toggle", index, accept)}
-          onGenerate={() => console.log("generate")}
+          onAnalyze={() => console.log("analyze")}
+          onRewrite={() => console.log("rewrite")}
           onExport={(acceptedIndices) => console.log("export", acceptedIndices)}
           onSave={(tailoredId, acceptedIndices) => console.log("save", tailoredId, acceptedIndices)}
         />

@@ -6,15 +6,15 @@ import type { Job } from "../../../types";
 
 export interface TailorControlsProps {
   job: Job;
-  status: "configuring" | "generating";
-  onGenerate(): void;
+  status: "configuring" | "analyzing";
+  onAnalyze(): void;
 }
 
 // TailorControls — F6's entry panel (§3): emphasis chips drawn from
-// `job.gaps`/`job.fit` (what the tailoring should lean into) + "Generate".
+// `job.gaps`/`job.fit` (what the tailoring should lean into) + "Analyze fit".
 // Chip selection is local UI state only — POST /api/tailor takes just
 // `{ jobId }` (api-contract.md §3), so there's no emphasis field to forward.
-export function TailorControls({ job, status, onGenerate }: TailorControlsProps) {
+export function TailorControls({ job, status, onAnalyze }: TailorControlsProps) {
   const allKeys = React.useMemo(() => [...job.gaps.map((g) => g.k), ...job.fit.map((f) => f.k)], [job]);
   const [selected, setSelected] = React.useState<Set<string>>(() => new Set(allKeys));
 
@@ -27,7 +27,7 @@ export function TailorControls({ job, status, onGenerate }: TailorControlsProps)
     });
   }
 
-  const generating = status === "generating";
+  const analyzing = status === "analyzing";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -42,21 +42,21 @@ export function TailorControls({ job, status, onGenerate }: TailorControlsProps)
               selected={selected.has(g.k)}
               iconLeft={g.tone === "warn" ? "triangle-alert" : "check"}
               onClick={() => toggle(g.k)}
-              disabled={generating}
+              disabled={analyzing}
             >
               {g.k}
             </Chip>
           ))}
           {job.fit.map((f) => (
-            <Chip key={f.k} selected={selected.has(f.k)} onClick={() => toggle(f.k)} disabled={generating}>
+            <Chip key={f.k} selected={selected.has(f.k)} onClick={() => toggle(f.k)} disabled={analyzing}>
               {f.k}
             </Chip>
           ))}
         </div>
       </div>
       <div>
-        <Button variant="soft-accent" iconLeft="sparkles" onClick={onGenerate} disabled={generating}>
-          {generating ? "Generating…" : "Generate"}
+        <Button variant="soft-accent" iconLeft="sparkles" onClick={onAnalyze} disabled={analyzing}>
+          {analyzing ? "Analyzing…" : "Analyze fit"}
         </Button>
       </div>
     </div>

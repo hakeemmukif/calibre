@@ -1,13 +1,24 @@
 "use client";
 import * as React from "react";
 import { Icon } from "../../components/Icon";
+import { Button } from "../../components/Button";
 import { TailorControls } from "./TailorControls";
+import { TailorReport } from "./TailorReport";
 import { ChangeList } from "./ChangeList";
 import { TailorPreview } from "./TailorPreview";
 import { ExportBar } from "./ExportBar";
-import type { Job, Resume, TailoredResume } from "../../../types";
+import type { Job, Resume, TailoredResume, CorrelationReport } from "../../../types";
 
-export type TailorUiState = "configuring" | "generating" | "review" | "error" | "saved" | "exporting";
+export type TailorUiState =
+  | "configuring"
+  | "correlating"
+  | "report"
+  | "rewriting"
+  | "review"
+  | "error"
+  | "saved"
+  | "exporting"
+  | "needs-score";
 
 export interface TailorResumeProps {
   job: Job;
@@ -15,28 +26,51 @@ export interface TailorResumeProps {
   /** The generated tailoring result — absent until a `POST /api/tailor` run
    * completes. */
   tailored?: TailoredResume;
+  /** The measure-step correlation report — absent until a
+   * `POST /api/tailor/correlate` run completes. */
+  report?: CorrelationReport;
   /** Fully controlled: which panel renders. The parent owns the state
    * machine (mirrors JobFeed's externally-controlled `loading`/`error`) —
    * this component holds no UI-phase state of its own. */
   status: TailorUiState;
   /** Shown in the `error` state. */
   error?: string;
+  /** Shown in the `needs-score` state. */
+  needsScoreMessage?: string;
   /** Fully controlled: one accept flag per `tailored.diff` entry, by index. */
   accepted: boolean[];
   onToggle(index: number, accept: boolean): void;
-  onGenerate(): void;
+  onAnalyze(): void;
+  onRewrite(): void;
   onSave(tailoredId: string, acceptedIndices: number[]): void;
   onExport(acceptedIndices: number[]): void;
+  onScoreJob?(): void;
 }
 
-// TailorResume — F6, diff-review not a split editor (§3): TailorControls →
-// ChangeList (grouped by section) + TailorPreview (accepted-only paper
-// preview) → ExportBar. States: configuring · generating · review
-// (all-rejected is a derived banner inside review, not a separate mode) ·
-// generation-error · saved · exporting. Purely presentational — every
-// transition (`onGenerate`/`onToggle`/`onSave`/`onExport`) is a prop call;
+// TailorResume — F6 phase 2, measure → rewrite (§3): TailorControls →
+// TailorReport (measure step) → ChangeList (grouped by section) +
+// TailorPreview (accepted-only paper preview) → ExportBar. States:
+// configuring · correlating · report · rewriting · review (all-rejected is a
+// derived banner inside review, not a separate mode) · error · saved ·
+// exporting · needs-score. Purely presentational — every transition
+// (`onAnalyze`/`onRewrite`/`onToggle`/`onSave`/`onExport`) is a prop call;
 // simulating the backend run lives only in the stories.
-export function TailorResume({ job, resume, tailored, status, error, accepted, onToggle, onGenerate, onSave, onExport }: TailorResumeProps) {
+export function TailorResume({
+  job,
+  resume,
+  tailored,
+  report,
+  status,
+  error,
+  needsScoreMessage,
+  accepted,
+  onToggle,
+  onAnalyze,
+  onRewrite,
+  onSave,
+  onExport,
+  onScoreJob,
+}: TailorResumeProps) {
   const acceptedIndices = accepted.reduce<number[]>((acc, a, i) => (a ? [...acc, i] : acc), []);
   const acceptedCount = acceptedIndices.length;
 
@@ -51,9 +85,9 @@ export function TailorResume({ job, resume, tailored, status, error, accepted, o
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      <TailorControls job={job} status={status === "generating" ? "generating" : "configuring"} onGenerate={onGenerate} />
+      <TailorControls job={job} status={status === "correlating" ? "analyzing" : "configuring"} onAnalyze={onAnalyze} />
 
-      {status === "generating" && (
+      {(status === "correlating" || status === "rewriting") && (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {[0, 1, 2].map((i) => (
             <div
@@ -69,6 +103,8 @@ export function TailorResume({ job, resume, tailored, status, error, accepted, o
         </div>
       )}
 
+      {status === "report" && report && <TailorReport report={report} rewriting={false} onRewrite={onRewrite} />}
+
       {status === "error" && (
         <div
           style={{
@@ -82,17 +118,45 @@ export function TailorResume({ job, resume, tailored, status, error, accepted, o
         >
           <Icon name="triangle-alert" size={22} style={{ color: "var(--danger-ink)" }} />
           <span style={{ font: "var(--type-body)", color: "var(--text-body)" }}>
-            {error ?? "Tailoring failed — try generating again."}
+            {error ?? "Tailoring failed — try again."}
           </span>
+        </div>
+      )}
+
+      {status === "needs-score" && (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 10,
+            padding: "40px 20px",
+            textAlign: "center",
+          }}
+        >
+          <Icon name="triangle-alert" size={22} style={{ color: "var(--danger-ink)" }} />
+          <span style={{ font: "var(--type-body)", color: "var(--text-body)" }}>
+            {needsScoreMessage ?? "Score this job before tailoring."}
+          </span>
+          <Button variant="soft-accent" onClick={() => onScoreJob?.()}>
+            Score this job
+          </Button>
         </div>
       )}
 
       {tailored && (status === "review" || status === "saved" || status === "exporting") && (
         <>
           {status === "saved" && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, font: "var(--type-body)", color: "var(--fit-strong)" }}>
-              <Icon name="circle-check" size={16} />
-              Saved a copy of your tailored résumé.
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, font: "var(--type-body)", color: "var(--fit-strong)" }}>
+                <Icon name="circle-check" size={16} />
+                Saved a copy of your tailored résumé.
+              </div>
+              {tailored?.atsDelta && (
+                <div style={{ display: "inline-flex", alignItems: "center", gap: 8, font: "var(--type-body)", color: "var(--verified)" }}>
+                  ATS keywords <strong>{tailored.atsDelta.before} → {tailored.atsDelta.after}</strong> of {tailored.atsDelta.total}
+                </div>
+              )}
             </div>
           )}
 

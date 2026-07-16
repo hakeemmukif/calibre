@@ -6,22 +6,26 @@
 // page owns the whole state machine (configuring -> generating -> review ->
 // saved/exporting), polling `GET /api/tailor/:id` until the run terminates.
 import * as React from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { TailorResume, type TailorUiState } from "@/caliber-ui/compositions/Tailor/TailorResume";
-import { finalizeTailor, getTailor, startTailor, tailorPdfUrl } from "@/features/tailor/client";
+import { finalizeTailor, getCorrelate, getTailor, startCorrelate, startTailor, tailorPdfUrl } from "@/features/tailor/client";
+import { ApiError } from "@/features/http";
 import { getJob } from "@/features/feed/client";
 import { getResume } from "@/features/resume/client";
-import type { Job, Resume, TailoredResume } from "@/types";
+import type { CorrelationReport, Job, Resume, TailoredResume } from "@/types";
 
 const POLL_INTERVAL_MS = 400;
 
 export default function TailorPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const [job, setJob] = React.useState<Job | null>(null);
   const [resume, setResume] = React.useState<Resume | null>(null);
   const [tailored, setTailored] = React.useState<TailoredResume | undefined>();
+  const [report, setReport] = React.useState<CorrelationReport | undefined>();
   const [status, setStatus] = React.useState<TailorUiState>("configuring");
   const [error, setError] = React.useState<string | undefined>();
+  const [needsScoreMessage, setNeedsScoreMessage] = React.useState<string | undefined>();
   const [accepted, setAccepted] = React.useState<boolean[]>([]);
 
   React.useEffect(() => {
@@ -49,16 +53,52 @@ export default function TailorPage() {
     }
   }
 
-  async function onGenerate() {
+  async function pollCorrelateUntilTerminal(reportId: string) {
+    while (true) {
+      const run = await getCorrelate(reportId);
+      if (run.status === "completed") {
+        setReport(run);
+        setStatus("report");
+        return;
+      }
+      if (run.status === "failed") {
+        setError("Analysis failed — try again.");
+        setStatus("error");
+        return;
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, POLL_INTERVAL_MS));
+    }
+  }
+
+  async function onAnalyze() {
     if (!job) return;
-    setStatus("generating");
+    setStatus("correlating");
+    setError(undefined);
+    setNeedsScoreMessage(undefined);
+    try {
+      const started = await startCorrelate({ jobId: job.id });
+      await pollCorrelateUntilTerminal(started.id);
+    } catch (err) {
+      if (err instanceof ApiError && err.code === "CONFLICT") {
+        setNeedsScoreMessage(err.message);
+        setStatus("needs-score");
+        return;
+      }
+      setError(err instanceof Error ? err.message : "Couldn't analyze fit.");
+      setStatus("error");
+    }
+  }
+
+  async function onRewrite() {
+    if (!job || !report) return;
+    setStatus("rewriting");
     setError(undefined);
     try {
-      const draft = await startTailor({ jobId: job.id });
+      const draft = await startTailor({ jobId: job.id, reportId: report.id });
       setTailored(draft);
       await pollUntilTerminal(draft.id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't start tailoring.");
+      setError(err instanceof Error ? err.message : "Couldn't start rewriting.");
       setStatus("error");
     }
   }
@@ -98,13 +138,17 @@ export default function TailorPage() {
           job={job}
           resume={resume}
           tailored={tailored}
+          report={report}
           status={status}
           error={error}
+          needsScoreMessage={needsScoreMessage}
           accepted={accepted}
           onToggle={onToggle}
-          onGenerate={onGenerate}
+          onAnalyze={onAnalyze}
+          onRewrite={onRewrite}
           onSave={onSave}
           onExport={onExport}
+          onScoreJob={() => router.push(`/jobs/${id}`)}
         />
       </div>
     </div>
