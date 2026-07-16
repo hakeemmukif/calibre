@@ -13,6 +13,11 @@ data/uploads/
 .env.*.local
 coverage/
 test-results/
+
+# Local SQLite dev DB (libsql file + WAL siblings) — never commit; holds the admin hash
+caliber.db
+caliber.db-shm
+caliber.db-wal
 playwright-report/
 e2e/.auth/
 
