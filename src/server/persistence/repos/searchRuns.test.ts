@@ -188,7 +188,7 @@ describe("searchRunsRepo", () => {
   it("listByUser paginates newest-first, scopes to the user, and joins the résumé label", async () => {
     const db = await createTestDb();
     const repo = createSearchRunsRepo(db);
-    // FK: search_runs.user_id → users.id (PGlite enforces it) — insert the other user first.
+    // FK: search_runs.user_id → users.id (libsql enforces it (foreign_keys=ON)) — insert the other user first.
     const [userB] = await db
       .insert(users)
       .values({ email: "user-b-searchruns-list@example.com", passwordHash: "h", role: "user" })

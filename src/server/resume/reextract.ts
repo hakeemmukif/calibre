@@ -12,7 +12,7 @@
 //
 // Run with DATABASE_URL set inline — dev-DB drift: `.env.local` is absent,
 // `next dev` loads `.env`, so a bare `npx tsx` may target the wrong DB:
-//   DATABASE_URL=postgres://... npx tsx src/server/resume/reextract.ts
+//   DATABASE_URL=file:./caliber.db npx tsx src/server/resume/reextract.ts
 // The OPERATOR runs the live migration — do not run this against real data.
 import { fileURLToPath } from "node:url";
 import { eq } from "drizzle-orm";

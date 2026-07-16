@@ -74,13 +74,14 @@ export function createSearchRunsRepo(db: Db) {
         .where(inArray(searchRuns.status, ["queued", "running"]))
         .returning();
     },
-    // Append one settled ScanResult to results[] via a jsonb concat, fenced on
-    // status='running' so a terminal run can never grow. Postgres row-locks the
-    // UPDATE, serializing the concurrent pool tasks — no lost writes. User-scoped.
+    // Append one settled ScanResult to results[] via json_insert, fenced on
+    // status='running' so a terminal run can never grow. SQLite runs the
+    // read-modify-write atomically under the single write lock, serializing the
+    // concurrent pool tasks — no lost writes. User-scoped.
     async appendResult(runId: string, userId: string, result: ScanResult): Promise<void> {
       await db
         .update(searchRuns)
-        .set({ results: sql`${searchRuns.results} || ${JSON.stringify([result])}::jsonb` })
+        .set({ results: sql`json_insert(${searchRuns.results}, '$[#]', json(${JSON.stringify(result)}))` })
         .where(and(eq(searchRuns.id, runId), eq(searchRuns.userId, userId), eq(searchRuns.status, "running")));
     },
     async listByUser(
@@ -105,7 +106,7 @@ export function createSearchRunsRepo(db: Db) {
           error: searchRuns.error,
           // resumes.label is backfilled + written-on-create (Task 2); coalesce to the
           // parsed headline only as a belt-and-braces guard so the string is never null.
-          resumeName: sql<string>`COALESCE(${resumes.label}, ${resumes.structured} ->> 'headline', 'Résumé')`,
+          resumeName: sql<string>`COALESCE(${resumes.label}, json_extract(${resumes.structured}, '$.headline'), 'Résumé')`,
         })
         .from(searchRuns)
         .innerJoin(resumes, eq(searchRuns.resumeId, resumes.id))
@@ -119,7 +120,7 @@ export function createSearchRunsRepo(db: Db) {
     },
     async getDetail(id: string, userId: string): Promise<(SearchRunRow & { resumeName: string }) | null> {
       const [row] = await db
-        .select({ run: searchRuns, resumeName: sql<string>`COALESCE(${resumes.label}, ${resumes.structured} ->> 'headline', 'Résumé')` })
+        .select({ run: searchRuns, resumeName: sql<string>`COALESCE(${resumes.label}, json_extract(${resumes.structured}, '$.headline'), 'Résumé')` })
         .from(searchRuns)
         .innerJoin(resumes, eq(searchRuns.resumeId, resumes.id))
         .where(and(eq(searchRuns.id, id), eq(searchRuns.userId, userId)))

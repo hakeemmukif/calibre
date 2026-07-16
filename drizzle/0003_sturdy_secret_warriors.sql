@@ -1,1 +1,0 @@
-ALTER TABLE "tailored_resumes" ADD COLUMN "accepted_indices" jsonb;

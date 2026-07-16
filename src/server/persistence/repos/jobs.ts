@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, gte, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gt, gte, inArray, isNull, like, or, sql, type SQL } from "drizzle-orm";
 import type { EligibilityTier, HiringStructure, Persona, TzBand } from "@/types";
 import { getDb } from "../db";
 import { jobs, jobScores, sources, type JobAlias } from "../schema";
@@ -56,13 +56,19 @@ const DEFAULT_LIMIT = 25;
 // the already userId-scoped `jobs` rows (see listScored/getById/statsForQuery
 // below), so a foreign user's job_scores row can never surface through it.
 function latestJobScores(db: Db) {
-  return db
-    .selectDistinctOn([jobScores.jobId], { id: jobScores.id })
+  const ranked = db
+    .select({
+      id: jobScores.id,
+      jobId: jobScores.jobId,
+      // desc(id) tie-breaks a created_at tie deterministically (id is uuid,
+      // so "highest" is arbitrary but stable, not Postgres's undefined pick).
+      rn: sql<number>`row_number() OVER (PARTITION BY ${jobScores.jobId} ORDER BY ${jobScores.createdAt} DESC, ${jobScores.id} DESC)`.as(
+        "rn",
+      ),
+    })
     .from(jobScores)
-    // desc(id) tie-breaks a created_at tie deterministically (id is uuid,
-    // so "highest" is arbitrary but stable, not Postgres's undefined pick).
-    .orderBy(jobScores.jobId, desc(jobScores.createdAt), desc(jobScores.id))
-    .as("latest_job_scores");
+    .as("ranked_job_scores");
+  return db.select({ id: ranked.id }).from(ranked).where(eq(ranked.rn, 1)).as("latest_job_scores");
 }
 
 // Shared by listScored (paginated page) and statsForQuery (full scoped set,
@@ -78,7 +84,7 @@ function buildFilterConditions(q: Omit<JobsQuery, "cursor" | "limit">) {
   if (q.hiringStructures && q.hiringStructures.length > 0)
     conditions.push(or(isNull(jobs.hiringStructure), inArray(jobs.hiringStructure, q.hiringStructures)));
   if (q.tier && q.tier.length > 0) {
-    conditions.push(inArray(sql`(${jobScores.legitimacy}->>'tier')`, q.tier));
+    conditions.push(inArray(sql`json_extract(${jobScores.legitimacy}, '$.tier')`, q.tier));
   }
   if (q.minScore !== undefined) conditions.push(gte(jobScores.score, q.minScore));
   // Strict `>`, not `>=` — matches assembleJob's `firstSeen > cutoff` and
@@ -87,8 +93,9 @@ function buildFilterConditions(q: Omit<JobsQuery, "cursor" | "limit">) {
   // three, not "new" only in this filter.
   if (q.isNew) conditions.push(gt(jobs.firstSeenAt, q.isNew));
   if (q.q) {
-    const like = `%${q.q}%`;
-    conditions.push(or(ilike(jobs.title, like), ilike(jobs.company, like)));
+    const pattern = `%${q.q}%`;
+    // SQLite LIKE is ASCII-case-insensitive; accented chars become case-sensitive (acceptable at MVP).
+    conditions.push(or(like(jobs.title, pattern), like(jobs.company, pattern)));
   }
   return conditions;
 }
@@ -122,7 +129,7 @@ export function createJobsRepo(db: Db) {
         .values({ ...row, aliases })
         .onConflictDoUpdate({
           target: [jobs.userId, jobs.dedupeKey],
-          set: { lastSeenAt: sql`now()`, aliases },
+          set: { lastSeenAt: new Date(), aliases },
         })
         .returning();
       return upserted;
@@ -324,7 +331,7 @@ export function createJobsRepo(db: Db) {
       const rows = await db
         .select({
           verdict: jobScores.verdict,
-          tier: sql<string>`(${jobScores.legitimacy}->>'tier')`,
+          tier: sql<string>`json_extract(${jobScores.legitimacy}, '$.tier')`,
           firstSeenAt: jobs.firstSeenAt,
         })
         .from(jobs)

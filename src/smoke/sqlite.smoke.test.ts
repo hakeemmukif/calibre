@@ -1,14 +1,14 @@
-// Real-Postgres smoke: repo tests run against PGlite (src/server/persistence/
-// test-db.ts) which the real `postgres`-js driver (src/server/persistence/
-// db.ts) never exercises. This is the only place that does.
+// Real-libsql smoke: repo tests run against a temp-file libsql test DB
+// (src/server/persistence/test-db.ts) which the real `@libsql/client` driver
+// (src/server/persistence/db.ts) never exercises. This is the only place that does.
 import { describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { migrate } from "drizzle-orm/postgres-js/migrator";
+import { migrate } from "drizzle-orm/libsql/migrator";
 import { getDb } from "@/server/persistence/db";
 import { sources } from "@/server/persistence/schema";
 
-describe("postgres smoke", () => {
-  it("migrates and round-trips a sources row through the real postgres-js driver", async () => {
+describe("sqlite smoke", () => {
+  it("migrates and round-trips a sources row through the real libsql driver", async () => {
     const db = getDb();
     await migrate(db, { migrationsFolder: "./drizzle" });
 

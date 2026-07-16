@@ -1,21 +1,19 @@
-// Drizzle pg-core schema — the 8 tables per docs/architecture/system-architecture.md §1,
-// with the 4 src/types-wins reconciliations from .superpowers/sdd/task-B1-brief.md applied
+// Drizzle sqlite-core schema (2026-07-16 sqlite migration) — the 8 tables per
+// docs/architecture/system-architecture.md §1, with the 4 src/types-wins
+// reconciliations from .superpowers/sdd/task-B1-brief.md applied
 // (search_runs.status / tailored_resumes.status+finalizedAt / tailored_resumes.diff /
-// application_answers shape+resumeId). Postgres everywhere — see db.ts / test-db.ts.
+// application_answers shape+resumeId). libsql everywhere — see db.ts (real
+// client) / test-db.ts (temp-file libsql test client).
 import { sql } from "drizzle-orm";
 import {
-  boolean,
   index,
   integer,
-  jsonb,
-  numeric,
-  pgTable,
+  real,
+  sqliteTable,
   text,
-  timestamp,
   unique,
   uniqueIndex,
-  uuid,
-} from "drizzle-orm/pg-core";
+} from "drizzle-orm/sqlite-core";
 import type { ResumeStore } from "../resume/resume-store";
 import type { ScanResult, WebEvidence } from "@/types";
 
@@ -83,70 +81,70 @@ type CorrelationReportRowJson = {
 
 // ---- tables ----
 
-export const sources = pgTable("sources", {
+export const sources = sqliteTable("sources", {
   id: text("id").primaryKey(), // natural key: 'greenhouse' | 'lever' | 'ashby' | 'jobstreet' | ...
   name: text("name").notNull(), // display label for Job.source.name (SourceRef) — B6 addition, no prior home
   kind: text("kind", { enum: ["ats", "board", "manual"] }).notNull(),
   persona: text("persona", { enum: ["remote", "local", "both"] }).notNull(),
-  enabled: boolean("enabled").notNull(),
-  config: jsonb("config").$type<Record<string, unknown>>().notNull(),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
+  enabled: integer("enabled", { mode: "boolean" }).notNull(),
+  config: text("config", { mode: "json" }).$type<Record<string, unknown>>().notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
 });
 
 // Operator profile — singleton row, id is the constant "default". Seeded by
 // seed.ts (the seed is the install step); repos/profile.ts throws
 // ProfileMissingError when absent — no runtime default.
-export const profile = pgTable(
+export const profile = sqliteTable(
   "profile",
   {
     id: text("id").primaryKey(),
-    userId: uuid("user_id").notNull().references(() => users.id),
+    userId: text("user_id").notNull().references(() => users.id),
     baseCountry: text("base_country").notNull(),
     relocation: text("relocation", { enum: ["stay", "open"] }).notNull(),
     scheduleFlex: text("schedule_flex", { enum: ["base-hours", "flex-evenings", "any-hours"] }).notNull(),
     employmentPref: text("employment_pref", { enum: ["any", "employee", "local-entity"] }).notNull(),
-    createdAt: timestamp("created_at").notNull().defaultNow(),
-    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
   },
   (table) => [unique("profile_user_id_unique").on(table.userId)],
 );
 
-export const resumes = pgTable(
+export const resumes = sqliteTable(
   "resumes",
   {
-    id: uuid("id").primaryKey().defaultRandom(),
-    userId: uuid("user_id").notNull().references(() => users.id),
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id").notNull().references(() => users.id),
     rawText: text("raw_text").notNull(),
-    structured: jsonb("structured").$type<ResumeStore>().notNull(),
+    structured: text("structured", { mode: "json" }).$type<ResumeStore>().notNull(),
     originalPath: text("original_path"),
     label: text("label"),
     sourceKind: text("source_kind", { enum: ["pdf", "docx", "paste"] }).notNull(),
-    atsScore: numeric("ats_score", { mode: "number" }),
-    isActive: boolean("is_active").notNull(),
-    createdAt: timestamp("created_at").notNull().defaultNow(),
-    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+    atsScore: real("ats_score"),
+    isActive: integer("is_active", { mode: "boolean" }).notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
   },
   (table) => [uniqueIndex("resumes_user_id_active_unique").on(table.userId).where(sql`${table.isActive}`)],
 );
 
-export const searchRuns = pgTable("search_runs", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  userId: uuid("user_id").notNull().references(() => users.id),
-  resumeId: uuid("resume_id").notNull().references(() => resumes.id),
-  personas: jsonb("personas").$type<("remote" | "local")[]>().notNull(),
+export const searchRuns = sqliteTable("search_runs", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text("user_id").notNull().references(() => users.id),
+  resumeId: text("resume_id").notNull().references(() => resumes.id),
+  personas: text("personas", { mode: "json" }).$type<("remote" | "local")[]>().notNull(),
   status: text("status", { enum: ["queued", "running", "completed", "failed"] }).notNull(), // reconciliation 1
-  stats: jsonb("stats").$type<SearchRunStats>().notNull(),
-  results: jsonb("results").$type<ScanResult[]>().notNull().default([]),
-  startedAt: timestamp("started_at").notNull().defaultNow(),
-  finishedAt: timestamp("finished_at"),
+  stats: text("stats", { mode: "json" }).$type<SearchRunStats>().notNull(),
+  results: text("results", { mode: "json" }).$type<ScanResult[]>().notNull().$defaultFn(() => []),
+  startedAt: integer("started_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  finishedAt: integer("finished_at", { mode: "timestamp_ms" }),
   error: text("error"),
 });
 
-export const jobs = pgTable(
+export const jobs = sqliteTable(
   "jobs",
   {
-    id: uuid("id").primaryKey().defaultRandom(),
-    userId: uuid("user_id").notNull().references(() => users.id),
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id").notNull().references(() => users.id),
     dedupeKey: text("dedupe_key").notNull(),
     url: text("url").notNull(),
     applyUrl: text("apply_url"),
@@ -157,17 +155,17 @@ export const jobs = pgTable(
     location: text("location").notNull(),
     salaryRaw: text("salary_raw"),
     description: text("description"),
-    postedAt: timestamp("posted_at"),
-    firstSeenAt: timestamp("first_seen_at").notNull().defaultNow(),
-    lastSeenAt: timestamp("last_seen_at").notNull().defaultNow(),
+    postedAt: integer("posted_at", { mode: "timestamp_ms" }),
+    firstSeenAt: integer("first_seen_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+    lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
     persona: text("persona", { enum: ["remote", "local", "pasted"] }).notNull(),
     // Spec 2026-07-12 §4: eligibility tier relative to the profile, stamped at
     // ingest (Layers A+B), refreshed by the scoring path (Layer C). Facts stay
     // in `raw` + job_scores.jd_facts — the tier is recomputable, pure, no LLM.
     eligibility: text("eligibility", { enum: ["anywhere", "eligible", "local", "abroad", "unknown"] }).notNull(),
     eligibilityEvidence: text("eligibility_evidence").notNull(),
-    aliases: jsonb("aliases").$type<JobAlias[]>().notNull(),
-    raw: jsonb("raw").$type<unknown>().notNull(),
+    aliases: text("aliases", { mode: "json" }).$type<JobAlias[]>().notNull(),
+    raw: text("raw", { mode: "json" }).$type<unknown>().notNull(),
     // Spec 2026-07-14 §6: stated remote-fit facts. NULL = nothing stated (never
     // hidden by the schedule/structure gate). tz_band is normalized from a
     // stated TZ requirement (resolveTzBand); hiring_structure is stated-only.
@@ -177,56 +175,56 @@ export const jobs = pgTable(
   (table) => [unique("jobs_user_id_dedupe_key_unique").on(table.userId, table.dedupeKey)],
 );
 
-export const jobScores = pgTable(
+export const jobScores = sqliteTable(
   "job_scores",
   {
-    id: uuid("id").primaryKey().defaultRandom(),
-    userId: uuid("user_id").notNull().references(() => users.id),
-    jobId: uuid("job_id").notNull().references(() => jobs.id),
-    resumeId: uuid("resume_id").notNull().references(() => resumes.id),
-    score: numeric("score", { precision: 3, scale: 1, mode: "number" }).notNull(),
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id").notNull().references(() => users.id),
+    jobId: text("job_id").notNull().references(() => jobs.id),
+    resumeId: text("resume_id").notNull().references(() => resumes.id),
+    score: real("score").notNull(),
     verdict: text("verdict", { enum: ["Apply", "Consider", "Research first", "Skip"] }).notNull(),
     why: text("why").notNull(), // frozen Job.why — one-line rationale, part of EvalScores model output (B6 addition)
-    legitimacy: jsonb("legitimacy").$type<LegitimacyShape>().notNull(),
+    legitimacy: text("legitimacy", { mode: "json" }).$type<LegitimacyShape>().notNull(),
     liveness: text("liveness", { enum: ["active", "expired", "uncertain"] }).notNull(),
-    breakdown: jsonb("breakdown").$type<BreakdownEntry[]>().notNull(),
-    reasons: jsonb("reasons").$type<ReasonsShape>().notNull(),
-    fit: jsonb("fit").$type<FitEntry[]>().notNull(),
-    gaps: jsonb("gaps").$type<GapEntry[]>().notNull(),
-    jdFacts: jsonb("jd_facts").$type<unknown>().notNull(),
+    breakdown: text("breakdown", { mode: "json" }).$type<BreakdownEntry[]>().notNull(),
+    reasons: text("reasons", { mode: "json" }).$type<ReasonsShape>().notNull(),
+    fit: text("fit", { mode: "json" }).$type<FitEntry[]>().notNull(),
+    gaps: text("gaps", { mode: "json" }).$type<GapEntry[]>().notNull(),
+    jdFacts: text("jd_facts", { mode: "json" }).$type<unknown>().notNull(),
     model: text("model").notNull(),
-    escalated: boolean("escalated").notNull(),
-    costUsd: numeric("cost_usd", { precision: 8, scale: 4, mode: "number" }).notNull(),
+    escalated: integer("escalated", { mode: "boolean" }).notNull(),
+    costUsd: real("cost_usd").notNull(),
     policyVersion: text("policy_version").notNull(),
-    createdAt: timestamp("created_at").notNull().defaultNow(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
   },
   (table) => [unique("job_scores_job_resume_policy_unique").on(table.jobId, table.resumeId, table.policyVersion)],
 );
 
-export const applicationAnswers = pgTable("application_answers", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  userId: uuid("user_id").notNull().references(() => users.id),
-  jobId: uuid("job_id").notNull().references(() => jobs.id),
-  resumeId: uuid("resume_id").notNull().references(() => resumes.id), // reconciliation 4
+export const applicationAnswers = sqliteTable("application_answers", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text("user_id").notNull().references(() => users.id),
+  jobId: text("job_id").notNull().references(() => jobs.id),
+  resumeId: text("resume_id").notNull().references(() => resumes.id), // reconciliation 4
   formSource: text("form_source", { enum: ["ats-api", "fetched", "pasted"] }).notNull(),
-  answers: jsonb("answers").$type<ApplicationAnswerEntry[]>().notNull(), // reconciliation 4 shape
+  answers: text("answers", { mode: "json" }).$type<ApplicationAnswerEntry[]>().notNull(), // reconciliation 4 shape
   model: text("model").notNull(),
-  costUsd: numeric("cost_usd", { precision: 8, scale: 4, mode: "number" }).notNull(),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
+  costUsd: real("cost_usd").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
 });
 
-export const tailoredResumes = pgTable("tailored_resumes", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  userId: uuid("user_id").notNull().references(() => users.id),
-  jobId: uuid("job_id").notNull().references(() => jobs.id),
-  baseResumeId: uuid("base_resume_id").notNull().references(() => resumes.id),
-  reportId: uuid("report_id").references(() => correlationReports.id),
-  structured: jsonb("structured").$type<ResumeStore>(), // null until completed (mirrors src/types TailoredResume.resume)
-  diff: jsonb("diff").$type<TailoredResumeDiffEntry[]>().notNull(), // reconciliation 3 shape
+export const tailoredResumes = sqliteTable("tailored_resumes", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text("user_id").notNull().references(() => users.id),
+  jobId: text("job_id").notNull().references(() => jobs.id),
+  baseResumeId: text("base_resume_id").notNull().references(() => resumes.id),
+  reportId: text("report_id").references(() => correlationReports.id),
+  structured: text("structured", { mode: "json" }).$type<ResumeStore>(), // null until completed (mirrors src/types TailoredResume.resume)
+  diff: text("diff", { mode: "json" }).$type<TailoredResumeDiffEntry[]>().notNull(), // reconciliation 3 shape
   html: text("html"),
   pdfPath: text("pdf_path"),
   status: text("status", { enum: ["queued", "running", "completed", "failed"] }).notNull(), // reconciliation 2
-  finalizedAt: timestamp("finalized_at"), // reconciliation 2 (new column, gates GET .../pdf)
+  finalizedAt: integer("finalized_at", { mode: "timestamp_ms" }), // reconciliation 2 (new column, gates GET .../pdf)
   // task-B8 review fix (Finding 2): the accepted index set from the LAST
   // POST .../finalize call. `structured` above is immutable once completed —
   // it never gets overwritten with the accepted-only merge — so re-finalize
@@ -235,32 +233,32 @@ export const tailoredResumes = pgTable("tailored_resumes", {
   // every read (server/tailor/assemble.ts, renderTailorPdf). Null until the
   // first finalize; DB-internal, never on the wire (`TailoredResume` shape
   // unchanged).
-  acceptedIndices: jsonb("accepted_indices").$type<number[]>(),
-  atsDelta: jsonb("ats_delta").$type<{ before: number; after: number; total: number }>(),
+  acceptedIndices: text("accepted_indices", { mode: "json" }).$type<number[]>(),
+  atsDelta: text("ats_delta", { mode: "json" }).$type<{ before: number; after: number; total: number }>(),
   // B8: frozen `TailoredResume.model` (src/types) is a required string, even on
   // the queued/202 draft — populated from config/models.yml's static "tailor"
   // task routing at insert time, then overwritten with the LLM call's actual
   // `result.model` on completion (matches config in real OpenRouter use;
   // mock-LLM tests deliberately diverge to prove the overwrite happens).
   model: text("model").notNull(),
-  costUsd: numeric("cost_usd", { precision: 8, scale: 4, mode: "number" }), // null until the run completes
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  completedAt: timestamp("completed_at"), // B8: frozen `TailoredResume.completedAt` — set when analyze/rewrite/render finishes, distinct from `finalizedAt` (the later accept-subset action)
+  costUsd: real("cost_usd"), // null until the run completes
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  completedAt: integer("completed_at", { mode: "timestamp_ms" }), // B8: frozen `TailoredResume.completedAt` — set when analyze/rewrite/render finishes, distinct from `finalizedAt` (the later accept-subset action)
 });
 
-export const correlationReports = pgTable("correlation_reports", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  userId: uuid("user_id").notNull().references(() => users.id),
-  jobId: uuid("job_id").notNull().references(() => jobs.id),
-  resumeId: uuid("resume_id").notNull().references(() => resumes.id),
-  rows: jsonb("rows").$type<CorrelationReportRowJson[]>().notNull(),
-  semantic: jsonb("semantic").$type<{ met: number; buried: number; gap: number; total: number }>(),
-  ats: jsonb("ats").$type<{ present: number; total: number; missing: string[] }>(),
+export const correlationReports = sqliteTable("correlation_reports", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text("user_id").notNull().references(() => users.id),
+  jobId: text("job_id").notNull().references(() => jobs.id),
+  resumeId: text("resume_id").notNull().references(() => resumes.id),
+  rows: text("rows", { mode: "json" }).$type<CorrelationReportRowJson[]>().notNull(),
+  semantic: text("semantic", { mode: "json" }).$type<{ met: number; buried: number; gap: number; total: number }>(),
+  ats: text("ats", { mode: "json" }).$type<{ present: number; total: number; missing: string[] }>(),
   status: text("status", { enum: ["queued", "running", "completed", "failed"] }).notNull(),
   model: text("model").notNull(),
-  costUsd: numeric("cost_usd", { precision: 8, scale: 4, mode: "number" }),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  completedAt: timestamp("completed_at"),
+  costUsd: real("cost_usd"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  completedAt: integer("completed_at", { mode: "timestamp_ms" }),
 });
 
 // Spec 2026-07-12-pasted-job-ingestion-design.md §10: async paste-a-URL
@@ -270,61 +268,61 @@ export const correlationReports = pgTable("correlation_reports", {
 // job_id nulls on delete: url_checks is a log of an action, not a foreign
 // owner of the job — deleting a pasted job must not cascade into its own
 // audit trail.
-export const urlChecks = pgTable(
+export const urlChecks = sqliteTable(
   "url_checks",
   {
-    id: uuid("id").primaryKey().defaultRandom(),
-    userId: uuid("user_id").notNull().references(() => users.id),
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id").notNull().references(() => users.id),
     url: text("url").notNull(),
     dedupeKey: text("dedupe_key").notNull(),
     status: text("status", { enum: ["queued", "running", "completed", "failed"] }).notNull(),
     stage: text("stage"),
-    jobId: uuid("job_id").references(() => jobs.id, { onDelete: "set null" }),
-    alreadyKnown: boolean("already_known").notNull(),
-    needsText: boolean("needs_text").notNull(),
-    error: jsonb("error").$type<{ code: string; message: string }>(),
-    costUsd: numeric("cost_usd", { precision: 8, scale: 4, mode: "number" }).notNull(),
-    raw: jsonb("raw").$type<unknown>().notNull(),
+    jobId: text("job_id").references(() => jobs.id, { onDelete: "set null" }),
+    alreadyKnown: integer("already_known", { mode: "boolean" }).notNull(),
+    needsText: integer("needs_text", { mode: "boolean" }).notNull(),
+    error: text("error", { mode: "json" }).$type<{ code: string; message: string }>(),
+    costUsd: real("cost_usd").notNull(),
+    raw: text("raw", { mode: "json" }).$type<unknown>().notNull(),
     // Governs orphan recovery only (max 2 attempts) — never in-run retries.
     attempts: integer("attempts").notNull().default(0),
     // Set at claim to now()+8min; the server lease owns row liveness (spec §4.7).
-    leaseExpiresAt: timestamp("lease_expires_at"),
-    createdAt: timestamp("created_at").notNull().defaultNow(),
-    finishedAt: timestamp("finished_at"),
+    leaseExpiresAt: integer("lease_expires_at", { mode: "timestamp_ms" }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+    finishedAt: integer("finished_at", { mode: "timestamp_ms" }),
   },
   (t) => [index("url_checks_queued_idx").on(t.status, t.createdAt).where(sql`${t.status} = 'queued'`)],
 );
 
-export const applications = pgTable("applications", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  userId: uuid("user_id").notNull().references(() => users.id),
-  jobId: uuid("job_id").notNull().references(() => jobs.id).unique(),
-  resumeId: uuid("resume_id").notNull().references(() => resumes.id),
-  tailoredResumeId: uuid("tailored_resume_id").references(() => tailoredResumes.id),
-  answersId: uuid("answers_id").references(() => applicationAnswers.id),
+export const applications = sqliteTable("applications", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text("user_id").notNull().references(() => users.id),
+  jobId: text("job_id").notNull().references(() => jobs.id).unique(),
+  resumeId: text("resume_id").notNull().references(() => resumes.id),
+  tailoredResumeId: text("tailored_resume_id").references(() => tailoredResumes.id),
+  answersId: text("answers_id").references(() => applicationAnswers.id),
   stage: integer("stage").notNull(), // 0..3, validated at the API boundary
   statusLabel: text("status_label").notNull(),
   statusTone: text("status_tone", { enum: ["good", "verified", "neutral"] }).notNull(),
   note: text("note").notNull(),
-  appliedAt: timestamp("applied_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  appliedAt: integer("applied_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
 });
 
 // Multi-tenant identity (spec: 2026-07-14 auth core). Passwords argon2id;
 // sessions store only the SHA-256 hash of an opaque token. role gates the
 // admin surface — no separate admins table (additive capability only).
-export const users = pgTable("users", {
-  id: uuid("id").primaryKey().defaultRandom(),
+export const users = sqliteTable("users", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   email: text("email").notNull().unique(), // normalized lowercase at the repo boundary
   passwordHash: text("password_hash").notNull(),
   role: text("role", { enum: ["user", "admin"] }).notNull(), // written explicitly at insert — no column default (no-fallback)
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
 });
 
-export const sessions = pgTable("sessions", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+export const sessions = sqliteTable("sessions", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   tokenHash: text("token_hash").notNull().unique(), // SHA-256 of the opaque cookie token
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  lastUsedAt: timestamp("last_used_at", { withTimezone: true }).notNull().defaultNow(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  lastUsedAt: integer("last_used_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
 });

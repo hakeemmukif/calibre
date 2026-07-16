@@ -204,7 +204,7 @@ describe("startSearch", () => {
 
   afterEach(async () => {
     __resetForTests();
-    // Every test shares one PGlite instance (beforeAll) — without this, a
+    // Every test shares one libsql test DB (beforeAll) — without this, a
     // later test's listEnabledByPersona("remote") would also see earlier
     // tests' source rows. job_scores (B6) FKs jobs, so it must go first.
     await state.testDb.delete(jobScores);

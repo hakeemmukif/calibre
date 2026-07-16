@@ -38,7 +38,7 @@ describe("recomputeEligibility", () => {
   let source: Awaited<ReturnType<typeof insertSource>>;
 
   beforeEach(async () => {
-    // A fresh PGlite instance per test (createTestDb re-applies migrations),
+    // A fresh libsql test DB per test (createTestDb re-applies migrations),
     // so there's no cross-test state to tear down.
     state.testDb = await createTestDb();
     source = await insertSource(state.testDb, { kind: "ats", config: { geo: { scope: "restricted" } } });

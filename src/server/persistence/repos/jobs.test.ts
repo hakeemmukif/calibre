@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { jobs, users } from "../schema";
 import { createTestDb } from "../test-db";
@@ -7,14 +7,14 @@ import { insertJobScore, insertResume, insertSource } from "./__fixtures__/helpe
 import { createJobsRepo } from "./jobs";
 import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
-// Explicit, same-millisecond-different-microsecond firstSeenAt values —
-// deterministic collision regardless of host/loop speed (JS Date can't
-// represent microseconds, so this bypasses the driver's Date parsing via a
-// raw SQL literal to set full-precision timestamps directly).
-function collidingTimestamp(i: number): ReturnType<typeof sql> {
-  const micros = (100000 + i).toString().padStart(6, "0");
-  return sql.raw(`'2024-01-01 00:00:00.${micros}'::timestamp`);
-}
+// Identical firstSeenAt across all rows — deterministic same-millisecond
+// collision regardless of host/loop speed. Postgres's timestamp column
+// stores microsecond precision, so the pg-era version of this test forced
+// sub-ms-distinct-but-ms-identical values via a raw `::timestamp` cast;
+// SQLite's timestamp_ms column only ever stores whole milliseconds, so a
+// literal shared Date value already produces a true collision — no raw SQL
+// cast needed.
+const COLLIDING_TIMESTAMP = new Date("2024-01-01T00:00:00.100Z");
 
 describe("jobsRepo", () => {
   it("upsertByDedupeKey round-trips an insert", async () => {
@@ -321,7 +321,7 @@ describe("jobsRepo", () => {
           eligibilityEvidence: "test fixture",
           aliases: [],
           raw: {},
-          firstSeenAt: collidingTimestamp(i) as unknown as Date,
+          firstSeenAt: COLLIDING_TIMESTAMP,
         })
         .returning();
       await insertJobScore(db, job.id, resume.id);

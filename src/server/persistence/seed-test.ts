@@ -40,7 +40,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     .then(async (rows) => {
       const prof = await seedTestProfile(db);
       console.log(`Seeded ${rows.length} test source(s), ${prof.length} profile row(s)`);
-      // The postgres-js pool otherwise keeps the tsx process alive forever.
+      // libsql client needs an explicit exit — process would hang otherwise.
       process.exit(0);
     })
     .catch((err) => {

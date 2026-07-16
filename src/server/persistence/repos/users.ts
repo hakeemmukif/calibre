@@ -36,12 +36,10 @@ export function createUserRepo(db: Db) {
           .returning();
         return row;
       } catch (err) {
-        // drizzle-orm's pg-core session wraps every driver error in a
-        // DrizzleQueryError, putting the real driver error (with the
-        // Postgres SQLSTATE `.code`) on `.cause` rather than on the
-        // thrown error itself — true for both postgres-js and PGlite.
-        const cause = err && typeof err === "object" ? (err as { cause?: unknown }).cause : undefined;
-        if (cause && typeof cause === "object" && (cause as { code?: string }).code === "23505") {
+        // drizzle wraps driver errors in a "Failed query" error; the libsql
+        // unique-violation extendedCode is on the original error at `.cause`.
+        const code = (err as { cause?: { extendedCode?: string } })?.cause?.extendedCode;
+        if (code === "SQLITE_CONSTRAINT_UNIQUE") {
           throw new EmailTakenError(email);
         }
         throw err;

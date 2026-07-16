@@ -47,7 +47,7 @@ export function createResumesRepo(db: Db) {
   };
 }
 
-// Lazily bound to the real Postgres client — only resolved when a method is
+// Lazily bound to the real libsql client — only resolved when a method is
 // actually invoked, so importing this module never requires `DATABASE_URL`
 // (tests use `createResumesRepo(testDb)` directly and never touch this).
 export const resumesRepo: ReturnType<typeof createResumesRepo> = {

@@ -30,6 +30,7 @@
   },
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^8.5.0",
+    "@libsql/client": "^0.17.4",
     "@napi-rs/canvas": "^0.1.100",
     "@node-rs/argon2": "^2.0.2",
     "drizzle-orm": "^0.45.2",
@@ -39,7 +40,6 @@
     "openai": "^6.46.0",
     "p-limit": "^3.1.0",
     "playwright": "^1.61.1",
-    "postgres": "^3.4.9",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "unpdf": "^1.6.2",
@@ -47,7 +47,6 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.5.4",
     "@playwright/test": "^1.61.1",
     "@storybook/react-vite": "^8.6.18",
     "@testing-library/jest-dom": "^6.9.1",

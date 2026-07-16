@@ -1,7 +1,8 @@
 // Boot-started singleton that OWNS url-check execution (spec 2026-07-13 §4.3).
 // Replaces the fire-and-forget `void runPipeline` in admission: pasting a URL
 // enqueues a url_checks row and kicks this worker, which claims rows atomically
-// (FOR UPDATE SKIP LOCKED), runs up to SCORE_CONCURRENCY at once via p-limit,
+// via a single atomic UPDATE ... RETURNING that's race-free under SQLite's single-writer
+// serialization, runs up to SCORE_CONCURRENCY at once via p-limit,
 // and survives restarts via lease/attempts recovery. globalThis-guarded so
 // Next dev bundle duplication / HMR never spawn two workers or two intervals
 // (mirrors src/server/runs/registry.ts).

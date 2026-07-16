@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getDb } from "../db";
 import { sessions, users } from "../schema";
 import type { Db } from "./db";
@@ -21,7 +21,7 @@ export function createSessionRepo(db: Db) {
         .where(eq(sessions.tokenHash, tokenHash))
         .limit(1);
       if (!row) return null;
-      await db.update(sessions).set({ lastUsedAt: sql`now()` }).where(eq(sessions.tokenHash, tokenHash));
+      await db.update(sessions).set({ lastUsedAt: new Date() }).where(eq(sessions.tokenHash, tokenHash));
       return row.user;
     },
     // GLOBAL-BY-DECISION: logout — the token hash itself is the caller's
