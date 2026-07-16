@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { UnauthorizedError } from "@/server/auth/errors";
 import { requireUser } from "@/server/auth/session";
+import { InsufficientCreditsError } from "@/server/credits";
 import { isUuid } from "@/server/http/params";
 import { EmptyJobDescriptionError } from "@/server/score";
 import { evaluateJob, UnknownJobError } from "@/server/score/evaluate";
@@ -28,6 +29,9 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
     return NextResponse.json(job, { status: 200 });
   } catch (err) {
     if (err instanceof UnauthorizedError) return errorResponse(401, "UNAUTHORIZED", err.message);
+    if (err instanceof InsufficientCreditsError) {
+      return errorResponse(402, "INSUFFICIENT_CREDITS", err.message, { feature: err.feature, required: err.required, balance: err.balance });
+    }
     if (err instanceof UnknownJobError) {
       return errorResponse(404, "NOT_FOUND", err.message);
     }

@@ -3,6 +3,7 @@
 // (api-contract.md §3 "POST /api/search").
 import { NextRequest, NextResponse } from "next/server";
 import { z, ZodError } from "zod";
+import { InsufficientCreditsError } from "@/server/credits";
 import { InvalidCursorError } from "@/server/persistence/repos/cursor";
 import { searchRunsRepo } from "@/server/persistence/repos/searchRuns";
 import { UnauthorizedError } from "@/server/auth/errors";
@@ -36,6 +37,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(run, { status: 202 });
   } catch (err) {
     if (err instanceof UnauthorizedError) return errorResponse(401, "UNAUTHORIZED", err.message);
+    if (err instanceof InsufficientCreditsError) {
+      return errorResponse(402, "INSUFFICIENT_CREDITS", err.message, { feature: err.feature, required: err.required, balance: err.balance });
+    }
     if (err instanceof ZodError) {
       return errorResponse(422, "VALIDATION_ERROR", "Invalid search request.", err.issues);
     }

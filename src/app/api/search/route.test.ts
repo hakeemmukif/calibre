@@ -8,6 +8,7 @@ import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import type { RawPosting, SourceConnector } from "@/server/search/connector";
 import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 import { UnauthorizedError } from "@/server/auth/errors";
+import { grant } from "@/server/credits";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb, hang: false }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
@@ -156,6 +157,7 @@ describe("POST /api/search", () => {
       .returning();
     await insertProfile(state.testDb, { id: "profile-b-route", userId: userB.id });
     await insertResume(state.testDb, { userId: userB.id, isActive: true });
+    await grant(userB.id, 30, "admin");
 
     const first = await POST(jsonRequest({ persona: "remote" }));
     expect(first.status).toBe(202);
@@ -194,6 +196,23 @@ describe("POST /api/search", () => {
     const res = await POST(jsonRequest({ persona: "pasted" }));
     expect(res.status).toBe(422);
     expect((await res.json()).error.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("a broke non-admin user returns 402 INSUFFICIENT_CREDITS with feature/required/balance details", async () => {
+    const [user] = await state.testDb
+      .insert(users)
+      .values({ email: "credits-402-search@example.com", passwordHash: "h", role: "user", plan: "standard" })
+      .returning();
+    await insertProfile(state.testDb, { id: "profile-402-search", userId: user.id });
+    await insertResume(state.testDb, { userId: user.id, isActive: true });
+    await insertSource(state.testDb, { id: "src-402-search", kind: "ats", persona: "remote" });
+    requireUser.mockResolvedValue({ id: user.id, email: user.email, role: "user" });
+
+    const res = await POST(jsonRequest({ persona: "remote" }));
+    expect(res.status).toBe(402);
+    const body = await res.json();
+    expect(body.error.code).toBe("INSUFFICIENT_CREDITS");
+    expect(body.error.details).toEqual({ feature: "scan", required: 10, balance: 0 });
   });
 });
 

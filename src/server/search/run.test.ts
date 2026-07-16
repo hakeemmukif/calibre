@@ -4,11 +4,12 @@ import type { LlmClient } from "@/lib/llm/client";
 import { makeMockLlm } from "@/lib/llm/mock";
 import { insertProfile, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
 import { createSearchRunsRepo, type SearchRunRow } from "@/server/persistence/repos/searchRuns";
-import { jobs, jobScores, resumes, searchRuns, sources, users } from "@/server/persistence/schema";
+import { creditLedger, jobs, jobScores, resumes, searchRuns, sources, users } from "@/server/persistence/schema";
 import type { SourceRow } from "@/server/persistence/repos/sources";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import type { RawPosting, SourceConnector } from "./connector";
 import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
+import { balance, grant, InsufficientCreditsError } from "@/server/credits";
 import { ScanFrame, type JobPhaseData, type SourceEventData } from "@/types";
 
 // Scoring is wired into the run (B6) — every startSearch() call that
@@ -420,6 +421,7 @@ describe("startSearch", () => {
       .returning();
     await insertProfile(state.testDb, { id: "profile-b", userId: userB.id });
     await insertResume(state.testDb, { ...resumeFixture, userId: userB.id, isActive: true });
+    await grant(userB.id, 30, "admin");
 
     // A starts a slow (never-completing-in-time) run for "remote" — reserves
     // A's persona slot.
@@ -849,5 +851,66 @@ describe("startSearch", () => {
     expect(finalRow2.stats.scored).toBe(1);
     expect(vi.mocked(scoreJobSpy)).toHaveBeenCalledTimes(1);
     expect(finalRow2.results[0]).toMatchObject({ outcome: "scored" });
+  });
+
+  it("admission debit (membership spec §4.2): debits 10 credits with refId = the run id", async () => {
+    const runsRepo = createSearchRunsRepo(state.testDb);
+    const [user] = await state.testDb
+      .insert(users)
+      .values({ email: "credits-scan@example.com", passwordHash: "h", role: "user", plan: "standard" })
+      .returning();
+    await insertProfile(state.testDb, { id: "profile-credits-scan", userId: user.id });
+    await insertResume(state.testDb, { ...resumeFixture, userId: user.id, isActive: true });
+    await grant(user.id, 30, "admin");
+
+    const run = await startSearch(user.id, { persona: "remote" }, { connectorForSource: (s) => stubConnector(s, []) });
+    await waitForTerminal(runsRepo, run.id);
+
+    expect(await balance(user.id)).toBe(20);
+    const rows = await state.testDb.select().from(creditLedger).where(eq(creditLedger.userId, user.id));
+    const debitRow = rows.find((r) => r.reason === "debit");
+    expect(debitRow?.feature).toBe("scan");
+    expect(debitRow?.refId).toBe(run.id);
+  });
+
+  it("admission debit: insufficient balance throws InsufficientCreditsError and no search_runs row exists afterward", async () => {
+    const [user] = await state.testDb
+      .insert(users)
+      .values({ email: "credits-scan-broke@example.com", passwordHash: "h", role: "user", plan: "standard" })
+      .returning();
+    await insertProfile(state.testDb, { id: "profile-credits-scan-broke", userId: user.id });
+    await insertResume(state.testDb, { ...resumeFixture, userId: user.id, isActive: true });
+    // No grant — balance 0, "scan" costs 10.
+
+    await expect(startSearch(user.id, { persona: "remote" })).rejects.toThrow(InsufficientCreditsError);
+
+    const rows = await state.testDb.select().from(searchRuns).where(eq(searchRuns.userId, user.id));
+    expect(rows).toHaveLength(0);
+    expect(await balance(user.id)).toBe(0);
+  });
+
+  it("admission debit: does NOT debit when pre-flight fails (no résumé) — balance unchanged after NoActiveResumeError", async () => {
+    const [user] = await state.testDb
+      .insert(users)
+      .values({ email: "credits-scan-noresume@example.com", passwordHash: "h", role: "user", plan: "standard" })
+      .returning();
+    await insertProfile(state.testDb, { id: "profile-credits-scan-noresume", userId: user.id });
+    await grant(user.id, 30, "admin");
+    // Deliberately no résumé for this user.
+
+    await expect(startSearch(user.id, { persona: "remote" })).rejects.toThrow(NoActiveResumeError);
+    expect(await balance(user.id)).toBe(30);
+  });
+
+  it("admission debit: admin bypass debits nothing (zero ledger rows) for the bootstrap admin", async () => {
+    const runsRepo = createSearchRunsRepo(state.testDb);
+    await insertResume(state.testDb, { ...resumeFixture, isActive: true });
+    await insertSource(state.testDb, { id: "src-admin-bypass", kind: "ats", persona: "remote" });
+
+    const run = await startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" }, { connectorForSource: (s) => stubConnector(s, []) });
+    await waitForTerminal(runsRepo, run.id);
+
+    const rows = await state.testDb.select().from(creditLedger).where(eq(creditLedger.userId, BOOTSTRAP_ADMIN_ID));
+    expect(rows).toHaveLength(0);
   });
 });

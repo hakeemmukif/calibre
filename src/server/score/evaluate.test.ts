@@ -2,10 +2,11 @@ import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { MATCH_SCORE } from "@/lib/llm/scripted-fixtures";
 import { insertJob, insertProfile, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
-import { jobs, jobScores, resumes, sources, users } from "@/server/persistence/schema";
+import { creditLedger, jobs, jobScores, resumes, sources, users } from "@/server/persistence/schema";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import { Job } from "@/types";
 import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
+import { balance, grant, InsufficientCreditsError } from "@/server/credits";
 
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
@@ -110,5 +111,78 @@ describe("evaluateJob", () => {
       errorSpy.mockRestore();
       vi.unstubAllGlobals();
     }
+  });
+
+  it("admission debit: debits 5 credits with refId = jobId on a successful evaluate", async () => {
+    vi.stubEnv("CALIBER_TEST_DOUBLES", "1");
+    const [user] = await state.testDb
+      .insert(users)
+      .values({ email: "credits-evaluate@example.com", passwordHash: "h", role: "user", plan: "standard" })
+      .returning();
+    await insertProfile(state.testDb, { id: "profile-credits-evaluate", userId: user.id });
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id, { userId: user.id, description: "Backend role at Acme." });
+    await insertResume(state.testDb, { userId: user.id, isActive: true });
+    await grant(user.id, 30, "admin");
+
+    await evaluateJob(job.id, user.id);
+
+    expect(await balance(user.id)).toBe(25);
+    const rows = await state.testDb.select().from(creditLedger).where(eq(creditLedger.userId, user.id));
+    const debitRow = rows.find((r) => r.reason === "debit");
+    expect(debitRow?.feature).toBe("evaluate");
+    expect(debitRow?.refId).toBe(job.id);
+  });
+
+  it("admission debit: UnknownJobError path debits nothing", async () => {
+    const [user] = await state.testDb
+      .insert(users)
+      .values({ email: "credits-evaluate-unknown@example.com", passwordHash: "h", role: "user", plan: "standard" })
+      .returning();
+    await grant(user.id, 30, "admin");
+
+    await expect(evaluateJob(crypto.randomUUID(), user.id)).rejects.toThrow(UnknownJobError);
+    expect(await balance(user.id)).toBe(30);
+  });
+
+  it("admission debit: no-active-résumé path debits nothing (proves the debit sits after the résumé check)", async () => {
+    const [user] = await state.testDb
+      .insert(users)
+      .values({ email: "credits-evaluate-noresume@example.com", passwordHash: "h", role: "user", plan: "standard" })
+      .returning();
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id, { userId: user.id, description: "Backend role at Acme." });
+    await insertResume(state.testDb, { userId: user.id }); // isActive: false by default
+    await grant(user.id, 30, "admin");
+
+    await expect(evaluateJob(job.id, user.id)).rejects.toThrow(NoActiveResumeError);
+    expect(await balance(user.id)).toBe(30);
+  });
+
+  it("admission debit: insufficient balance throws InsufficientCreditsError and writes no job_scores row", async () => {
+    const [user] = await state.testDb
+      .insert(users)
+      .values({ email: "credits-evaluate-broke@example.com", passwordHash: "h", role: "user", plan: "standard" })
+      .returning();
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id, { userId: user.id, description: "Backend role at Acme." });
+    await insertResume(state.testDb, { userId: user.id, isActive: true });
+    // No grant — balance 0, "evaluate" costs 5.
+
+    await expect(evaluateJob(job.id, user.id)).rejects.toThrow(InsufficientCreditsError);
+    const rows = await state.testDb.select().from(jobScores).where(eq(jobScores.jobId, job.id));
+    expect(rows).toHaveLength(0);
+  });
+
+  it("admission debit: admin bypass debits nothing (zero ledger rows) for the bootstrap admin", async () => {
+    vi.stubEnv("CALIBER_TEST_DOUBLES", "1");
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id, { description: "Backend role at Acme." });
+    await insertResume(state.testDb, { isActive: true });
+
+    await evaluateJob(job.id, BOOTSTRAP_ADMIN_ID);
+
+    const rows = await state.testDb.select().from(creditLedger).where(eq(creditLedger.userId, BOOTSTRAP_ADMIN_ID));
+    expect(rows).toHaveLength(0);
   });
 });
