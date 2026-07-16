@@ -41,21 +41,14 @@ jobs:
           # eval.live.test.ts never touches the DB, but it runs through
           # vitest.smoke.config.ts, whose setupFiles (src/smoke/setup.ts)
           # requires DATABASE_URL to be *set* (not connected-to) — placeholder
-          # only, no Postgres service needed for this job.
-          DATABASE_URL: postgresql://unused:unused@localhost:5432/unused
+          # only, never opened.
+          DATABASE_URL: file:unused.db
         run: npm run eval:resume
   e2e:
     needs: check
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env: { POSTGRES_PASSWORD: test, POSTGRES_DB: caliber_e2e }
-        ports: ['5433:5432']
-        options: >-
-          --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
     env:
-      DATABASE_URL: postgresql://postgres:test@localhost:5433/caliber_e2e
+      DATABASE_URL: file:${{ github.workspace }}/e2e/.scratch/caliber-e2e.db
       CALIBER_TEST_DOUBLES: '1'
       CALIBER_UPLOADS_DIR: ${{ runner.temp }}/caliber-uploads
     steps:

@@ -20,6 +20,7 @@ caliber.db-shm
 caliber.db-wal
 playwright-report/
 e2e/.auth/
+e2e/.scratch/
 
 # SDD subagent-driven-development scratch
 .superpowers/

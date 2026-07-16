@@ -6,9 +6,9 @@
 // `next dev` and waits for it to become healthy — runs in the same task
 // batch *before* config.globalSetups. So wiring globalSetup.ts as
 // Playwright's own `globalSetup` config option runs too late: `next dev`'s
-// instrumentation hook queries Postgres at boot and crashes the whole
-// process ("database caliber_e2e does not exist") before Playwright's
-// globalSetup task would ever fire. Running it as an npm pretest step
+// instrumentation hook queries the DB at boot and crashes the whole process
+// (unmigrated/missing scratch DB) before Playwright's globalSetup task
+// would ever fire. Running it as an npm pretest step
 // instead guarantees the DB exists before the webServer starts.
 import globalSetup from "./globalSetup";
 
