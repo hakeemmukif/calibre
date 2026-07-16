@@ -27,7 +27,7 @@ const BASE_URL = "http://localhost:3005";
 export default async function globalSetup() {
   const context = await request.newContext({ baseURL: BASE_URL });
 
-  const registerRes = await context.post("/api/auth/register", { data: E2E_USER });
+  const registerRes = await context.post("/api/auth/register", { data: { ...E2E_USER, inviteCode: "e2e-invite" } });
   if (registerRes.status() === 409) {
     const loginRes = await context.post("/api/auth/login", { data: E2E_USER });
     if (!loginRes.ok()) {

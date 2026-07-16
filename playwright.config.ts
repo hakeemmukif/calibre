@@ -47,6 +47,10 @@ export default defineConfig({
       // webServer env if a future admin-flow spec switches to it.
       ADMIN_EMAIL: process.env.ADMIN_EMAIL ?? "e2e-admin@caliber.test",
       ADMIN_PASSWORD: process.env.ADMIN_PASSWORD ?? "e2e-admin-password-1",
+      // Registration is invite-gated (membership spec §4.5.2) — every spec
+      // that calls POST /api/auth/register must send this value as
+      // `inviteCode`, or the route 403s.
+      CALIBER_INVITE_CODE: "e2e-invite",
     },
   },
 });
