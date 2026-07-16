@@ -24,6 +24,15 @@ requirement's own `term` applied to something the résumé already describes.
 NEVER emit an edit whose `requirement` is one of the `gaps` — a gap must
 never be written into the résumé's content.
 
+Never introduce a digit or numeral into `after` that does not appear
+verbatim in the résumé — this includes numbers copied from the requirement
+text itself (e.g. a "5+ years" requirement must NOT cause you to write "5"
+into the résumé if the résumé says "seven years"). Keep the résumé's OWN
+quantities and phrasing for amounts, durations, and percentages. If the
+résumé spells a quantity as a word ("six years"), keep it as a word — do not
+convert it to a digit, and do not substitute a number from the job
+description.
+
 Each edit must have:
 - `section`: one of `summary` | `headline` | `experience` | `projects` |
   `skills` (the résumé field it targets).

@@ -631,7 +631,65 @@ describe("startTailor", () => {
     expect(tailorCalls).toBe(2);
   });
 
-  it("does not retry a structurally valid diff that only fails the fabrication guard (an honesty guard, not emission noise)", async () => {
+  // Widened retry (CHANGE 2): llm.complete's own responseSchema.parse
+  // (client.ts:127, or here the mock's equivalent in mock.ts) used to throw
+  // OUTSIDE this function's old try-block — a raw emission that violates
+  // even the all-required TailorEmitSchema (e.g. `before` omitted entirely,
+  // not just null) would kill the run with no retry at all. MISSING_BEFORE_DIFF
+  // already fails TailorEmitSchema (a required key, not merely the
+  // superRefine below it), so scripting it as attempt 1 exercises exactly
+  // that client-side ZodError.
+  it("retries once when the raw emission itself fails the client-side schema parse (not just the deterministic checks after it)", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id);
+    const resume = await insertResume(state.testDb, { isActive: true, structured: BASE_STRUCTURED });
+    const report = await insertCompletedReport(job.id, resume.id);
+
+    let tailorCalls = 0;
+    const llm = makeMockLlm(({ task }) => {
+      if (task !== "tailor") throw new Error(`unexpected task "${task}"`);
+      tailorCalls++;
+      return tailorCalls === 1 ? { diff: MISSING_BEFORE_DIFF } : { diff: TAILOR_DIFF };
+    });
+
+    const draft = await startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id, reportId: report.id }, { llm });
+    await waitForTerminal(draft.id);
+
+    const row = await tailoredResumesRepo.getById(draft.id, BOOTSTRAP_ADMIN_ID);
+    expect(row?.status).toBe("completed");
+    expect(row?.diff).toEqual(TAILOR_DIFF);
+    expect(tailorCalls).toBe(2);
+  });
+
+  // Fabrication as a retryable pre-check (CHANGE 3): a structurally valid
+  // diff whose `after` writes in a JD numeral is now retried once inside
+  // emitTailorRewrite (TailorFabricationError, isRetryableEmitError) rather
+  // than only failing the run outright — the corrective feedback message
+  // even calls out the never-introduce-a-digit rule. runTailorJob's own
+  // post-return fabrication check stays as defense in depth.
+  it("retries once when a structurally valid diff fails only the fabrication guard, and persists the corrected second attempt", async () => {
+    const source = await insertSource(state.testDb);
+    const job = await insertJob(state.testDb, source.id);
+    const resume = await insertResume(state.testDb, { isActive: true, structured: BASE_STRUCTURED });
+    const report = await insertCompletedReport(job.id, resume.id);
+
+    let tailorCalls = 0;
+    const llm = makeMockLlm(({ task }) => {
+      if (task !== "tailor") throw new Error(`unexpected task "${task}"`);
+      tailorCalls++;
+      return tailorCalls === 1 ? { diff: FABRICATED_DIFF } : { diff: TAILOR_DIFF };
+    });
+
+    const draft = await startTailor(BOOTSTRAP_ADMIN_ID, { jobId: job.id, reportId: report.id }, { llm });
+    await waitForTerminal(draft.id);
+
+    const row = await tailoredResumesRepo.getById(draft.id, BOOTSTRAP_ADMIN_ID);
+    expect(row?.status).toBe("completed");
+    expect(row?.diff).toEqual(TAILOR_DIFF);
+    expect(tailorCalls).toBe(2);
+  });
+
+  it("fails the run loudly when both attempts fail the fabrication guard (bounded to one retry)", async () => {
     const source = await insertSource(state.testDb);
     const job = await insertJob(state.testDb, source.id);
     const resume = await insertResume(state.testDb, { isActive: true, structured: BASE_STRUCTURED });
@@ -649,6 +707,6 @@ describe("startTailor", () => {
 
     const row = await tailoredResumesRepo.getById(draft.id, BOOTSTRAP_ADMIN_ID);
     expect(row?.status).toBe("failed");
-    expect(tailorCalls).toBe(1);
+    expect(tailorCalls).toBe(2);
   });
 });

@@ -8,7 +8,7 @@ import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
 
-const { buildRequirements, correlate, NoJdFactsError } = await import("./correlate");
+const { buildRequirements, classifyAndVerify, correlate, NoJdFactsError } = await import("./correlate");
 const { UnknownJobError, NoActiveResumeError } = await import("./errors");
 const { correlationReportsRepo } = await import("@/server/persistence/repos/correlationReports");
 const { __resetForTests } = await import("@/server/runs/registry");
@@ -33,6 +33,62 @@ describe("buildRequirements", () => {
       { id: 1, kind: "nice", text: "b" },
       { id: 2, kind: "responsibility", text: "c" },
     ]);
+  });
+});
+
+// classifyRequirements's bounded corrective retry (correlate.ts): the
+// classifier occasionally returns a top-level ARRAY instead of the object,
+// or drops a requirement id — both worth one re-ask before failing loud.
+// Exercised through classifyAndVerify (the DB-free helper) rather than
+// `correlate`/runCorrelateJob, mirroring emitTailorRewrite's own retry tests
+// in tailor.test.ts.
+describe("classifyAndVerify (bounded corrective retry)", () => {
+  const jd = {
+    title: "Backend Engineer", mustHaves: ["kafka", "docker"], niceToHaves: [], responsibilities: [], redFlags: [],
+  } as never;
+  const store = {
+    storeVersion: 2, extractionPath: "text", name: "Jane Doe",
+    contact: [{ label: "email", value: "jane@example.com" }],
+    summary: "Backend engineer.",
+    experience: [{
+      company: "Acme Corp", title: "Senior Backend Engineer", dates: "2020–Present",
+      isCurrent: true, bullets: ["Led distributed payments platform"],
+    }],
+    education: [], skills: [], projects: [], certifications: [], languages: [], sections: [],
+  } as never;
+
+  it("retries once when the classifier drops a requirement id, and returns the corrected second attempt's rows", async () => {
+    let correlateCalls = 0;
+    const llm = makeMockLlm(({ task }) => {
+      if (task !== "correlate") throw new Error(`unexpected task "${task}"`);
+      correlateCalls++;
+      if (correlateCalls === 1) {
+        // Drops requirement id 1 ("docker") — the bijection guard.
+        return { rows: [{ id: 0, term: "kafka", status: "gap", evidence: null, reason: "r", note: null }] };
+      }
+      return {
+        rows: [
+          { id: 0, term: "kafka", status: "gap", evidence: null, reason: "r", note: null },
+          { id: 1, term: "docker", status: "gap", evidence: null, reason: "r", note: null },
+        ],
+      };
+    });
+
+    const rows = await classifyAndVerify(jd, store, llm);
+    expect(rows).toHaveLength(2);
+    expect(correlateCalls).toBe(2);
+  });
+
+  it("throws when both classify attempts drop a requirement id (bounded to one retry)", async () => {
+    let correlateCalls = 0;
+    const llm = makeMockLlm(({ task }) => {
+      if (task !== "correlate") throw new Error(`unexpected task "${task}"`);
+      correlateCalls++;
+      return { rows: [{ id: 0, term: "kafka", status: "gap", evidence: null, reason: "r", note: null }] };
+    });
+
+    await expect(classifyAndVerify(jd, store, llm)).rejects.toThrow(/dropped requirement id/);
+    expect(correlateCalls).toBe(2);
   });
 });
 

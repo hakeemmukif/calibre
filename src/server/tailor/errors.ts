@@ -24,3 +24,15 @@ export class UnknownReportError extends Error {
     this.name = "UnknownReportError";
   }
 }
+
+// emitTailorRewrite's fabrication pre-check (index.ts): the model wrote a
+// number into an edit's `after` that isn't in the base résumé (e.g. a JD
+// numeral like "5" bled in from "At least 5 years..."). Thrown INSIDE the
+// corrective-retry loop so this is a retryable emission defect, not just the
+// post-return honesty guard runTailorJob also applies (defense in depth).
+export class TailorFabricationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TailorFabricationError";
+  }
+}

@@ -6,7 +6,7 @@
 // `gap`, never trusted as-is), and persists a CorrelationReport. Same
 // queued-then-async-completes run pattern as startTailor (index.ts),
 // stages `extract -> classify -> verify -> done`.
-import { z } from "zod";
+import { z, ZodError } from "zod";
 import { getLlm, type LlmClient } from "@/lib/llm/client";
 import { modelFor } from "@/lib/llm/models";
 import { renderTemplate } from "@/lib/llm/templates";
@@ -50,6 +50,21 @@ export const CorrelateResultSchema = z.object({
   })),
 });
 
+// classifyRequirements's bijection guards (every requirement id present
+// exactly once, no unknown ids) — a model emission defect distinct from a
+// ZodError, but equally worth one corrective re-ask. Kept local since it is
+// only ever thrown/caught inside classifyRequirements's own retry loop.
+class CorrelateEmissionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CorrelateEmissionError";
+  }
+}
+
+function isRetryableClassifyError(err: unknown): boolean {
+  return err instanceof ZodError || err instanceof CorrelateEmissionError;
+}
+
 // Shared classify+verify core (DB-free): id-joins the classifier's response
 // back onto `requirements` (bijection guard — every requirement id must
 // appear exactly once, never dropped/duplicated/unknown), then runs the
@@ -57,34 +72,70 @@ export const CorrelateResultSchema = z.object({
 // DB-free helper the live eval calls directly against a fixture) and
 // `runCorrelateJob` (which additionally needs `model`/`costUsd` for
 // persistence) — kept as one implementation so the two never drift.
+//
+// Bounded corrective retry (mirrors emitTailorRewrite, index.ts): the
+// classifier occasionally emits a top-level ARRAY instead of the object
+// (ZodError from llm.complete) or drops/duplicates/invents a requirement id
+// (the bijection guards below, wrapped as CorrelateEmissionError so the
+// catch can tell them apart from an arbitrary Error). One re-ask, then fail
+// loud.
 async function classifyRequirements(
   jd: JdFacts, store: ResumeStore, llm: LlmClient,
 ): Promise<{ rows: CorrelationRow[]; model: string; costUsd: number }> {
   const requirements = buildRequirements(jd);
-  const result = await llm.complete({
-    task: "correlate",
-    messages: renderTemplate("correlate", {
-      requirements: JSON.stringify(requirements),
-      resume: JSON.stringify(store),
-    }),
-    responseSchema: CorrelateResultSchema,
+  const byId = new Map(requirements.map((r) => [r.id, r]));
+  const baseMessages = renderTemplate("correlate", {
+    requirements: JSON.stringify(requirements),
+    resume: JSON.stringify(store),
   });
 
-  const byId = new Map(requirements.map((r) => [r.id, r]));
-  const missing = requirements.filter((r) => !result.data.rows.some((o) => o.id === r.id));
-  if (missing.length > 0) {
-    throw new Error(`correlate: classifier dropped requirement id(s) ${missing.map((m) => m.id).join(",")}`);
+  let attemptMessages = baseMessages;
+  let totalCostUsd = 0;
+
+  for (let attempt = 1; ; attempt++) {
+    let result: { data: z.infer<typeof CorrelateResultSchema>; model: string; costUsd: number } | undefined;
+    try {
+      result = await llm.complete({
+        task: "correlate",
+        messages: attemptMessages,
+        responseSchema: CorrelateResultSchema,
+      });
+      totalCostUsd += result.costUsd;
+      // Rebind to a `const` (narrowed non-undefined) so the closures below
+      // don't reference the outer `let result`, which TS's control-flow
+      // analysis can't narrow across a function boundary.
+      const { data, model } = result;
+
+      const missing = requirements.filter((r) => !data.rows.some((o) => o.id === r.id));
+      if (missing.length > 0) {
+        throw new CorrelateEmissionError(`correlate: classifier dropped requirement id(s) ${missing.map((m) => m.id).join(",")}`);
+      }
+      if (data.rows.length !== requirements.length) {
+        throw new CorrelateEmissionError(`correlate: classifier returned ${data.rows.length} rows for ${requirements.length} requirements (duplicate or extra ids)`);
+      }
+      const classified: Omit<CorrelationRow, "atsPresent">[] = data.rows.map((o) => {
+        const req = byId.get(o.id);
+        if (!req) throw new CorrelateEmissionError(`correlate: classifier returned unknown id ${o.id}`);
+        return { requirement: req.text, term: o.term, kind: req.kind, status: o.status,
+          evidence: o.evidence, reason: o.reason, note: o.note };
+      });
+      return { rows: verifyEvidence(classified, store), model, costUsd: totalCostUsd };
+    } catch (err) {
+      if (attempt >= 2 || !isRetryableClassifyError(err)) throw err;
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`correlate classify attempt 1 rejected: ${message} — retrying once with corrective feedback`);
+      attemptMessages = [
+        ...baseMessages,
+        // If llm.complete itself threw (no `result`), there is no assistant
+        // turn to echo back.
+        ...(result !== undefined ? [{ role: "assistant" as const, content: JSON.stringify(result.data) }] : []),
+        {
+          role: "user",
+          content: `That response was rejected: ${message}. Re-emit the ENTIRE corrected JSON object of shape {"rows": [...]} — one row per requirement id, every id exactly once, all fields present (evidence and note may be null).`,
+        },
+      ];
+    }
   }
-  if (result.data.rows.length !== requirements.length) {
-    throw new Error(`correlate: classifier returned ${result.data.rows.length} rows for ${requirements.length} requirements (duplicate or extra ids)`);
-  }
-  const classified: Omit<CorrelationRow, "atsPresent">[] = result.data.rows.map((o) => {
-    const req = byId.get(o.id);
-    if (!req) throw new Error(`correlate: classifier returned unknown id ${o.id}`);
-    return { requirement: req.text, term: o.term, kind: req.kind, status: o.status,
-      evidence: o.evidence, reason: o.reason, note: o.note };
-  });
-  return { rows: verifyEvidence(classified, store), model: result.model, costUsd: result.costUsd };
 }
 
 // DB-free classify+verify path — no persistence, no run handle. Exposed so

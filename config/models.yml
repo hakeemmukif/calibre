@@ -56,18 +56,26 @@ tasks:
     # completion", 2026-07-12). ~12k output ≈ $0.0018 at this model's pricing.
     maxTokens: 12000
     temperature: 0.4
-    # NO strict:true for tailor — and do NOT add it. TailorResultSchema's
-    # `diff[]` entries have `before?`/`after?` optionals (correct — an "add"
-    # has no `before`, a "remove" has no `after`). Strict mode drops
-    # optionals from `required` and 400s the whole call, so tailor stays
-    # non-strict.
+    # Constrained decoding: forces required fields + object shape at the
+    # decoder. TailorResultSchema's `diff[]` entries have `before?`/`after?`
+    # optionals (correct — an "add" has no `before`, a "remove" has no
+    # `after`), but that's the WIRE schema; the LLM is constrained to
+    # TailorEmitSchema (index.ts), the all-required emit twin that models
+    # absence as `null` instead of an omitted key. Server-side normalisation
+    # maps emit-shape null back onto wire-shape optional before re-validating
+    # against TailorResultSchema, so strict:true and the optional wire shape
+    # don't conflict.
+    strict: true
   correlate:
     # Requirement-vs-résumé classification: cheap tier. Emits one row per JD
-    # requirement (term/status/evidence/reason/note); no strict — evidence/note
-    # are nullable and gpt-oss-120b drops optionals under strict:false.
+    # requirement (term/status/evidence/reason/note). CorrelateResultSchema
+    # already makes every field required, with evidence/note nullable rather
+    # than optional — strict-compatible as-is, same shape discipline as
+    # resume-extract.
     model: openai/gpt-oss-120b
     maxTokens: 4000
     temperature: 0.1
+    strict: true
   url-check-search:
     model: perplexity/sonar
     maxTokens: 4000

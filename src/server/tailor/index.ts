@@ -26,10 +26,10 @@ import { TailoredResume } from "@/types";
 import { toTailoredResume } from "./assemble";
 import { correlate, type CorrelateDeps } from "./correlate";
 import { atsPresentCount, fabricationViolations } from "./correlate-metrics";
-import { NoActiveResumeError, UnknownJobError, UnknownReportError } from "./errors";
+import { NoActiveResumeError, TailorFabricationError, UnknownJobError, UnknownReportError } from "./errors";
 import { applyAcceptedDiff, applyEdits, DiffEntrySchema, InvalidDiffIndexError, MalformedDiffEditError, UnknownDiffSectionError } from "./merge";
 
-export { NoActiveResumeError, UnknownJobError, UnknownReportError } from "./errors";
+export { NoActiveResumeError, TailorFabricationError, UnknownJobError, UnknownReportError } from "./errors";
 
 export class UnknownTailorIdError extends Error {
   constructor(id: string) {
@@ -240,18 +240,24 @@ async function resolveReport(row: TailoredResumeRow, deps: CorrelateDeps): Promi
 }
 
 // Emission errors this function's corrective retry treats as "the model's
-// fault, worth one re-ask" — a structurally invalid diff (e.g. a list-section
+// fault, worth one re-ask": a structurally invalid diff (e.g. a list-section
 // modify with a null target.bulletIndex, the intermittent ~1-in-4 failure
-// this retry exists for) rather than a caller/config bug. Fabrication and
-// requirement-allowlist violations are NOT retried here — those are honesty
-// guards runTailorJob applies AFTER this function returns, not emission
-// noise a re-ask can fix.
+// this retry exists for), a raw emission that fails TailorEmitSchema itself
+// (llm.complete's own responseSchema.parse — a strict:true violation or a
+// stray malformed field), and fabrication (TailorFabricationError — the
+// model writing a JD numeral like "5" from "At least 5 years..." into an
+// edit instead of the résumé's own "seven years"). All three are model
+// emission noise a re-ask can plausibly fix. The requirement-allowlist guard
+// is NOT retried here — that's an honesty guard runTailorJob applies AFTER
+// this function returns, checking against the report rather than the
+// résumé, and not the kind of defect a corrective re-ask targets.
 function isRetryableEmitError(err: unknown): boolean {
   return (
     err instanceof ZodError ||
     err instanceof MalformedDiffEditError ||
     err instanceof InvalidDiffIndexError ||
-    err instanceof UnknownDiffSectionError
+    err instanceof UnknownDiffSectionError ||
+    err instanceof TailorFabricationError
   );
 }
 
@@ -273,14 +279,20 @@ export async function emitTailorRewrite(
   let totalCostUsd = 0;
 
   for (let attempt = 1; ; attempt++) {
-    const result = await llm.complete({
-      task: "tailor",
-      messages: attemptMessages,
-      responseSchema: TailorEmitSchema,
-    });
-    totalCostUsd += result.costUsd;
-
+    let result: { data: z.infer<typeof TailorEmitSchema>; model: string; costUsd: number } | undefined;
     try {
+      // llm.complete's own responseSchema.parse (client.ts) is now INSIDE
+      // this try — a raw emission that fails TailorEmitSchema (a
+      // strict:true violation, or the intermittent client-side ZodError this
+      // widening exists for) is retryable too, not just the deterministic
+      // checks below.
+      result = await llm.complete({
+        task: "tailor",
+        messages: attemptMessages,
+        responseSchema: TailorEmitSchema,
+      });
+      totalCostUsd += result.costUsd;
+
       // Normalise the emit shape's null-modelled absence back onto the wire
       // shape (before/after optional) and re-validate — TailorResultSchema's
       // superRefine (a non-empty before/after on every `modify`) stays the
@@ -299,6 +311,17 @@ export async function emitTailorRewrite(
       // nullable target shape does not reject on its own.
       applyEdits(input.resume, diff);
 
+      // Fabrication pre-check, moved inside the retry loop: a JD numeral
+      // (e.g. "5" from "At least 5 years...") bleeding into `after` instead
+      // of the résumé's own phrasing ("seven years") is model emission
+      // noise, not a caller bug — worth one corrective re-ask before failing
+      // the run outright. runTailorJob's post-return fabrication check stays
+      // as defense in depth.
+      const fabrications = fabricationViolations(diff, input.resume);
+      if (fabrications.length > 0) {
+        throw new TailorFabricationError(`tailor: fabrication guard rejected the rewrite — ${fabrications.join("; ")}`);
+      }
+
       return { diff, model: result.model, costUsd: totalCostUsd };
     } catch (err) {
       if (attempt >= 2 || !isRetryableEmitError(err)) throw err;
@@ -306,10 +329,12 @@ export async function emitTailorRewrite(
       console.warn(`tailor rewrite attempt 1 rejected: ${message} — retrying once with corrective feedback`);
       attemptMessages = [
         ...messages,
-        { role: "assistant", content: JSON.stringify(result.data) },
+        // If llm.complete itself threw (no `result`), there is no assistant
+        // turn to echo back.
+        ...(result !== undefined ? [{ role: "assistant" as const, content: JSON.stringify(result.data) }] : []),
         {
           role: "user",
-          content: `That response was rejected by a deterministic validator: ${message}. Re-emit the ENTIRE corrected {"diff": [...]} JSON. Every modify/remove on a list section (experience, projects, skills) MUST carry a non-null integer target.index AND target.bulletIndex; scalar sections (summary, headline) use null for both; every modify MUST carry non-empty before AND after.`,
+          content: `That response was rejected by a deterministic validator: ${message}. Re-emit the ENTIRE corrected {"diff": [...]} JSON. Every modify/remove on a list section (experience, projects, skills) MUST carry a non-null integer target.index AND target.bulletIndex; scalar sections (summary, headline) use null for both; every modify MUST carry non-empty before AND after; never introduce a digit or numeral into "after" that isn't already present in the résumé — including a number copied from the requirement text — keep the résumé's own quantities and phrasing.`,
         },
       ];
     }
