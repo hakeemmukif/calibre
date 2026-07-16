@@ -7,7 +7,7 @@ import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 import { verifyPassword } from "@/server/auth/password";
 
 describe("seedSources", () => {
-  it("inserts the 13 sources rows against PGlite", async () => {
+  it("inserts the 13 sources rows against libsql", async () => {
     const db = await createTestDb();
     const inserted = await seedSources(db);
     expect(inserted).toHaveLength(14);

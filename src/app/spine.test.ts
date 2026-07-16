@@ -4,7 +4,7 @@
 // through the REAL `features/*/client.ts` wrappers — global `fetch` is
 // stubbed to dispatch straight into the imported Next route handlers (no
 // HTTP server), so every step below both exercises the actual persistence/
-// scoring/tailoring pipeline (PGlite + makeMockLlm + mocked connectors) AND
+// scoring/tailoring pipeline (libsql (temp-file) + makeMockLlm + mocked connectors) AND
 // proves the typed clients `.parse` real route responses without drift.
 //
 // Asserts every spine transition: upload résumé -> dual-persona search ->

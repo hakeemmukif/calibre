@@ -7,7 +7,7 @@ import { EmailTakenError } from "@/server/auth/errors";
 import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 
 describe("users schema", () => {
-  it("migration creates an insertable users table on an empty PGlite DB", async () => {
+  it("migration creates an insertable users table on an empty libsql DB", async () => {
     const db = await createTestDb();
     const [row] = await db
       .insert(users)

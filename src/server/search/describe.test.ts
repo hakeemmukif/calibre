@@ -1,5 +1,5 @@
 // Seam: mock only `@/server/persistence/db`'s getDb (spine.test.ts's
-// pattern) so the real jobsRepo singleton runs against a pglite test db.
+// pattern) so the real jobsRepo singleton runs against a libsql test db.
 // connectorForSource and the real per-connector factories are left
 // unmocked — a seeded jobstreet/greenhouse SourceRow resolves the real
 // connector, and global `fetch` is stubbed the same way the connector test
