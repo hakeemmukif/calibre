@@ -514,6 +514,7 @@
                   "PAYLOAD_TOO_LARGE",
                   "FETCH_BLOCKED",
                   "NOT_A_JOB_POSTING",
+                  "RATE_LIMITED",
                   "INTERNAL",
                   "UNAUTHORIZED",
                   "FORBIDDEN"
@@ -905,6 +906,10 @@
             "format": "email",
             "type": "string"
           },
+          "inviteCode": {
+            "minLength": 1,
+            "type": "string"
+          },
           "password": {
             "maxLength": 200,
             "minLength": 8,
@@ -913,7 +918,8 @@
         },
         "required": [
           "email",
-          "password"
+          "password",
+          "inviteCode"
         ],
         "type": "object"
       },
@@ -2264,6 +2270,7 @@
                   "PAYLOAD_TOO_LARGE",
                   "FETCH_BLOCKED",
                   "NOT_A_JOB_POSTING",
+                  "RATE_LIMITED",
                   "INTERNAL",
                   "UNAUTHORIZED",
                   "FORBIDDEN"

@@ -338,6 +338,7 @@ export const ErrorCode = z.enum([
   "PAYLOAD_TOO_LARGE",
   "FETCH_BLOCKED",
   "NOT_A_JOB_POSTING",
+  "RATE_LIMITED",
   "INTERNAL",
   "UNAUTHORIZED",
   "FORBIDDEN",
@@ -447,6 +448,7 @@ export type AuthUser = z.infer<typeof AuthUser>;
 export const RegisterRequest = z.object({
   email: z.string().email(),
   password: z.string().min(8).max(200),
+  inviteCode: z.string().min(1),
 });
 export type RegisterRequest = z.infer<typeof RegisterRequest>;
 

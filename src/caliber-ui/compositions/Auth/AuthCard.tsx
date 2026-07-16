@@ -14,6 +14,7 @@ export interface AuthCardProps {
   error?: string;
   switchHref: string;
   switchLabel: string;
+  extraFields?: React.ReactNode;
 }
 
 const COPY: Record<AuthMode, { title: string; cta: string }> = {
@@ -25,7 +26,7 @@ const COPY: Record<AuthMode, { title: string; cta: string }> = {
 // A plain controlled Card composition, mirroring UrlEvalBar's
 // submit-on-click-or-Enter idiom (Button is always type="button", so there's
 // no native <form> submit to hook into).
-export function AuthCard({ mode, onSubmit, busy, error, switchHref, switchLabel }: AuthCardProps) {
+export function AuthCard({ mode, onSubmit, busy, error, switchHref, switchLabel, extraFields }: AuthCardProps) {
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const { title, cta } = COPY[mode];
@@ -39,6 +40,7 @@ export function AuthCard({ mode, onSubmit, busy, error, switchHref, switchLabel 
     <Card padding="lg" radius="lg" elevation="sm" style={{ width: 360 }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <div style={{ font: "var(--type-h2)", color: "var(--text-strong)" }}>{title}</div>
+        {extraFields}
         <Input
           label="Email"
           type="email"
