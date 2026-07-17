@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { getAdminUsers, grantCredits, patchUserPlan } from "./client";
+import { getAdminUsers, getSourcesHealth, grantCredits, patchUserPlan } from "./client";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -58,6 +58,36 @@ describe("patchUserPlan", () => {
       body: JSON.stringify({ plan: "unlimited" }),
     });
     expect(updated.plan).toBe("unlimited");
+  });
+});
+
+describe("getSourcesHealth", () => {
+  it("GETs /api/admin/sources and returns the parsed aggregates + items", async () => {
+    const body = {
+      total: 4,
+      enabledCount: 2,
+      deadCount: 1,
+      items: [
+        { id: "lever:defunct", name: "Defunct Co", enabled: false, status: "dead", consecutiveFailures: 6, lastValidatedAt: 1_752_600_000_000, jobCount: 0, provenance: ["jobhive"] },
+        { id: "gh-curated-off", name: "Curated Off", enabled: false },
+      ],
+    };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(body), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await getSourcesHealth();
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/admin/sources", undefined);
+    expect(result).toEqual(body);
+  });
+
+  it("throws an ApiError with status 403 when the API forbids the request", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: { code: "FORBIDDEN", message: "Admins only." } }), { status: 403 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getSourcesHealth()).rejects.toMatchObject({ status: 403 });
   });
 });
 

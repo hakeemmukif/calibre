@@ -1673,6 +1673,47 @@
         ],
         "type": "object"
       },
+      "SourceHealthRow": {
+        "properties": {
+          "consecutiveFailures": {
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "jobCount": {
+            "type": "integer"
+          },
+          "lastValidatedAt": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "provenance": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "dead"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "enabled"
+        ],
+        "type": "object"
+      },
       "SourceRef": {
         "properties": {
           "id": {
@@ -1698,6 +1739,32 @@
           "name",
           "kind",
           "persona"
+        ],
+        "type": "object"
+      },
+      "SourcesHealthResponse": {
+        "properties": {
+          "deadCount": {
+            "type": "integer"
+          },
+          "enabledCount": {
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SourceHealthRow"
+            },
+            "type": "array"
+          },
+          "total": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "enabledCount",
+          "deadCount",
+          "items"
         ],
         "type": "object"
       },
@@ -2491,6 +2558,43 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/admin/sources": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourcesHealthResponse"
+                }
+              }
+            },
+            "description": "Source-health aggregates + the dead/disabled rows"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Caller is not an admin"
+          }
+        },
+        "summary": "Admin: source-health surface — total/enabled/dead counts + dead/disabled rows (Track O §4.3)"
+      }
+    },
     "/api/admin/users": {
       "get": {
         "responses": {
