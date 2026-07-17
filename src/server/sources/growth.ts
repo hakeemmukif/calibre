@@ -25,8 +25,9 @@
 // path-always posture). `fetchJobhive` is module-private to engine.ts; it is
 // exported from there (one-line change) rather than duplicated (~60 lines).
 //
-// DEDUPE: candidate ids (`${prefix}:${slug}`, seedFromEngine.ts's mapping) are
-// checked against already-seeded ids BEFORE identity/validate run, so a
+// DEDUPE: candidate ids (`engineSourceId(ats, slug)`, exported from
+// seedFromEngine.ts — the single id source, imported rather than duplicated)
+// are checked against already-seeded ids BEFORE identity/validate run, so a
 // company seeded by an earlier engine or growth pass costs this pass zero
 // vendor requests. `bulkInsert`'s `onConflictDoNothing` is the backstop, not
 // the plan.
@@ -43,12 +44,12 @@
 // growth missed. See the crontab note this task reports back.
 import { fileURLToPath } from "node:url";
 import { sourcesRepo as realSourcesRepo, type NewSource } from "../persistence/repos/sources";
-import { fetchJobhive, type AtsKind } from "./engine";
+import { fetchJobhive } from "./engine";
 import { verifyIdentity, type IdentityVerdict } from "./identity";
 import type { JobhiveRow } from "./jobhive";
 import { matchNicheToJobhive, type EngineCandidate } from "./nicheFilter";
 import { parseYcOss, type NicheCompany } from "./nicheList";
-import { seedFromEngine } from "./seedFromEngine";
+import { engineSourceId, seedFromEngine } from "./seedFromEngine";
 import { validateSlugs, type FetchLike, type ValidationResult } from "./validate";
 
 const YC_OSS_CHANGES_URL = "https://yc-oss.github.io/api/changes/latest.json";
@@ -56,6 +57,11 @@ const USER_AGENT = "Mozilla/5.0 (compatible; caliber-source-validator/1.0)";
 
 const STOP_REASONS = new Set(["forbidden", "rate_limited"]);
 const STOP_STATUSES = new Set([403, 429]);
+
+// This module is the incremental ~7/day path (file header). A diff this
+// large is a YC batch drop, which belongs to the full idempotent seeder
+// (`npm run sources:engine -- --seed`), not here — see the throw at its use.
+const GROWTH_MAX_FRESH = 25;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -150,16 +156,6 @@ function buildCandidates(added: NicheCompany[], jobhive: JobhiveRow[]): GrowthCa
   });
 }
 
-// Mirrors seedFromEngine.ts's ID_PREFIX, which is module-private there.
-// Duplicated here ONLY so the id can be computed before the chain runs, to
-// skip already-seeded companies without spending an identity/validate request
-// on them. Must stay in sync with seedFromEngine.ts's ID_PREFIX.
-const ID_PREFIX: Record<AtsKind, string> = { greenhouse: "gh", lever: "lever", ashby: "ashby" };
-
-function idOf(candidate: { ats: AtsKind; slug: string }): string {
-  return `${ID_PREFIX[candidate.ats]}:${candidate.slug}`;
-}
-
 // ---------------------------------------------------------------------------
 // Politeness — any 403/429 aborts the whole pass (design §7; see file header)
 // ---------------------------------------------------------------------------
@@ -213,21 +209,35 @@ export async function runGrowth(opts: GrowthOptions): Promise<GrowthReport> {
   log(`growth: ${candidates.length} candidate(s) matched against jobhive`);
 
   const existingIds = new Set((await sourcesRepo.listAll()).map((r) => r.id));
-  const fresh = candidates.filter((c) => !existingIds.has(idOf(c)));
+  const fresh = candidates.filter((c) => !existingIds.has(engineSourceId(c.ats, c.slug)));
   const skippedAlreadySeeded = candidates.length - fresh.length;
   if (skippedAlreadySeeded > 0) {
     log(`growth: ${skippedAlreadySeeded} candidate(s) already seeded — skipped before identity/validate`);
   }
 
+  if (fresh.length > GROWTH_MAX_FRESH) {
+    throw new Error(
+      `growth: ${fresh.length} fresh candidate(s) exceeds the ${GROWTH_MAX_FRESH}-per-day cap — this looks like a ` +
+        `YC batch-publish day, not the incremental diff this module is meant for. Run ` +
+        `\`npm run sources:engine -- --seed\` instead (idempotent, recovers all of them).`,
+    );
+  }
+
   // --- identity ---------------------------------------------------------
-  const verdicts = await Promise.all(
-    fresh.map((c) =>
-      verifyIdentity(
+  // Sequential, not Promise.all: verifyIdentity's internal politeness delay
+  // only paces requests that AWAIT one another. A bare Promise.all fires all
+  // of them concurrently, so the delay does nothing to space out hits on the
+  // vendor hosts, and a large batch can 429 the whole pass. At N<=GROWTH_MAX_
+  // FRESH the added latency is fine for a daily cron.
+  const verdicts: IdentityVerdict[] = [];
+  for (const c of fresh) {
+    verdicts.push(
+      await verifyIdentity(
         { name: c.expectedName, slug: c.slug, ats: c.ats, companyDomain: c.companyDomain, matchMethod: c.matchMethod },
         { fetch: fetchFn, ...(identityDelayMs === undefined ? {} : { politenessDelayMs: identityDelayMs }) },
       ),
-    ),
-  );
+    );
+  }
   assertNoIdentityStop(fresh, verdicts);
 
   const confirmed: GrowthCandidate[] = [];
@@ -258,7 +268,7 @@ export async function runGrowth(opts: GrowthOptions): Promise<GrowthReport> {
   let seeded = 0;
   if (rows.length > 0) {
     const inserted = await sourcesRepo.bulkInsert(rows);
-    seeded = Array.isArray(inserted) ? inserted.length : 0;
+    seeded = inserted.length;
   }
   log(`growth: seeded ${seeded} new source row(s)`);
 

@@ -25,8 +25,11 @@ function text(body: string, status = 200): Response {
 }
 const ghIdentity = (name: string) => () => json({ name, content: "" });
 const leverIdentity = (title: string) => () => text(`<html><head><title>${title} </title></head></html>`);
+const ashbyIdentity = (name: string, website: string) => () =>
+  text(`<script>window.__data={"organization":{"organizationId":"o1","name":"${name}","publicWebsite":"${website}"}};</script>`);
 const ghJobs = (n: number) => () => json({ jobs: Array.from({ length: n }, (_, i) => ({ id: i })) });
 const leverJobs = (n: number) => () => json(Array.from({ length: n }, (_, i) => ({ id: i })));
+const ashbyJobs = (n: number) => () => json({ jobs: Array.from({ length: n }, (_, i) => ({ id: i })) });
 const statusResp = (code: number) => () => text("", code);
 
 // Mirrors engine.test.ts's splitter: fixtures write jobhive as one mixed
@@ -62,8 +65,8 @@ function keyFromUrl(url: string): { kind: "identity" | "validate"; key: string }
 interface FetchSpec {
   jobhive: string;
   added: unknown[];
-  identity?: Record<string, () => Response>;
-  validate?: Record<string, () => Response>;
+  identity?: Record<string, () => Response | Promise<Response>>;
+  validate?: Record<string, () => Response | Promise<Response>>;
 }
 
 function buildFetch(spec: FetchSpec): { fetch: FetchLike; calls: string[] } {
@@ -236,5 +239,84 @@ describe("runGrowth — dataset fetch fails loud", () => {
     const repo = spyRepo();
     await expect(runGrowth({ fetch: wrapped, sourcesRepo: repo, ...COMMON })).rejects.toThrow(/expected.*added/);
     expect(repo.bulkInsert).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S1 — batch-day meltdown guard: a diff this large is a YC batch drop, which
+// belongs to the full idempotent `sources:engine --seed`, not this daily path.
+// ---------------------------------------------------------------------------
+describe("runGrowth — GROWTH_MAX_FRESH batch cap", () => {
+  it("a fresh batch of >25 companies aborts loudly and never touches identity or seed", async () => {
+    const n = 30;
+    const jobhiveRows = Array.from({ length: n }, (_, i) => `Company${i},company${i},https://boards.greenhouse.io/company${i}`);
+    const jobhive = ["name,slug,url", ...jobhiveRows, ""].join("\n");
+    const added = Array.from({ length: n }, (_, i) => ({ name: `Company${i}`, website: `https://company${i}.com`, isHiring: true }));
+
+    const { fetch, calls } = buildFetch({ jobhive, added });
+    const repo = spyRepo();
+
+    await expect(runGrowth({ fetch, sourcesRepo: repo, ...COMMON })).rejects.toThrow(/30 fresh|sources:engine/);
+    expect(repo.bulkInsert).not.toHaveBeenCalled();
+
+    // no identity or validate request was ever made — the cap check runs
+    // before either stage
+    const allowed = new Set([YC_OSS_CHANGES, JOBHIVE_DIR]);
+    expect(calls.every((u) => allowed.has(u) || u.startsWith(`${RAW}jobhive/`))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S1 — identity pacing: verifyIdentity's politeness delay only paces calls
+// that await one another. A bare Promise.all fires them all at once.
+// ---------------------------------------------------------------------------
+describe("runGrowth — identity checks are paced sequentially", () => {
+  it("never has more than one identity request in flight at a time", async () => {
+    const jobhive = [
+      "name,slug,url",
+      "Vercel,vercel,https://boards.greenhouse.io/vercel",
+      "Acme,acme,https://jobs.lever.co/acme",
+      "Beta,beta,https://jobs.ashbyhq.com/beta",
+      "",
+    ].join("\n");
+    const added = [
+      { name: "Vercel", website: "https://vercel.com", isHiring: true },
+      { name: "Acme", website: "https://acme.com", isHiring: true },
+      { name: "Beta", website: "https://beta.com", isHiring: true },
+    ];
+
+    let active = 0;
+    let maxActive = 0;
+    function paced(build: () => Response): () => Promise<Response> {
+      return () =>
+        new Promise<Response>((resolve) => {
+          active++;
+          maxActive = Math.max(maxActive, active);
+          setTimeout(() => {
+            active--;
+            resolve(build());
+          }, 15);
+        });
+    }
+
+    const { fetch } = buildFetch({
+      jobhive,
+      added,
+      identity: {
+        "greenhouse:vercel": paced(() => json({ name: "Vercel", content: "" })),
+        "lever:acme": paced(() => text(`<html><head><title>Acme </title></head></html>`)),
+        "ashby:beta": paced(
+          () => text(`<script>window.__data={"organization":{"organizationId":"o1","name":"Beta","publicWebsite":"https://beta.com/"}};</script>`),
+        ),
+      },
+      validate: { "greenhouse:vercel": ghJobs(5), "lever:acme": leverJobs(5), "ashby:beta": ashbyJobs(5) },
+    });
+    const repo = spyRepo();
+
+    const report = await runGrowth({ fetch, sourcesRepo: repo, ...COMMON });
+
+    expect(maxActive).toBe(1);
+    expect(report.identityConfirmed).toBe(3);
+    expect(report.seeded).toBe(3);
   });
 });
