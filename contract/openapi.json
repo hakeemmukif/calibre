@@ -3936,6 +3936,27 @@
               }
             },
             "description": "Service is healthy"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "ok": {
+                      "enum": [
+                        false
+                      ],
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "DB ping failed — UptimeRobot + alert-check.sh depend on this to detect on-box outages"
           }
         },
         "summary": "Health check"

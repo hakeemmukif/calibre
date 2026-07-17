@@ -130,6 +130,14 @@ registry.registerPath({
         },
       },
     },
+    503: {
+      description: "DB ping failed — UptimeRobot + alert-check.sh depend on this to detect on-box outages",
+      content: {
+        "application/json": {
+          schema: z.object({ ok: z.literal(false) }),
+        },
+      },
+    },
   },
 });
 
