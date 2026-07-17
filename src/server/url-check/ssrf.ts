@@ -3,11 +3,14 @@
 // decimal/octal/hex IP literals in a URL normalize away during DNS
 // resolution, so checking post-lookup is the only correct point.
 //
-// Residual risk (accepted for the local single-operator box, spec §7):
-// this is a check-then-connect gap — a DNS answer can rebind between our
-// lookup here and undici's own connect in fetch-page.ts. Closing that needs
-// a custom undici Agent whose connect hook re-validates `socket.remoteAddress`
-// per connection. Hard blocker before any hosted deploy.
+// Residual risk: this is a check-then-connect gap — a DNS answer can rebind
+// between our lookup here and undici's own connect in fetch-page.ts. Closing
+// that needs a custom undici Agent whose connect hook re-validates
+// `socket.remoteAddress` per connection.
+// DISPOSITION (pre-launch hardening 2026-07-17, tracked risk 1): explicitly
+// ACCEPTED for the invite-only friends launch — exploiting the rebind window
+// needs an authenticated user running a malicious DNS server, implausible at
+// n≤20. The undici connect-hook re-validation GATES PUBLIC LAUNCH.
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 
