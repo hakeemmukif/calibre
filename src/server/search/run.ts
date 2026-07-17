@@ -277,7 +277,6 @@ async function runFanOut(
 
     const tasks = sources.map((source) =>
       limit(async () => {
-        const connector = resolveConnector(source);
         const timeoutController = new AbortController();
         const timer = setTimeout(() => timeoutController.abort(), connectorTimeoutMs);
         const signal = AbortSignal.any([handle.signal, timeoutController.signal]);
@@ -294,6 +293,13 @@ async function runFanOut(
         emitSource({ sourceId: source.id, name: source.name, status: "fetching" });
 
         try {
+          // Resolution (registry lookup + parseSourceGeo fail-loud check) is
+          // INSIDE this try, not hoisted above it: a throw here (e.g. a
+          // mis-annotated source's config) must be tolerated exactly like a
+          // connector.discover() throw below — recorded on this source's
+          // stat.errors, not left to reject the pLimit task and take down
+          // every other source's Promise.all (Task 0.5).
+          const connector = resolveConnector(source);
           for await (const posting of connector.discover({
             targets,
             since: new Date(0),

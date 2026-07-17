@@ -24,8 +24,9 @@
     "auth:reset-password": "tsx --env-file-if-exists=.env.local src/server/auth/reset-password.ts",
     "eligibility:recompute": "tsx src/server/score/recompute-eligibility.ts",
     "eligibility:report": "tsx src/server/score/eligibility-distribution.ts",
-    "remote-fit:coverage": "tsx src/server/score/remote-fit-coverage.ts",
+    "remote-fit:coverage": "tsx --env-file-if-exists=.env.local src/server/score/remote-fit-coverage.ts",
     "remote-fit:verify-emission": "tsx --env-file-if-exists=.env.local src/server/score/verify-emission.ts",
+    "sources:engine": "tsx --env-file-if-exists=.env.local src/server/sources/engine.ts",
     "contract": "tsx src/contract/generate.ts",
     "contract:check": "tsx src/contract/generate.ts && git diff --exit-code contract/openapi.json",
     "check": "npm run typecheck && vitest run && npm run contract:check && npm run build"

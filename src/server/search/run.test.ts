@@ -8,6 +8,7 @@ import { creditLedger, jobs, jobScores, resumes, searchRuns, sources, users } fr
 import type { SourceRow } from "@/server/persistence/repos/sources";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
 import type { RawPosting, SourceConnector } from "./connector";
+import { connectorForSource as realConnectorForSource } from "./connectors";
 import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 import { balance, grant, InsufficientCreditsError } from "@/server/credits";
 import { ScanFrame, type JobPhaseData, type SourceEventData } from "@/types";
@@ -283,6 +284,67 @@ describe("startSearch", () => {
 
     const notUpserted = await findJobByDedupeKey(state.testDb, "example.com/jobs/2");
     expect(notUpserted).toBeUndefined();
+  });
+
+  // Regression (Task 0.5): resolveConnector(source) used to sit OUTSIDE the
+  // per-source try/catch in runFanOut — a resolution throw for ANY single
+  // source rejected that source's pLimit task, which rejected Promise.all,
+  // which killed the WHOLE run via runFanOut's outer catch, discarding every
+  // other source's work. This uses the REAL connectorForSource (not a stub)
+  // on an ats source with no config.geo.scope, so parseSourceGeo's fail-loud
+  // throw (src/server/search/geo.ts:116, called eagerly by connectorForSource
+  // at src/server/search/connectors/index.ts:24) fires during RESOLUTION,
+  // before connector.discover() is ever called — exactly the failure mode
+  // that ~861 engine-seeded rows could trigger from one malformed row.
+  it("a source whose connector resolution throws is recorded as a per-source failure — the run completes and other sources still yield their jobs", async () => {
+    const runsRepo = createSearchRunsRepo(state.testDb);
+    await insertResume(state.testDb, { ...resumeFixture, isActive: true });
+
+    const good = await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
+    // config: {} — no geo.scope — parseSourceGeo throws for an ats source
+    // missing this annotation (geo.ts:116).
+    await insertSource(state.testDb, { id: "src-malformed", kind: "ats", persona: "remote", config: {} });
+
+    const matching: RawPosting = {
+      sourceId: good.id,
+      url: "https://example.com/jobs/3",
+      title: "Data Engineer",
+      company: "Acme",
+      location: "Remote",
+      description: "Build data pipelines with SQL.",
+    };
+
+    const run = await startSearch(BOOTSTRAP_ADMIN_ID,
+      { persona: "remote" },
+      {
+        concurrency: 5,
+        connectorTimeoutMs: 500,
+        hardRunTimeoutMs: 3000,
+        llm: testLlm,
+        // The real connector registry — src-malformed's resolution throws
+        // (parseSourceGeo); src-good resolves fine but must still go through
+        // the real registry's config.connector lookup, so route it to a stub
+        // via the "connector" key rather than bypassing resolution entirely.
+        connectorForSource: (source) =>
+          source.id === "src-malformed" ? realConnectorForSource(source) : stubConnector(source, [matching]),
+      },
+    );
+
+    expect(run.status).toBe("queued");
+
+    const finalRow = await waitForTerminal(runsRepo, run.id);
+    expect(finalRow.status).toBe("completed");
+    expect(finalRow.stats.scanned).toBe(1);
+    expect(finalRow.stats.matched).toBe(1);
+    expect(finalRow.stats.perSource).toEqual(
+      expect.arrayContaining([
+        { sourceId: "src-good", found: 1, errors: 0 },
+        { sourceId: "src-malformed", found: 0, errors: 1 },
+      ]),
+    );
+
+    const upserted = await findJobByDedupeKey(state.testDb, "example.com/jobs/3");
+    expect(upserted?.sourceId).toBe("src-good");
   });
 
   it("board-kind sources bypass the role matcher; ats-kind sources still require a match (task-7b)", async () => {

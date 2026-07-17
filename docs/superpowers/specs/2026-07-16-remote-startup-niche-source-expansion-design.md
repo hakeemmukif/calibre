@@ -130,7 +130,7 @@ survivors by `(stage1Score desc, postedAt desc, stableKey asc)` before the slice
 |---|---|---|---|
 | **jobhive CSVs** — 9,935 slugs across greenhouse/ashby/lever | Every function at every company; **zero new connector code** | S | MIT; same public APIs already called |
 | **Verified SEA seeds** — `GoToGroup`, `shopback-2`, `bjakcareer` | SEA + function-diverse, slugs live-verified | S | None. Resolve Aspire's real token first |
-| **yc-oss/api** (6,043 YC cos, daily JSON, `isHiring`) + **remoteintech/remote-jobs** (883 cos, ships `careers_url`, 40k★, pushed 2026-07-15) + **topstartups.io** (1,261) | Startup/remote signal; `careers_url` feeds ATS auto-detection | S | yc-oss has no LICENSE file (mirrors YC public data); remoteintech is NOASSERTION — fine for internal seeding, **read before redistributing** |
+| **yc-oss/api** (6,043 YC cos, daily JSON, `isHiring`) + **remoteintech/remote-jobs** (881 cos, ships `careers_url` on 69.2%, 40k★, pushed 2026-07-15) <!-- corrected 2026-07-17: topstartups.io dropped, remoteintech licence + structure corrected, yc-oss licence decision recorded — see src/server/sources/nicheList.ts (module header) and docs/superpowers/plans/2026-07-17-source-engine-ignition.md Risks (D8) --> | Startup/remote signal; `careers_url` feeds ATS auto-detection (1.7% point directly at an ATS board; §4.3 step 5) | S | yc-oss has **no LICENSE file at all** (`license: null` via the GitHub API) — operator decision: **fetch at runtime, do not vendor**, so no redistribution question arises. remoteintech's licence is **ISC** (LICENSE file confirmed, not NOASSERTION) and its repo has **restructured**: no longer a README table, now **881 entries at `src/companies/*.md`** with YAML frontmatter (`title, slug, website, careers_url, region, remote_policy, company_size, technologies`) — safe to vendor. |
 
 **Tier 2 — new connectors, in verified priority order** (gap-fill research 2026-07-16
 resolved the mechanics; these are no longer UNKNOWN):
@@ -138,7 +138,7 @@ resolved the mechanics; these are no longer UNKNOWN):
 1. **Workable** — *build this first among new connectors.* Live-verified:
    `GET apply.workable.com/api/v1/widget/accounts/{slug}` (`?details=true` for full HTML
    description), **no auth**, `robots.txt` fully open (`Disallow:` empty). Payload carries
-   a distinct **`function` field** *and* `department`, `telecommuting` bool, `locations[]`,
+   a **`function` field** *and* `department`, `telecommuting` bool, `locations[]`,
    `application_url`, stable `shortcode`, full description. All-function coverage confirmed
    by **two independent research runs** (Apna 139: sales/marketing/eng/product/data/HR/ops;
    Pavago 200: Attorney/Accountant/Legal/Design; Nuvei 68: Finance & Legal incl. Compliance
@@ -146,10 +146,21 @@ resolved the mechanics; these are no longer UNKNOWN):
    publishes this endpoint for building custom careers pages, the strongest legal footing of
    any ATS surveyed. ~4,269 slugs already in jobhive; survived adversarial verification
    (CONFIRMED). No pagination param (full list in one call). Effort **S**.
+   <!-- corrected 2026-07-17: see reports/2026-07-17-connector-live-verification.md
+   (Workable section). --> **Correction: the `function` field is mostly empty/null in
+   practice** — nuvei's 57 jobs carried `['', 'Business Analyst', 'Data Analyst',
+   'Engineering', 'Financial Analyst', 'Legal', None, 'Product Management']`, and pavago's
+   1,572 jobs carried only `''` and `'Legal'`. Do not treat it as a shortcut for the
+   Phase-3 function classifier — it does not reliably substitute for one.
 2. **Recruitee** — `GET https://{slug}.recruitee.com/api/offers/`, no auth, **officially
-   vendor-documented** as the "Careers Site API" (built for third-party embedding),
-   `robots.txt` doesn't block `/api/offers/`. Full text + `careers_apply_url` + remote flag.
-   Effort **S**.
+   vendor-documented** as the "Careers Site API" (built for third-party embedding). Full
+   text + `careers_apply_url` + remote flag. Effort **S**.
+   <!-- corrected 2026-07-17: see reports/2026-07-17-connector-live-verification.md
+   (Recruitee section). --> **Correction: `robots.txt` is per-tenant, not global** —
+   `blueforest.recruitee.com/robots.txt` allows `/api/offers/`, but
+   `snappet.recruitee.com/robots.txt` is `Disallow: /` for the whole board. A connector
+   needs a per-board robots gate (§4.4a/b of the ignition plan), not a blanket assumption
+   the API path is open.
 3. **Personio** — `GET https://{slug}.jobs.personio.com/xml?language=en`, no auth,
    vendor-documented syndication feature, all-functions confirmed live (1NCE: CEO/COO/CTO
    Office depts incl. Accounting, Legal, Marketing). **XML not JSON** (small parser cost);
@@ -159,15 +170,30 @@ resolved the mechanics; these are no longer UNKNOWN):
    CORS-open by design, `robots.txt` doesn't block it). Function-coverage breadth
    confirmed only on a thin live sample. Effort **S**.
 5. **Rippling** — `GET https://ats.rippling.com/api/v2/board/{slug}/jobs`, no auth,
-   all-functions confirmed live (joinroot: CFO Org, Product & Design, PR & Comms, …). Two
-   caveats: **undocumented surface** (Rippling's official docs point to a gated host), and
-   **descriptions require an N+1 call** per posting (`/jobs/{id}`). Effort **M**.
-- **SmartRecruiters** — *downgraded below Workable, deliberately.*
-  `GET api.smartrecruiters.com/v1/companies/{id}/postings` works unauthenticated (contra
-  its own docs), but two problems: `robots.txt` reads `Disallow: /` for everyone except
-  `LinkedInBot` — a legal signal none of the above carry — and **5 of 7 jobhive slugs
-  tested returned zero postings** (staleness or slug/identifier mismatch, unresolved).
-  2,214 slugs on paper; real hit-rate unproven. Verify a 20–30 slug batch before building.
+   all-functions confirmed live (joinroot: CFO Org, Product & Design, PR & Comms, …). Three
+   caveats: **undocumented surface** (Rippling's official docs point to a gated host);
+   <!-- corrected 2026-07-17: see reports/2026-07-17-connector-live-verification.md
+   (Rippling section). --> **paginated, not a single call** — the envelope is
+   `{items, page, pageSize:20, totalItems, totalPages}` (Rippling's own 780-job board costs
+   39 list calls); and the list response carries no description/date/company, so
+   **descriptions require an N+1 call** per posting (`/jobs/{id}`), which is also where
+   `createdOn` and `companyName` live. Effort **M**.
+- **SmartRecruiters** — *dropped, not merely downgraded.*
+  `api.smartrecruiters.com/robots.txt` reads `User-agent: LinkedInBot / Allow:
+  /v1/companies/` then `User-agent: * / Disallow: /` — an explicit allowlist this crawler
+  is not on.
+  <!-- corrected 2026-07-17: see reports/2026-07-17-connector-live-verification.md
+  (SmartRecruiters section). --> **Correction: the postings API was never called** under
+  this posture — no hit-rate batch was run, so the "5 of 7 jobhive slugs tested returned
+  zero postings" data point predates the robots review and should not be read as a green
+  light to test further. 2,214 slugs on paper, but the hit-rate question is **moot**
+  unless the operator makes an explicit contrary legal call; do not build this connector.
+- **Positive finding (added 2026-07-17):**
+  <!-- see reports/2026-07-17-connector-live-verification.md ("Slug supply (all vendors)"). -->
+  jobhive ships slug CSVs for **all five** of the above unbuilt vendors, not just
+  Workable — workable 4,269, personio 2,463, rippling 1,923, recruitee 888, pinpoint 350
+  (~9,893 additional slugs, all MIT via jobhive), taking total nominal reach to **~19.8k
+  slugs across 8 vendors** (the 3 shipped ATS connectors' ~9,935 plus these 5).
 - **Teamtailor** — public RSS at `https://{slug}.teamtailor.com/jobs.rss` (no auth); the
   REST API needs a key. EU-startup-heavy. RSS mechanics confirmed; multi-function breadth
   not (only sample was a design agency). Effort **S** if RSS suffices.
@@ -237,10 +263,33 @@ resolved the mechanics; these are no longer UNKNOWN):
 **Pipeline (one script + one cron):**
 
 1. **Ingest** — vendor the three jobhive CSVs → ~9,935 `(name, slug, ats, url)` rows.
-2. **Filter for niche** — join against yc-oss + remoteintech + topstartups.io **on
-   normalized domain**, never company name (jobhive has `url`, yc-oss `website`,
-   remoteintech `website`; domains are the only reliable join key). Any startup signal
-   survives → expect **1,500–4,000**.
+2. **Filter for niche — INVERTED PIPELINE.**
+   <!-- corrected 2026-07-17: the domain-join below is impossible on the real data — see
+   docs/superpowers/plans/2026-07-17-source-engine-ignition.md task 0.2 + Risks, and the
+   measured breakdown in src/server/sources/nicheFilter.ts (module header). -->
+   jobhive's `url` is always the **ATS board URL**, never a company domain — all 9,935
+   rows normalize to just 3 vendor hosts (`job-boards.greenhouse.io` 4,966/4,966,
+   `jobs.lever.co` 2,113/2,113, `jobs.ashbyhq.com` 2,856/2,856); jobhive's own
+   `ats-companies/README.md` states the column is the canonical public careers URL by
+   design, and there is no company-domain column and never was. A domain join against
+   jobhive therefore returns **0 rows**.
+
+   The pipeline inverts instead: the **niche lists drive**, and jobhive becomes an
+   `(ats, slug)` lookup keyed off the company (normalized name / domain-stem), gated by
+   mandatory identity verification (see step 3.5 below) before anything is eligible to
+   seed. `companyDomain` comes from the niche lists' `website` field — the only source of
+   it anywhere in the data — so both bulk-seeding and the freshness/re-detection loop
+   hard-require it. **topstartups.io is dropped from this join** (and from Tier 1, §4.2) —
+   it returns HTTP 403 to non-browser clients, has no API/export, and its terms are
+   UNKNOWN; under this spec's own §7 posture (treat any 403 as a stop signal, never spoof
+   a browser UA) it is not legitimately ingestible. Only yc-oss + remoteintech drive the
+   match.
+
+   Any startup signal survives → measured **~861 companies** (yc-oss Active 656
+   candidates + remoteintech 228 candidates, deduped to 861; 11.3% of jobhive matches
+   some niche list) — still a **~70× expansion** over the 12 hand-seeded sources, though
+   the *validate* stage (step 3 below) has not yet run against this candidate set, so the
+   seedable count will be lower.
    *Do not pre-filter for "remote-only companies"* — seed the company and let the
    existing per-posting geo filter (`config.geo` + parsed `RawPosting.geo`) decide
    visibility per posting.
@@ -248,15 +297,34 @@ resolved the mechanics; these are no longer UNKNOWN):
    slugs lie): hit the real endpoint (`boards-api.greenhouse.io/v1/boards/{slug}/jobs`
    etc.), require HTTP 200, record `jobCount` + `lastValidatedAt`. Politeness ≤2–4
    concurrent per vendor host; ~5k greenhouse slugs at ~1 req/s ≈ **90 minutes, once**.
-   *Trap:* 4,848/4,966 greenhouse rows use the new `job-boards.greenhouse.io` host — the
-   **API host is unaffected**, but slug-extraction regex must accept both hosts.
+   *Trap:*
+   <!-- corrected 2026-07-17: see src/server/sources/nicheFilter.ts (measured host
+   distribution). --> **all** 4,966/4,966 greenhouse rows (100%) use the new
+   `job-boards.greenhouse.io` host — the **API host is unaffected**, but slug-extraction
+   regex must accept both hosts.
 4. **Bulk-seed** `sources` rows.
 5. **Freshness loop** (weekly cron) — revalidate every enabled row. On failure increment
-   `consecutiveFailures`; at 3 → `status='dead'` + queue **re-detection**: fetch the
-   company's `careers_url`, run the ATS-signature regex (`boards.greenhouse.io/([\w-]+)`,
-   `jobs.lever.co/([\w-]+)`, `jobs.ashbyhq.com/([\w.-]+)`), and if the company moved
+   `consecutiveFailures`; at 3 → `status='dead'` + queue **re-detection**:
+   <!-- corrected 2026-07-17: `careers_url` does not exist as specified — see
+   src/server/sources/nicheList.ts + freshness.ts (module headers), and
+   docs/superpowers/plans/2026-07-17-remote-source-expansion.md task 2.3 for the raw-HTML
+   discovery-ceiling finding. --> **yc-oss has no careers/jobs URL field at all**
+   (verified across the union of keys of all 6,050 records), and remoteintech's
+   `careers_url` (69.2% populated) points directly at a greenhouse/lever/ashby board on
+   only 1.7% of entries — so re-detection derives the target from `config.companyDomain`
+   instead: try `https://{companyDomain}/careers`, then the bare domain root, and run the
+   ATS-signature regex (`boards.greenhouse.io/([\w-]+)`, `jobs.lever.co/([\w-]+)`,
+   `jobs.ashbyhq.com/([\w.-]+)`) against whichever 200s first; if the company moved
    (Lever→Ashby happens constantly) **rewrite `config` in place**. A dead slug must never
-   silently 404 forever — it heals or it is visibly disabled with a count on an admin surface.
+   silently 404 forever — it heals or it is visibly disabled with a count on an admin
+   surface.
+
+   **This is re-detection, not discovery.** A raw-HTML scan of 25 sampled residue
+   companies (niche-list companies jobhive doesn't already match) found an ATS signature
+   on **0 of 25** — client-rendered careers pages hide it (Deepnote has a live Ashby
+   board at `jobs.ashbyhq.com/…` while `deepnote.com/careers` 404s). The freshness loop
+   only heals companies that **already had** a detected board and moved; it does not
+   surface new companies.
 6. **Growth loop** — yc-oss `changes/latest.json` daily diff for new YC companies
    (website → careers scan → slug → validate); quarterly jobhive re-pull; manual SEA
    harvesting (500 Global SEA ~270–300, East Ventures 300+, MDEC filtered) into the same

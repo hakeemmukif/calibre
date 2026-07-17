@@ -98,6 +98,26 @@ test-gated) or session (operator in loop). Per-task gate: `npm test`. Merge gate
   - Files: `src/server/search/run.ts` (+ test).
   - `model:sonnet` `effort:medium` `@general-purpose` `exec:subagent`. Confidence 90%.
 
+### Track 2b — Matcher-side recall lift. ~2–3 days. **Ships BEFORE Phase 3; no pool/LLM/schema needed.**
+_Measured by `docs/superpowers/reports/2026-07-17-matching-tiers.md` (620-row real JD corpus, unchanged oracle).
+Takes recall 0.722 → 0.894 with deterministic, reviewable rules and cuts the eventual classifier's load ~60%._
+
+- [ ] **2b.1 Curated synonym table + 4 folds at `deriveRoleTargets`.**
+  - Adopt the **4-fold table** (extends the existing `developer→engineer` mechanism) + a **curated synonym table**
+    (strict rules always-on; sibling rules with trigger hygiene — the study found + fixed two trigger bugs, mirror them).
+    Entries are derived from the real corpus, NOT invented. Reviewable by a human; no LLM.
+  - **SKIP, measured dead (do not implement — each is a net FP loss):** Porter/Snowball stemming (over-stems
+    `marketing→market`, `officer→office`, breaks the head-noun path); JD-content matching in stage-1 (recall 0.502 /
+    **1,673 FPs** — JD text matches everything); embeddings (semantic-only gap is ~0.9% of matches; every cosine
+    threshold <0.7 nets more FPs than it rescues; real-embedding number UNKNOWN, no paid calls were made).
+  - **FP cost is real and must be an operator-visible decision**: recall 0.722→0.894 comes with **FP 141→187 (+46)**.
+    Dead zones open: people 0.23→0.86, risk 0.10→0.90, legal 0.27→0.69, marketing 0.38→0.79, cs 0.43→0.97.
+  - Test must pass: measured recall/FP over `live-jd-sample.json` reported (not asserted from fixtures); every existing
+    `roleMatch.test.ts` fixture stays green; each synonym rule pinned with a real corpus example both ways (match + a
+    near-miss it must NOT admit).
+  - Files: `src/server/search/roleMatch.ts` (+ test), synonym table (co-located or `roleSynonyms.ts`).
+  - `model:opus` `effort:xhigh` `@general-purpose` `exec:subagent` — FP-boundary tuning on live data. Confidence 80%.
+
 ### Track 3 — Decoupling. ~1.5–2 weeks. **After Track 0. D2 resolved the blocking fork.**
 
 - [ ] **3.1 Global `postings` table + migration.** (D2: `description` TEXT ≤40k, stored at crawl time)
@@ -124,16 +144,24 @@ test-gated) or session (operator in loop). Per-task gate: `npm test`. Merge gate
   - Files: `src/server/sources/dedupe-global.ts` (+ test).
   - `model:opus` `effort:xhigh` `@general-purpose` `exec:subagent`. Confidence 75%.
 
-- [ ] **3.4 Coarse function tag + LLM function classifier.**
-  - Derive `function` from title tokens; new `function-classify` task (`client.ts` TaskName + `models.yml` block +
-    `renderTemplate` wrapper, mirroring `correlate`) for ambiguous survivors.
-  - **No vendor shortcut exists** — Workable's `function` field is mostly empty in practice (verified).
-  - This is also where the matcher's residue lands: synonymy (Talent Acquisition↔Recruiter) and morphology
-    (Accounting↔Accountant) — the stress test proved these are **not** thresholdable.
-  - Test must pass: derivation over the **real** `live-titles.json` corpus (not invented titles); classifier
-    fail-loud on emission-schema drift (mirror `correlate`'s emission tests); measured per-function accuracy reported.
+- [ ] **3.4 Coarse function tag + LLM function classifier.** _(reshaped by the tier study — read
+  `docs/superpowers/reports/2026-07-17-matching-tiers.md` §M3.4 impacts first; 2b.1 must land first, it cuts this load ~60%.)_
+  - **Coarse `function` tag = dept-mapped, title fallback** — NOT title-tokens-only. Measured: all 2,909 harvested
+    postings carry a board dept/team string; map that to the function enum, fall back to title tokens only when absent.
+    **This field must land in the M3.1 `postings` schema** (add to 3.1's column list) — the classifier consumes it.
+  - **No vendor shortcut** — Workable's `function` field is mostly empty in practice (verified).
+  - Classifier scope is now the ~213 measured residue FNs (after 2b.1's synonym table): **judgment, not lookup** —
+    altitude (SDR/Head-of on an AE résumé, ~70 rows), adjacency ("Recruiting Coordinator" vs Recruiter), form quirks.
+  - `function-classify` shape (measured): receives function-gated stack-rejects as `{title, dept, first 300 JD chars}`,
+    batched ~25/call; decides `match | altitude_mismatch(junior|senior) | adjacent_no | no`. Ambiguous band ≈24/target
+    (~10% true); ~4 cheap calls per broad-function scan — **fits the 10-credit gate**. A perfect classifier ⇒ recall 0.942.
+  - **JD text is stage-1 POISON** (measured: 1,673 FPs) — it may enter ONLY the classifier + deep-score inputs, never
+    the stage-1 filter. Pin this as a test in 3.5.
+  - `client.ts` TaskName + `models.yml` block + `renderTemplate` wrapper, mirroring `correlate`.
+  - Test must pass: dept→function mapping over the **real** `live-titles.json` / `live-jd-sample.json`; classifier
+    fail-loud on emission-schema drift (mirror `correlate`'s emission tests); measured band size + accuracy reported.
   - Files: `src/server/llm/…`, `config/models.yml`, `src/server/sources/function.ts` (+ tests).
-  - `model:sonnet` `effort:xhigh` `@general-purpose` `exec:subagent`. Confidence 70%.
+  - `model:sonnet` `effort:xhigh` `@general-purpose` `exec:subagent`. Confidence 75% (up from 70 — shape now measured).
 
 - [ ] **3.5 Split `run.ts` into crawl + match loops.**
   - User scan → stage-1 filter over the pool (in-process, ms over ~30k) → classifier on ~200 → deep score ~40.

@@ -27,3 +27,6 @@ e2e/.scratch/
 
 # Local Claude Code worktree artifacts
 .claude/worktrees/
+
+# engine checkpoint artifact
+.cache/
