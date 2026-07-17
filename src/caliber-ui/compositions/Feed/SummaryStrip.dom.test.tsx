@@ -12,7 +12,7 @@ describe("SummaryStrip excluded cell (spec §8)", () => {
     render(
       <SummaryStrip stats={{ scanned: 214, worth: 38, ghosts: 12, flagged: 6, sinceLast: 9, excluded: 12 }} />,
     );
-    expect(screen.getByText("Excluded · outside your remote preferences")).toBeInTheDocument();
+    expect(screen.getByText("Excluded · requires relocation abroad")).toBeInTheDocument();
     expect(screen.getByText("12")).toBeInTheDocument();
   });
 });

@@ -17,9 +17,10 @@ export function SummaryStrip({ stats }: SummaryStripProps) {
     { label: "Scanned today", value: stats.scanned },
     { label: "Worth your time", value: stats.worth },
     { label: "Flagged ghost/scam", value: stats.flagged, tone: "var(--accent-ink)" },
-    // The three-gate predicate's trust signal (2026-07-14 remote-fit spec
-    // §8): what vanished, not silently — 0 when every gate is a no-op.
-    { label: "Excluded · outside your remote preferences", value: stats.excluded },
+    // Post-pool-cutover (DECISION A): eligibility (tz/schedule/employment)
+    // demotes rank, never hides — so `excluded` counts ONLY the one surviving
+    // hard-hide, relocation "stay" hiding abroad roles. Label says exactly that.
+    { label: "Excluded · requires relocation abroad", value: stats.excluded },
     { label: "Since last scan", value: stats.sinceLast },
   ];
   return (
