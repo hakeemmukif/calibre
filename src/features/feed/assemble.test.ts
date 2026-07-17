@@ -30,6 +30,7 @@ function baseJoined(
     raw: {},
     tzBand: null,
     hiringStructure: null,
+    postingId: null,
     ...overrides,
   };
 
