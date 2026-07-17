@@ -26,6 +26,10 @@ task below that touches matching or ingestion must be validated against real dat
 | D5 | **Build Recruitee's per-board robots gate** _(generalized 2026-07-17 into a per-tenant crawl-permission gate covering robots + Content-Signal, also gating Teamtailor — DECISION B)_ | Task 4.3a/4.3b/4.4 |
 | D6 | **Order: Workable → Personio → Teamtailor → Recruitee → Pinpoint → Rippling (conditional)** _(amended 2026-07-17, DECISION B — see `reports/2026-07-17-handoff-integration.md` §1)_ | Phase 4 sequence; SmartRecruiters OUT |
 | D7 | **Engine ids keep the colon** (`gh:vercel`) | No code change; already conformant |
+| D8 | **Personio XML + Teamtailor RSS parse via `fast-xml-parser`** (one dep, both connectors) — resolves the parser fork reserved for the operator | Tasks 4.2, 4.3b |
+| D9 | **`fetchDetail` interface unchanged** `{description, applyUrl?}` — detail-sourced `createdOn`/`companyName` are DROPPED; postedAt← pool `firstSeenAt`, company← source row (moot if Rippling is dropped, D11) | Task 4.6 |
+| D10 | **Location-bucket v1 = the arch's proposed rule** (lowercase→remote-keyword→city-before-comma→empty; under-merge over over-merge) | Task P.2 |
+| D11 | **Rippling — UNRESOLVED.** Operator asked to "bypass" the limit; declined — the endpoint is public/unauthenticated (no technical barrier to bypass), so the only "limit" is §7 ToS uncertainty, and evasion (proxies/UA-spoof/flag-off) is forbidden by §7 + the session's own precedent (SmartRecruiters/topstartups/Getro all dropped). Real choice remains **drop (recommended) / defer / verify a legitimate documented Rippling API exists**. No bypass will be built. | Task 4.6 |
 
 ## Spec references
 
