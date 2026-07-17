@@ -143,3 +143,33 @@ export function allowedStructuresFor(pref: EmploymentPref): HiringStructure[] | 
   if (pref === "employee") return ["local-entity", "eor"];
   return ["local-entity"]; // pref === "local-entity"
 }
+
+// Soft-rank alignment predicates (DECISION A, full soft rank — moved here from
+// features/feed/jobsFeed.ts by P.5 so the SQL demotion term in repos/jobs.ts
+// has one canonical pure counterpart to be pinned against). A stated band/
+// structure OUTSIDE the allowed set is misaligned (demoted, never hidden); a
+// null allowed-set ("no gate": any-hours / any) or a NULL stated value counts
+// as aligned — the "stated facts only" rule, no fabricated default.
+export function isBandAligned(band: TzBand | null, allowedBands: TzBand[] | null): boolean {
+  return allowedBands === null || band === null || allowedBands.includes(band);
+}
+
+export function isStructureAligned(
+  structure: HiringStructure | null,
+  allowedStructures: HiringStructure[] | null,
+): boolean {
+  return allowedStructures === null || structure === null || allowedStructures.includes(structure);
+}
+
+// The deterministic demotion count the feed's ORDER BY leads with (0 = fully
+// aligned, sorts first; 2 = band AND structure both out-of-band, sorts last).
+// repos/jobs.ts builds the equivalent SQL CASE; a parity test pins SQL ≡ this
+// TS over the full (band × structure × null) matrix.
+export function misalignedCount(
+  band: TzBand | null,
+  structure: HiringStructure | null,
+  allowedBands: TzBand[] | null,
+  allowedStructures: HiringStructure[] | null,
+): number {
+  return (isBandAligned(band, allowedBands) ? 0 : 1) + (isStructureAligned(structure, allowedStructures) ? 0 : 1);
+}

@@ -4,18 +4,18 @@ import type { LlmClient } from "@/lib/llm/client";
 import { makeMockLlm } from "@/lib/llm/mock";
 import { insertProfile, insertResume, insertSource } from "@/server/persistence/repos/__fixtures__/helpers";
 import { createSearchRunsRepo, type SearchRunRow } from "@/server/persistence/repos/searchRuns";
-import { creditLedger, jobs, jobScores, resumes, searchRuns, sources, users } from "@/server/persistence/schema";
-import type { SourceRow } from "@/server/persistence/repos/sources";
+import { crawlRuns, creditLedger, jobs, jobScores, postings, resumes, searchRuns, sources, users } from "@/server/persistence/schema";
+import type { NewPosting } from "@/server/persistence/repos/postings";
 import { createTestDb, type TestDb } from "@/server/persistence/test-db";
-import type { RawPosting, SourceConnector } from "./connector";
-import { connectorForSource as realConnectorForSource } from "./connectors";
 import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 import { balance, grant, InsufficientCreditsError } from "@/server/credits";
 import { ScanFrame, type JobPhaseData, type SourceEventData } from "@/types";
 
-// Scoring is wired into the run (B6) — every startSearch() call that
-// actually upserts a matched job reaches scoreTopCandidates, which needs an
-// LlmClient. No network in tests: a scripted mock covering both stages.
+// P.5 pool cutover: discovery is a read of the shared `postings` pool, not a
+// per-source connector fan-out. Tests seed the pool directly (insertPosting)
+// and inject only the LLM (deps.llm) — the connector stubs / concurrency /
+// connectorTimeout deps are GONE. Scoring is still wired in (B6), so a scripted
+// LLM mock covers both stages; no network in tests.
 const testLlm = makeMockLlm({
   "jd-extract": {
     title: "Data Engineer",
@@ -100,9 +100,7 @@ const costingLlm: LlmClient = {
 // A match-score LlmClient that never settles on its own — it resolves ONLY
 // when its AbortSignal fires. Proves (a) the hard-cap timer stays armed
 // through the scoring phase and (b) handle.signal is threaded all the way to
-// the LLM call. Under the pre-M0 code (timer cleared after discovery, signal
-// not threaded) `args.signal` is undefined here, so this hangs until the
-// test's waitForTerminal deadline and the test fails.
+// the LLM call.
 const hangingLlm: LlmClient = {
   async complete(args) {
     if (args.signal?.aborted) throw new Error("llm call aborted (hard runtime cap)");
@@ -131,6 +129,49 @@ async function findJobByDedupeKey(db: TestDb, dedupeKey: string) {
   return row;
 }
 
+async function jobsForDedupeKey(db: TestDb, dedupeKey: string) {
+  return db.select().from(jobs).where(eq(jobs.dedupeKey, dedupeKey));
+}
+
+let postingCounter = 0;
+// Seed a live pool posting. Defaults to a title the résumé's "Senior Data
+// Engineer" targets match (roleFuzzyMatch) and that the function classifier
+// resolves deterministically to "data" (no LLM `function-classify` call), so a
+// hanging/mock LLM only ever sees jd-extract / match-score.
+async function insertPosting(db: TestDb, sourceId: string, overrides: Partial<NewPosting> = {}) {
+  postingCounter += 1;
+  const key = `pool-ck-${postingCounter}`;
+  const [row] = await db
+    .insert(postings)
+    .values({
+      canonicalKey: key,
+      url: `https://example.com/${key}`,
+      sourceId,
+      title: "Data Engineer",
+      company: "Acme",
+      location: "Remote",
+      persona: "remote",
+      description: "Build data pipelines with SQL.",
+      aliases: [],
+      raw: {},
+      ...overrides,
+    })
+    .returning();
+  return row;
+}
+
+// Polls the raw table (not the userId-scoped repo) — used by both single- and
+// multi-user tests; just needs "has this run finished".
+async function waitForTerminal(_repo: ReturnType<typeof createSearchRunsRepo>, id: string): Promise<SearchRunRow> {
+  const deadline = Date.now() + 3000;
+  while (Date.now() < deadline) {
+    const [row] = await state.testDb.select().from(searchRuns).where(eq(searchRuns.id, id)).limit(1);
+    if (row && (row.status === "completed" || row.status === "failed")) return row;
+    await new Promise((r) => setTimeout(r, 5));
+  }
+  throw new Error(`run ${id} did not reach a terminal state within the test timeout`);
+}
+
 const state = vi.hoisted(() => ({ testDb: undefined as unknown as TestDb }));
 vi.mock("@/server/persistence/db", () => ({ getDb: () => state.testDb }));
 // No real liveness probe (no network in tests) — scoreTopCandidates calls
@@ -154,45 +195,6 @@ const {
 } = await import("./run");
 const { __resetForTests, get: getRunHandle, getActiveRunForPersona } = await import("@/server/runs/registry");
 const { scoreJob: scoreJobSpy } = await import("@/server/score");
-
-type StubBehavior = RawPosting[] | { fail: Error } | "hang-until-aborted";
-
-function stubConnector(source: SourceRow, behavior: StubBehavior): SourceConnector {
-  return {
-    id: source.id,
-    kind: source.kind,
-    persona: source.persona,
-    async *discover(ctx) {
-      if (behavior === "hang-until-aborted") {
-        // Check the already-aborted case explicitly — an 'abort' listener
-        // added after the signal already fired never triggers.
-        if (ctx.signal.aborted) throw new Error("connector aborted (hard runtime cap)");
-        await new Promise((_resolve, reject) => {
-          ctx.signal.addEventListener("abort", () => reject(new Error("connector aborted (hard runtime cap)")));
-        });
-        return;
-      }
-      if (!Array.isArray(behavior)) throw behavior.fail;
-      for (const p of behavior) {
-        ctx.onProgress({ stage: "fetch", current: 1, total: 1, label: p.title });
-        yield p;
-      }
-    },
-  };
-}
-
-// Polls the raw table (not the userId-scoped repo) — this helper is used by
-// both single- and multi-user tests below and just needs "has this run
-// finished", regardless of which user owns it.
-async function waitForTerminal(_repo: ReturnType<typeof createSearchRunsRepo>, id: string): Promise<SearchRunRow> {
-  const deadline = Date.now() + 3000;
-  while (Date.now() < deadline) {
-    const [row] = await state.testDb.select().from(searchRuns).where(eq(searchRuns.id, id)).limit(1);
-    if (row && (row.status === "completed" || row.status === "failed")) return row;
-    await new Promise((r) => setTimeout(r, 5));
-  }
-  throw new Error(`run ${id} did not reach a terminal state within the test timeout`);
-}
 
 const resumeFixture = {
   structured: {
@@ -221,183 +223,82 @@ describe("startSearch", () => {
 
   afterEach(async () => {
     __resetForTests();
-    // Every test shares one libsql test DB (beforeAll) — without this, a
-    // later test's listEnabledByPersona("remote") would also see earlier
-    // tests' source rows. job_scores (B6) FKs jobs, so it must go first.
+    // One shared libsql test DB (beforeAll) — clean every table a run touches
+    // so a later test's pool read / listEnabledByPersona doesn't see earlier
+    // rows. FK order: jobs (FK postings, onDelete set null) + job_scores (FK
+    // jobs) first; postings (FK sources) before sources.
     await state.testDb.delete(jobScores);
     await state.testDb.delete(jobs);
     await state.testDb.delete(searchRuns);
+    await state.testDb.delete(postings);
+    await state.testDb.delete(crawlRuns);
     await state.testDb.delete(sources);
     await state.testDb.delete(resumes);
   });
 
-  it("returns a queued SearchRun immediately, then completes: upserts matched jobs, records stats.perSource incl. a partial failure", async () => {
+  it("returns a queued SearchRun immediately, then completes: admits pool survivors, records per-source survivor counts", async () => {
     const runsRepo = createSearchRunsRepo(state.testDb);
     await insertResume(state.testDb, { ...resumeFixture, isActive: true });
 
     const good = await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
-    await insertSource(state.testDb, { id: "src-bad", kind: "board", persona: "remote", config: { country: "MY" } });
+    // A second scoped source with zero survivors — perSource is seeded with
+    // every scoped source, so it reports {found: 0}, never absent.
+    await insertSource(state.testDb, { id: "src-quiet", kind: "board", persona: "remote", config: { country: "MY" } });
 
-    const matching: RawPosting = {
-      sourceId: good.id,
-      url: "https://example.com/jobs/1",
-      title: "Data Engineer",
-      company: "Acme",
-      location: "Remote",
-      description: "Build data pipelines with SQL.",
-    };
-    const nonMatching: RawPosting = {
-      sourceId: good.id,
-      url: "https://example.com/jobs/2",
-      title: "Product Designer",
-      company: "Acme",
-      location: "Remote",
-    };
+    await insertPosting(state.testDb, good.id, { url: "https://example.com/jobs/1", title: "Data Engineer" });
+    await insertPosting(state.testDb, good.id, { url: "https://example.com/jobs/2", title: "Product Designer" });
 
-    const run = await startSearch(BOOTSTRAP_ADMIN_ID, 
-      { persona: "remote" },
-      {
-        concurrency: 5,
-        connectorTimeoutMs: 500,
-        hardRunTimeoutMs: 3000,
-        llm: testLlm,
-        connectorForSource: (source) =>
-          source.id === "src-good"
-            ? stubConnector(source, [matching, nonMatching])
-            : stubConnector(source, { fail: new Error("board unreachable") }),
-      },
-    );
+    const run = await startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" }, { llm: testLlm });
 
     expect(run.status).toBe("queued");
     expect(run.persona).toBe("remote");
 
     const finalRow = await waitForTerminal(runsRepo, run.id);
     expect(finalRow.status).toBe("completed");
-    expect(finalRow.stats.scanned).toBe(2);
-    expect(finalRow.stats.matched).toBe(1);
+    expect(finalRow.stats.scanned).toBe(2); // pool rows considered (both remote postings)
+    expect(finalRow.stats.matched).toBe(1); // stage-1 survivors ("Product Designer" shares no tokens)
     expect(finalRow.stats.scored).toBe(1);
     expect(finalRow.stats.worth).toBe(1); // testLlm's canned verdict is "Apply"
     expect(finalRow.stats.perSource).toEqual(
       expect.arrayContaining([
-        { sourceId: "src-good", found: 2, errors: 0 },
-        { sourceId: "src-bad", found: 0, errors: 1 },
+        { sourceId: "src-good", found: 1, errors: 0 }, // survivor count; no fetch, so errors stays 0
+        { sourceId: "src-quiet", found: 0, errors: 0 },
       ]),
     );
 
-    const upserted = await findJobByDedupeKey(state.testDb, "example.com/jobs/1");
-    expect(upserted?.title).toBe("Data Engineer");
-    expect(upserted?.company).toBe("Acme");
-    expect(upserted?.sourceId).toBe("src-good");
+    const admitted = await findJobByDedupeKey(state.testDb, "example.com/jobs/1");
+    expect(admitted?.title).toBe("Data Engineer");
+    expect(admitted?.company).toBe("Acme");
+    expect(admitted?.sourceId).toBe("src-good");
+    expect(admitted?.postingId).toBeTruthy(); // arch §3.4 — the posting FK is stamped at admission
 
-    const notUpserted = await findJobByDedupeKey(state.testDb, "example.com/jobs/2");
-    expect(notUpserted).toBeUndefined();
+    const notAdmitted = await findJobByDedupeKey(state.testDb, "example.com/jobs/2");
+    expect(notAdmitted).toBeUndefined();
   });
 
-  // Regression (Task 0.5): resolveConnector(source) used to sit OUTSIDE the
-  // per-source try/catch in runFanOut — a resolution throw for ANY single
-  // source rejected that source's pLimit task, which rejected Promise.all,
-  // which killed the WHOLE run via runFanOut's outer catch, discarding every
-  // other source's work. This uses the REAL connectorForSource (not a stub)
-  // on an ats source with no config.geo.scope, so parseSourceGeo's fail-loud
-  // throw (src/server/search/geo.ts:116, called eagerly by connectorForSource
-  // at src/server/search/connectors/index.ts:24) fires during RESOLUTION,
-  // before connector.discover() is ever called — exactly the failure mode
-  // that ~861 engine-seeded rows could trigger from one malformed row.
-  it("a source whose connector resolution throws is recorded as a per-source failure — the run completes and other sources still yield their jobs", async () => {
-    const runsRepo = createSearchRunsRepo(state.testDb);
-    await insertResume(state.testDb, { ...resumeFixture, isActive: true });
-
-    const good = await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
-    // config: {} — no geo.scope — parseSourceGeo throws for an ats source
-    // missing this annotation (geo.ts:116).
-    await insertSource(state.testDb, { id: "src-malformed", kind: "ats", persona: "remote", config: {} });
-
-    const matching: RawPosting = {
-      sourceId: good.id,
-      url: "https://example.com/jobs/3",
-      title: "Data Engineer",
-      company: "Acme",
-      location: "Remote",
-      description: "Build data pipelines with SQL.",
-    };
-
-    const run = await startSearch(BOOTSTRAP_ADMIN_ID,
-      { persona: "remote" },
-      {
-        concurrency: 5,
-        connectorTimeoutMs: 500,
-        hardRunTimeoutMs: 3000,
-        llm: testLlm,
-        // The real connector registry — src-malformed's resolution throws
-        // (parseSourceGeo); src-good resolves fine but must still go through
-        // the real registry's config.connector lookup, so route it to a stub
-        // via the "connector" key rather than bypassing resolution entirely.
-        connectorForSource: (source) =>
-          source.id === "src-malformed" ? realConnectorForSource(source) : stubConnector(source, [matching]),
-      },
-    );
-
-    expect(run.status).toBe("queued");
-
-    const finalRow = await waitForTerminal(runsRepo, run.id);
-    expect(finalRow.status).toBe("completed");
-    expect(finalRow.stats.scanned).toBe(1);
-    expect(finalRow.stats.matched).toBe(1);
-    expect(finalRow.stats.perSource).toEqual(
-      expect.arrayContaining([
-        { sourceId: "src-good", found: 1, errors: 0 },
-        { sourceId: "src-malformed", found: 0, errors: 1 },
-      ]),
-    );
-
-    const upserted = await findJobByDedupeKey(state.testDb, "example.com/jobs/3");
-    expect(upserted?.sourceId).toBe("src-good");
-  });
-
-  it("board-kind sources bypass the role matcher; ats-kind sources still require a match (task-7b)", async () => {
+  // Board-bypass DROPPED at cutover (spec P.5): the crawler fetches whole
+  // boards unscoped, so the pool is uniformly unscoped and board-sourced
+  // postings go through the SAME roleFuzzyMatch gate as ats — no bypass.
+  it("board-sourced postings go through the same role matcher as ats (the pre-cutover board bypass is gone)", async () => {
     const runsRepo = createSearchRunsRepo(state.testDb);
     await insertResume(state.testDb, { ...resumeFixture, isActive: true });
     const board = await insertSource(state.testDb, { id: "src-board", kind: "board", persona: "remote", config: { country: "MY" } });
     const ats = await insertSource(state.testDb, { id: "src-ats", kind: "ats", persona: "remote" });
 
-    // "Warehouse Associate" shares zero tokens with the résumé's "Senior Data
-    // Engineer" — roleFuzzyMatch would reject it from either source.
-    const boardPosting: RawPosting = {
-      sourceId: board.id,
-      url: "https://board.example.com/jobs/1",
-      title: "Warehouse Associate",
-      company: "Acme",
-      location: "Remote",
-      description: "Manage warehouse inventory.",
-    };
-    const atsPosting: RawPosting = {
-      sourceId: ats.id,
-      url: "https://ats.example.com/jobs/1",
-      title: "Warehouse Associate",
-      company: "Beta Corp",
-      location: "Remote",
-      description: "Manage warehouse inventory.",
-    };
+    // "Warehouse Associate" shares zero tokens with "Senior Data Engineer" —
+    // it must be rejected regardless of source kind now.
+    await insertPosting(state.testDb, board.id, { url: "https://board.example.com/jobs/1", title: "Warehouse Associate" });
+    await insertPosting(state.testDb, ats.id, { url: "https://ats.example.com/jobs/1", title: "Warehouse Associate" });
 
-    const run = await startSearch(BOOTSTRAP_ADMIN_ID, 
-      { persona: "remote" },
-      {
-        llm: testLlm,
-        connectorForSource: (source) =>
-          source.id === "src-board" ? stubConnector(source, [boardPosting]) : stubConnector(source, [atsPosting]),
-      },
-    );
+    const run = await startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" }, { llm: testLlm });
 
     const finalRow = await waitForTerminal(runsRepo, run.id);
     expect(finalRow.status).toBe("completed");
     expect(finalRow.stats.scanned).toBe(2);
-    expect(finalRow.stats.matched).toBe(1); // only the board posting bypasses the matcher
+    expect(finalRow.stats.matched).toBe(0); // neither passes the matcher — no board leniency
 
-    const boardJob = await findJobByDedupeKey(state.testDb, "board.example.com/jobs/1");
-    expect(boardJob?.title).toBe("Warehouse Associate");
-
-    const atsJob = await findJobByDedupeKey(state.testDb, "ats.example.com/jobs/1");
-    expect(atsJob).toBeUndefined();
+    expect(await findJobByDedupeKey(state.testDb, "board.example.com/jobs/1")).toBeUndefined();
+    expect(await findJobByDedupeKey(state.testDb, "ats.example.com/jobs/1")).toBeUndefined();
   });
 
   it("throws NoActiveResumeError when no résumé exists", async () => {
@@ -430,8 +331,7 @@ describe("startSearch", () => {
     const runsRepo = createSearchRunsRepo(state.testDb);
     // Malformed `structured` (missing `contact`/`experience`) simulates a
     // corrupted DB row — deriveRoleTargets throws synchronously inside
-    // runFanOut, outside the per-connector try/catch that tolerates
-    // connector-level failures, exercising the "last-resort net" path.
+    // runFanOut, exercising the "last-resort net" path.
     await insertResume(state.testDb, {
       ...resumeFixture,
       structured: { name: "Jane Doe" } as unknown as typeof resumeFixture.structured,
@@ -439,13 +339,9 @@ describe("startSearch", () => {
     });
     await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
 
-    const runPromise = startSearch(BOOTSTRAP_ADMIN_ID, 
-      { persona: "remote" },
-      { connectorForSource: (source) => stubConnector(source, []) },
-    );
-    // Subscribe via the synchronously-reserved persona slot (finding 4's
-    // fix) before awaiting — guarantees we're listening before the crash,
-    // which only happens after an internal DB await resolves.
+    const runPromise = startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" });
+    // Subscribe via the synchronously-reserved persona slot (finding 4's fix)
+    // before awaiting — guarantees we're listening before the crash.
     const reservedId = getActiveRunForPersona(BOOTSTRAP_ADMIN_ID, "remote")!;
     const handle = getRunHandle(reservedId)!;
     const events: string[] = [];
@@ -463,11 +359,15 @@ describe("startSearch", () => {
 
   it("throws ActiveRunConflictError with the running run's id when a run is already active for that persona", async () => {
     await insertResume(state.testDb, { ...resumeFixture, isActive: true });
-    await insertSource(state.testDb, { id: "src-slow", kind: "ats", persona: "remote" });
+    const good = await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
+    await insertPosting(state.testDb, good.id);
 
-    const first = await startSearch(BOOTSTRAP_ADMIN_ID, 
+    // First run hangs in scoring (hangingLlm) so its persona slot stays
+    // reserved while the second start races it; the hard cap ends it.
+    const first = await startSearch(
+      BOOTSTRAP_ADMIN_ID,
       { persona: "remote" },
-      { connectorForSource: (s) => stubConnector(s, "hang-until-aborted"), hardRunTimeoutMs: 200 },
+      { llm: hangingLlm, hardRunTimeoutMs: 300 },
     );
 
     let caught: unknown;
@@ -483,7 +383,8 @@ describe("startSearch", () => {
   it("the 409 active-run mutex is per-user (Fable design review) — A's active run for a persona does NOT block B from starting one", async () => {
     const runsRepo = createSearchRunsRepo(state.testDb);
     await insertResume(state.testDb, { ...resumeFixture, isActive: true });
-    await insertSource(state.testDb, { id: "src-slow", kind: "ats", persona: "remote" });
+    const good = await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
+    await insertPosting(state.testDb, good.id);
 
     const [userB] = await state.testDb
       .insert(users)
@@ -493,66 +394,30 @@ describe("startSearch", () => {
     await insertResume(state.testDb, { ...resumeFixture, userId: userB.id, isActive: true });
     await grant(userB.id, 30, "admin");
 
-    // A starts a slow (never-completing-in-time) run for "remote" — reserves
-    // A's persona slot.
-    await startSearch(
-      BOOTSTRAP_ADMIN_ID,
-      { persona: "remote" },
-      { connectorForSource: (s) => stubConnector(s, "hang-until-aborted"), hardRunTimeoutMs: 200 },
-    );
+    // A starts a slow (hangs-in-scoring) run for "remote" — reserves A's slot.
+    await startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" }, { llm: hangingLlm, hardRunTimeoutMs: 300 });
 
     // B starting a run for the SAME persona must NOT see A's active run.
-    const bRun = await startSearch(
-      userB.id,
-      { persona: "remote" },
-      { connectorForSource: (s) => stubConnector(s, "hang-until-aborted"), hardRunTimeoutMs: 200 },
-    );
+    const bRun = await startSearch(userB.id, { persona: "remote" }, { llm: hangingLlm, hardRunTimeoutMs: 300 });
     expect(bRun.status).toBe("queued");
 
     const bFinal = await waitForTerminal(runsRepo, bRun.id);
     expect(bFinal.userId).toBe(userB.id);
   });
 
-  it("hard runtime cap: aborts an unresponsive connector, records it as a per-source error, and still completes", async () => {
-    const runsRepo = createSearchRunsRepo(state.testDb);
-    await insertResume(state.testDb, { ...resumeFixture, isActive: true });
-    await insertSource(state.testDb, { id: "src-hangs", kind: "ats", persona: "remote" });
-
-    const run = await startSearch(BOOTSTRAP_ADMIN_ID, 
-      { persona: "remote" },
-      {
-        hardRunTimeoutMs: 20,
-        connectorTimeoutMs: 60_000,
-        connectorForSource: (source) => stubConnector(source, "hang-until-aborted"),
-      },
-    );
-
-    const finalRow = await waitForTerminal(runsRepo, run.id);
-    expect(finalRow.status).toBe("completed");
-    expect(finalRow.stats.perSource).toEqual([{ sourceId: "src-hangs", found: 0, errors: 1 }]);
-  });
-
   it("hard runtime cap covers scoring: a hung LLM call is aborted, the run still completes and releases its persona slot", async () => {
     const runsRepo = createSearchRunsRepo(state.testDb);
     await insertResume(state.testDb, { ...resumeFixture, isActive: true });
     const good = await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
+    await insertPosting(state.testDb, good.id, { url: "https://example.com/jobs/hang" });
 
-    const posting: RawPosting = {
-      sourceId: good.id,
-      url: "https://example.com/jobs/hang",
-      title: "Data Engineer",
-      company: "Acme",
-      location: "Remote",
-      description: "Build data pipelines with SQL.",
-    };
-
-    // Discovery finishes instantly (array stub); scoring then hangs in the
-    // first LLM call (jd-extract). The 100ms hard cap must fire DURING scoring
-    // — impossible under the pre-M0 code, which cleared the timer after
-    // discovery — abort the LLM call, and let the run complete (0 scored).
-    const run = await startSearch(BOOTSTRAP_ADMIN_ID,
+    // Pool read finishes instantly; scoring then hangs in the first LLM call.
+    // The 100ms hard cap must fire DURING scoring, abort the LLM call, and let
+    // the run complete (0 scored).
+    const run = await startSearch(
+      BOOTSTRAP_ADMIN_ID,
       { persona: "remote" },
-      { llm: hangingLlm, hardRunTimeoutMs: 100, connectorForSource: (source) => stubConnector(source, [posting]) },
+      { llm: hangingLlm, hardRunTimeoutMs: 100 },
     );
 
     const finalRow = await waitForTerminal(runsRepo, run.id);
@@ -571,14 +436,13 @@ describe("startSearch", () => {
     // slot then opens with the signal already aborted — it must bail BEFORE
     // touching the LLM, so exactly ONE llm.complete call happens total.
     hangingLlmCalls = 0;
-    const postings: RawPosting[] = [
-      { sourceId: good.id, url: "https://example.com/jobs/drain-1", title: "Data Engineer", company: "Acme", location: "Remote", description: "Build data pipelines with SQL." },
-      { sourceId: good.id, url: "https://example.com/jobs/drain-2", title: "Data Engineer", company: "Beta Corp", location: "Remote", description: "Build more data pipelines with SQL." },
-    ];
+    await insertPosting(state.testDb, good.id, { url: "https://example.com/jobs/drain-1", company: "Acme" });
+    await insertPosting(state.testDb, good.id, { url: "https://example.com/jobs/drain-2", company: "Beta Corp" });
 
-    const run = await startSearch(BOOTSTRAP_ADMIN_ID,
+    const run = await startSearch(
+      BOOTSTRAP_ADMIN_ID,
       { persona: "remote" },
-      { llm: countingHangingLlm, scoreConcurrency: 1, hardRunTimeoutMs: 100, connectorForSource: (source) => stubConnector(source, postings) },
+      { llm: countingHangingLlm, scoreConcurrency: 1, hardRunTimeoutMs: 100 },
     );
 
     const finalRow = await waitForTerminal(runsRepo, run.id);
@@ -587,79 +451,13 @@ describe("startSearch", () => {
     expect(hangingLlmCalls).toBe(1); // candidate 2 bailed at slot open, never reached the LLM
   });
 
-  it("alias-merge preserves a previously-recorded cross-source alias across separate runs (regression)", async () => {
-    await insertResume(state.testDb, { ...resumeFixture, isActive: true });
-    const ats = await insertSource(state.testDb, { id: "src-ats", kind: "ats", persona: "remote" });
-    const board = await insertSource(state.testDb, { id: "src-board", kind: "board", persona: "remote", config: { country: "MY" } });
-    const runsRepo = createSearchRunsRepo(state.testDb);
-
-    const atsPosting: RawPosting = {
-      sourceId: ats.id,
-      url: "https://ats.example.com/jobs/data-engineer",
-      title: "Data Engineer",
-      company: "Acme",
-      location: "Remote",
-    };
-    const boardPosting: RawPosting = {
-      sourceId: board.id,
-      url: "https://board.example.com/jobs/data-engineer",
-      title: "Data Engineer",
-      company: "Acme",
-      location: "Remote",
-    };
-
-    let boardYields: RawPosting[] = [];
-    const deps = {
-      llm: testLlm,
-      connectorForSource: (source: SourceRow) =>
-        source.id === "src-ats" ? stubConnector(source, [atsPosting]) : stubConnector(source, boardYields),
-    };
-
-    // Run 1 — only the ATS posting is found.
-    const run1 = await startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" }, deps);
-    await waitForTerminal(runsRepo, run1.id);
-
-    const dedupeKey = "ats.example.com/jobs/data-engineer";
-    const afterRun1 = await findJobByDedupeKey(state.testDb, dedupeKey);
-    expect(afterRun1?.aliases).toEqual([]);
-
-    // Run 2 — the board also finds it now (same secondaryKey, different URL)
-    // → its URL is appended as an alias (ATS stays canonical).
-    boardYields = [boardPosting];
-    const run2 = await startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" }, deps);
-    await waitForTerminal(runsRepo, run2.id);
-
-    const afterRun2 = await findJobByDedupeKey(state.testDb, dedupeKey);
-    expect(afterRun2?.aliases).toEqual([{ sourceId: "src-board", url: boardPosting.url }]);
-
-    // Run 3 — the board doesn't come up this time; the alias it contributed
-    // in run 2 must NOT be wiped (task-B5-brief.md alias-merge requirement).
-    boardYields = [];
-    const run3 = await startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" }, deps);
-    await waitForTerminal(runsRepo, run3.id);
-
-    const afterRun3 = await findJobByDedupeKey(state.testDb, dedupeKey);
-    expect(afterRun3?.aliases).toEqual([{ sourceId: "src-board", url: boardPosting.url }]);
-  });
-
   it("B6 integration: scores top-N candidates and streams ordered progress(score/legitimacy)…job…done SSE, with stats.worth/ghosts populated", async () => {
     const runsRepo = createSearchRunsRepo(state.testDb);
     await insertResume(state.testDb, { ...resumeFixture, isActive: true });
     const good = await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
+    await insertPosting(state.testDb, good.id, { url: "https://example.com/jobs/integration" });
 
-    const posting: RawPosting = {
-      sourceId: good.id,
-      url: "https://example.com/jobs/integration",
-      title: "Data Engineer",
-      company: "Acme",
-      location: "Remote",
-      description: "Build data pipelines with SQL.",
-    };
-
-    const runPromise = startSearch(BOOTSTRAP_ADMIN_ID, 
-      { persona: "remote" },
-      { llm: testLlm, connectorForSource: (source) => stubConnector(source, [posting]) },
-    );
+    const runPromise = startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" }, { llm: testLlm });
     const reservedId = getActiveRunForPersona(BOOTSTRAP_ADMIN_ID, "remote")!;
     const handle = getRunHandle(reservedId)!;
     const events: { event: string; data: unknown }[] = [];
@@ -672,13 +470,10 @@ describe("startSearch", () => {
     expect(finalRow.stats.scored).toBe(1);
     expect(finalRow.stats.worth).toBe(1);
     expect(finalRow.stats.ghosts).toBe(0);
-    // Finding 3: candidates-exhausted, not cap-stopped — distinct from the
-    // dedicated daily-cap test below, which asserts `capStopped: true`.
     expect(finalRow.stats.capStopped).toBe(false);
 
     const order = events.map((e) => e.event);
-    // progress(sources) ... progress(fetch) ... progress(score)×k ... job ... progress(legitimacy) ... done
-    expect(order[0]).toBe("progress");
+    expect(order[0]).toBe("progress"); // "Reading the global postings pool…"
     expect(order[order.length - 1]).toBe("done");
     expect(order).toContain("job");
     const jobIndex = order.indexOf("job");
@@ -696,26 +491,13 @@ describe("startSearch", () => {
     expect((jobEvent.data as { legitimacy: { tier: string } }).legitimacy.tier).toBe("clear");
   });
 
-  it("emits source + jobPhase deltas and leaves a coherent final frame (M2)", async () => {
+  it("emits a synthetic 'pool' source lane + jobPhase deltas and leaves a coherent final frame (M2)", async () => {
     const runsRepo = createSearchRunsRepo(state.testDb);
     await insertResume(state.testDb, { ...resumeFixture, isActive: true });
     const good = await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
-    const posting: RawPosting = {
-      sourceId: good.id,
-      url: "https://example.com/jobs/a",
-      title: "Data Engineer",
-      company: "Acme",
-      location: "Remote",
-      description: "Build data pipelines with SQL.",
-    };
+    await insertPosting(state.testDb, good.id, { url: "https://example.com/jobs/a" });
 
-    const runPromise = startSearch(BOOTSTRAP_ADMIN_ID,
-      { persona: "remote" },
-      { llm: costingLlm, connectorForSource: (s) => stubConnector(s, [posting]) },
-    );
-    // Registry lets a test grab the handle synchronously via the reserved
-    // persona slot (same pattern as the B6 integration test above) — no
-    // test-only onHandle seam needed.
+    const runPromise = startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" }, { llm: costingLlm });
     const reservedId = getActiveRunForPersona(BOOTSTRAP_ADMIN_ID, "remote")!;
     const handle = getRunHandle(reservedId)!;
     const events: { event: string; data: unknown }[] = [];
@@ -731,10 +513,10 @@ describe("startSearch", () => {
       .map((e) => (e.data as JobPhaseData).phase);
     expect(phases).toEqual(expect.arrayContaining(["readingJD", "scoring", "done"]));
 
-    // Final frame is absolute + coherent: the source settled 'done', the
-    // scored job left the active set, and the counts add up.
+    // Final frame is absolute + coherent: the ONE synthetic pool lane settled
+    // 'done', the scored job left the active set, and the counts add up.
     const frame = ScanFrame.parse(handle.frame);
-    expect(frame.sources).toEqual([{ sourceId: "src-good", name: "Test Source", status: "done", found: 1 }]);
+    expect(frame.sources).toEqual([{ sourceId: "pool", name: "Global postings pool", status: "done", found: 1 }]);
     expect(frame.activeJobs).toEqual([]);
     expect(frame.counts).toEqual({ scored: 1, queued: 0, total: 1 });
   });
@@ -745,23 +527,17 @@ describe("startSearch", () => {
     const good = await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
 
     // Four matching candidates (distinct companies → 4 separate jobs).
-    // costingLlm charges 0.02/job (0.01 jd-extract + 0.01 match-score).
-    // scoreConcurrency:1 makes the rolling pool strictly sequential, so the
-    // per-slot cap gate is deterministic: job1 (spent 0→0.02) and job2
-    // (0.02→0.04) both open under the 0.025 cap and score, but job3's gate
-    // sees 0.04 >= 0.025 and bails, as does job4 → 2 scored. The old batched
-    // loop only checked BETWEEN batches of 3, so it scored all 3 of batch 1;
-    // this asserts the per-job gate the rolling pool restores.
-    const postings: RawPosting[] = [
-      { sourceId: good.id, url: "https://example.com/jobs/cap-1", title: "Data Engineer", company: "Acme", location: "Remote", description: "Build data pipelines with SQL." },
-      { sourceId: good.id, url: "https://example.com/jobs/cap-2", title: "Data Engineer", company: "Beta Corp", location: "Remote", description: "Build more data pipelines with SQL." },
-      { sourceId: good.id, url: "https://example.com/jobs/cap-3", title: "Data Engineer", company: "Gamma Corp", location: "Remote", description: "Build even more data pipelines with SQL." },
-      { sourceId: good.id, url: "https://example.com/jobs/cap-4", title: "Data Engineer", company: "Delta Corp", location: "Remote", description: "Build data pipelines yet again with SQL." },
-    ];
+    // costingLlm charges 0.02/job; scoreConcurrency:1 makes the rolling pool
+    // strictly sequential, so job1 (0→0.02) and job2 (0.02→0.04) score, but
+    // job3's gate sees 0.04 >= 0.025 and bails → 2 scored.
+    for (const n of [1, 2, 3, 4]) {
+      await insertPosting(state.testDb, good.id, { url: `https://example.com/jobs/cap-${n}`, company: `Co${n}` });
+    }
 
-    const run = await startSearch(BOOTSTRAP_ADMIN_ID,
+    const run = await startSearch(
+      BOOTSTRAP_ADMIN_ID,
       { persona: "remote" },
-      { llm: costingLlm, dailyCapUsd: 0.025, scoreConcurrency: 1, connectorForSource: (source) => stubConnector(source, postings) },
+      { llm: costingLlm, dailyCapUsd: 0.025, scoreConcurrency: 1 },
     );
 
     const finalRow = await waitForTerminal(runsRepo, run.id);
@@ -776,21 +552,15 @@ describe("startSearch", () => {
     await insertResume(state.testDb, { ...resumeFixture, isActive: true });
     const good = await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
 
-    // 3 candidates through the rolling pool: 2 with a description score
-    // normally via testLlm; the 3rd has no description and the stub
-    // connector has no fetchDetail, so ensureDescription leaves it null and
-    // scoreJob throws EmptyJobDescriptionError -> counted unscored, not a
-    // tolerated failure.
-    const postings: RawPosting[] = [
-      { sourceId: good.id, url: "https://example.com/jobs/mix-1", title: "Data Engineer", company: "Acme", location: "Remote", description: "Build data pipelines with SQL." },
-      { sourceId: good.id, url: "https://example.com/jobs/mix-2", title: "Data Engineer", company: "Beta Corp", location: "Remote", description: "Build more data pipelines with SQL." },
-      { sourceId: good.id, url: "https://example.com/jobs/mix-3", title: "Data Engineer", company: "Gamma Corp", location: "Remote" },
-    ];
+    // 3 candidates: 2 with a pooled JD score normally; the 3rd's posting has
+    // NO description, and the fixture/registry connector supplies no fetchDetail,
+    // so ensureDescription leaves it empty and scoreJob throws
+    // EmptyJobDescriptionError -> counted unscored, not a tolerated failure.
+    await insertPosting(state.testDb, good.id, { url: "https://example.com/jobs/mix-1", company: "Acme" });
+    await insertPosting(state.testDb, good.id, { url: "https://example.com/jobs/mix-2", company: "Beta Corp" });
+    await insertPosting(state.testDb, good.id, { url: "https://example.com/jobs/mix-3", company: "Gamma Corp", description: null });
 
-    const run = await startSearch(BOOTSTRAP_ADMIN_ID, 
-      { persona: "remote" },
-      { llm: testLlm, connectorForSource: (source) => stubConnector(source, postings) },
-    );
+    const run = await startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" }, { llm: testLlm });
 
     const finalRow = await waitForTerminal(runsRepo, run.id);
 
@@ -807,11 +577,10 @@ describe("startSearch", () => {
     const runsRepo = createSearchRunsRepo(state.testDb);
     await insertResume(state.testDb, { ...resumeFixture, isActive: true });
     const good = await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
-    const postings: RawPosting[] = [
-      { sourceId: good.id, url: "https://example.com/jobs/a", title: "Data Engineer", company: "Acme", location: "Remote", description: "Build data pipelines with SQL." },
-      { sourceId: good.id, url: "https://example.com/jobs/b", title: "Data Engineer", company: "Beta", location: "Remote", description: "More SQL pipelines." },
-    ];
-    const run = await startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" }, { llm: costingLlm, connectorForSource: (s) => stubConnector(s, postings) });
+    await insertPosting(state.testDb, good.id, { url: "https://example.com/jobs/a", company: "Acme" });
+    await insertPosting(state.testDb, good.id, { url: "https://example.com/jobs/b", company: "Beta" });
+
+    const run = await startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" }, { llm: costingLlm });
     const finalRow = await waitForTerminal(runsRepo, run.id);
 
     expect(finalRow.status).toBe("completed");
@@ -829,29 +598,35 @@ describe("startSearch", () => {
     const runsRepo = createSearchRunsRepo(state.testDb);
     await insertResume(state.testDb, { ...resumeFixture, isActive: true });
     const good = await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
-    const postings: RawPosting[] = [
-      { sourceId: good.id, url: "https://example.com/jobs/a", title: "Data Engineer", company: "Acme", location: "Remote", description: "Build data pipelines with SQL." },
-    ];
-    // scoreOnceThenThrow: first job scores, then the repo write path is poisoned to force runFanOut into failRun.
-    const run = await startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" }, { llm: costingLlm, connectorForSource: (s) => stubConnector(s, postings), afterScoring: () => { throw new Error("boom"); } });
+    await insertPosting(state.testDb, good.id, { url: "https://example.com/jobs/a", company: "Acme" });
+
+    // afterScoring: first job scores, then the write path is poisoned to force
+    // runFanOut into failRun.
+    const run = await startSearch(
+      BOOTSTRAP_ADMIN_ID,
+      { persona: "remote" },
+      { llm: costingLlm, afterScoring: () => { throw new Error("boom"); } },
+    );
     const finalRow = await waitForTerminal(runsRepo, run.id);
 
     expect(finalRow.status).toBe("failed");
     expect(finalRow.error).toContain("boom");
-    expect(finalRow.results).toHaveLength(1);           // the job that settled before the crash
-    expect(finalRow.stats.scored).toBe(1);              // accumulated, not zeroed
+    expect(finalRow.results).toHaveLength(1); // the job that settled before the crash
+    expect(finalRow.stats.scored).toBe(1); // accumulated, not zeroed
   });
 
   it("cap-hit run persists skipped:dailyCap result rows for the un-scored top candidates", async () => {
     const runsRepo = createSearchRunsRepo(state.testDb);
     await insertResume(state.testDb, { ...resumeFixture, isActive: true });
     const good = await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
-    const postings: RawPosting[] = [1, 2, 3, 4].map((n) => ({
-      sourceId: good.id, url: `https://example.com/jobs/cap-${n}`, title: "Data Engineer",
-      company: `Co${n}`, location: "Remote", description: "Build data pipelines with SQL.",
-    }));
-    const run = await startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" },
-      { llm: costingLlm, dailyCapUsd: 0.025, scoreConcurrency: 1, connectorForSource: (s) => stubConnector(s, postings) });
+    for (const n of [1, 2, 3, 4]) {
+      await insertPosting(state.testDb, good.id, { url: `https://example.com/jobs/cap-${n}`, company: `Co${n}` });
+    }
+    const run = await startSearch(
+      BOOTSTRAP_ADMIN_ID,
+      { persona: "remote" },
+      { llm: costingLlm, dailyCapUsd: 0.025, scoreConcurrency: 1 },
+    );
     const finalRow = await waitForTerminal(runsRepo, run.id);
 
     expect(finalRow.status).toBe("completed");
@@ -866,21 +641,13 @@ describe("startSearch", () => {
     const runsRepo = createSearchRunsRepo(state.testDb);
     await insertResume(state.testDb, { ...resumeFixture, isActive: true });
     const good = await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
-    const posting: RawPosting = {
-      sourceId: good.id,
-      url: "https://example.com/jobs/rescan-skip",
-      title: "Data Engineer",
-      company: "Acme",
-      location: "Remote",
-      description: "Build data pipelines with SQL.",
-    };
-    const deps = { llm: testLlm, connectorForSource: (source: SourceRow) => stubConnector(source, [posting]) };
+    await insertPosting(state.testDb, good.id, { url: "https://example.com/jobs/rescan-skip" });
 
-    const run1 = await startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" }, deps);
+    const run1 = await startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" }, { llm: testLlm });
     await waitForTerminal(runsRepo, run1.id);
 
     vi.mocked(scoreJobSpy).mockClear();
-    const run2 = await startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" }, deps);
+    const run2 = await startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" }, { llm: testLlm });
     const finalRow2 = await waitForTerminal(runsRepo, run2.id);
 
     expect(finalRow2.status).toBe("completed");
@@ -894,27 +661,17 @@ describe("startSearch", () => {
     const runsRepo = createSearchRunsRepo(state.testDb);
     const resumeA = await insertResume(state.testDb, { ...resumeFixture, isActive: true });
     const good = await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
-    const posting: RawPosting = {
-      sourceId: good.id,
-      url: "https://example.com/jobs/rescan-resume-swap",
-      title: "Data Engineer",
-      company: "Acme",
-      location: "Remote",
-      description: "Build data pipelines with SQL.",
-    };
-    const deps = { llm: testLlm, connectorForSource: (source: SourceRow) => stubConnector(source, [posting]) };
+    await insertPosting(state.testDb, good.id, { url: "https://example.com/jobs/rescan-resume-swap" });
 
-    const run1 = await startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" }, deps);
+    const run1 = await startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" }, { llm: testLlm });
     await waitForTerminal(runsRepo, run1.id);
 
-    // Swap the active résumé — mirrors resumesRepo.create's deactivate-then-
-    // insert; done directly since insertResume is a raw fixture insert, not
-    // routed through the repo.
+    // Swap the active résumé — mirrors resumesRepo.create's deactivate-then-insert.
     await state.testDb.update(resumes).set({ isActive: false }).where(eq(resumes.id, resumeA.id));
     await insertResume(state.testDb, { ...resumeFixture, isActive: true });
 
     vi.mocked(scoreJobSpy).mockClear();
-    const run2 = await startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" }, deps);
+    const run2 = await startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" }, { llm: testLlm });
     const finalRow2 = await waitForTerminal(runsRepo, run2.id);
 
     expect(finalRow2.status).toBe("completed");
@@ -933,7 +690,7 @@ describe("startSearch", () => {
     await insertResume(state.testDb, { ...resumeFixture, userId: user.id, isActive: true });
     await grant(user.id, 30, "admin");
 
-    const run = await startSearch(user.id, { persona: "remote" }, { connectorForSource: (s) => stubConnector(s, []) });
+    const run = await startSearch(user.id, { persona: "remote" });
     await waitForTerminal(runsRepo, run.id);
 
     expect(await balance(user.id)).toBe(20);
@@ -977,20 +734,124 @@ describe("startSearch", () => {
     await insertResume(state.testDb, { ...resumeFixture, isActive: true });
     await insertSource(state.testDb, { id: "src-admin-bypass", kind: "ats", persona: "remote" });
 
-    const run = await startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" }, { connectorForSource: (s) => stubConnector(s, []) });
+    const run = await startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" });
     await waitForTerminal(runsRepo, run.id);
 
     const rows = await state.testDb.select().from(creditLedger).where(eq(creditLedger.userId, BOOTSTRAP_ADMIN_ID));
     expect(rows).toHaveLength(0);
   });
+
+  // ── P.5 pool-cutover pins ──────────────────────────────────────────────
+
+  it("P.5: a pool posting passing stage-1 is admitted to the user's jobs EXACTLY once, stamping postingId, and its JD reaches scoring FROM the posting (no re-fetch)", async () => {
+    const runsRepo = createSearchRunsRepo(state.testDb);
+    await insertResume(state.testDb, { ...resumeFixture, isActive: true });
+    const good = await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
+    const posting = await insertPosting(state.testDb, good.id, {
+      url: "https://example.com/jobs/admit-once",
+      description: "SENTINEL-JD build data pipelines with SQL.",
+    });
+
+    const run = await startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" }, { llm: testLlm });
+    const finalRow = await waitForTerminal(runsRepo, run.id);
+    expect(finalRow.status).toBe("completed");
+    expect(finalRow.stats.scored).toBe(1);
+
+    const admittedRows = await jobsForDedupeKey(state.testDb, "example.com/jobs/admit-once");
+    expect(admittedRows).toHaveLength(1); // exactly once
+    expect(admittedRows[0].postingId).toBe(posting.id); // P.1 FK stamped
+    // JD reached scoring via the posting's crawl-time text (ensureDescription
+    // posting-first), persisted onto the job right before scoring.
+    expect(admittedRows[0].description).toContain("SENTINEL-JD");
+    // tz_band is READ FROM the posting (crawl-stamped), not re-derived.
+    expect(admittedRows[0].tzBand).toBe(posting.tzBand);
+  });
+
+  it("P.5 / DECISION A: an out-of-band posting is DEMOTED, never dropped pre-score — it is still admitted and scored", async () => {
+    const runsRepo = createSearchRunsRepo(state.testDb);
+    const [user] = await state.testDb
+      .insert(users)
+      .values({ email: "p5-nodrop@example.com", passwordHash: "h", role: "user", plan: "standard" })
+      .returning();
+    // base-hours → allowedBands ["apac"] (americas is out-of-band); relocation
+    // "open" isolates the tz signal from the relocation-abroad pre-score drop.
+    await insertProfile(state.testDb, {
+      id: "profile-p5-nodrop",
+      userId: user.id,
+      scheduleFlex: "base-hours",
+      relocation: "open",
+    });
+    await insertResume(state.testDb, { ...resumeFixture, userId: user.id, isActive: true });
+    await grant(user.id, 30, "admin");
+    const good = await insertSource(state.testDb, { id: "src-nodrop", kind: "ats", persona: "remote" });
+    await insertPosting(state.testDb, good.id, { url: "https://example.com/jobs/americas", tzBand: "americas" });
+
+    const run = await startSearch(user.id, { persona: "remote" }, { llm: testLlm });
+    const finalRow = await waitForTerminal(runsRepo, run.id);
+
+    expect(finalRow.status).toBe("completed");
+    expect(finalRow.stats.matched).toBe(1);
+    expect(finalRow.stats.scored).toBe(1); // NOT dropped on the tz_band signal
+    // Admitted + scored is the whole proof: pre-cutover an out-of-band job was
+    // filtered before scoring and (never scored) never surfaced in the feed —
+    // a de-facto hide. (Admission's tz_band stamp is transient here: the
+    // scoring path's Layer-C remote-fit refresh re-resolves it from JD facts.)
+    const admitted = await findJobByDedupeKey(state.testDb, "example.com/jobs/americas");
+    expect(admitted).toBeTruthy();
+  });
+
+  it("P.5 / F4: a stale crawl (>48h) emits a fail-loud staleness warning on the scan SSE", async () => {
+    const runsRepo = createSearchRunsRepo(state.testDb);
+    await insertResume(state.testDb, { ...resumeFixture, isActive: true });
+    await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
+    await state.testDb.insert(crawlRuns).values({
+      status: "completed",
+      startedAt: new Date(Date.now() - 4 * 24 * 3600 * 1000),
+      finishedAt: new Date(Date.now() - 3 * 24 * 3600 * 1000), // 72h old > 48h
+    });
+
+    const runPromise = startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" }, { llm: testLlm });
+    const reservedId = getActiveRunForPersona(BOOTSTRAP_ADMIN_ID, "remote")!;
+    const handle = getRunHandle(reservedId)!;
+    const labels: string[] = [];
+    handle.subscribe((event) => {
+      if (event.event === "progress") labels.push((event.data as { label: string }).label);
+    });
+
+    const run = await runPromise;
+    await waitForTerminal(runsRepo, run.id);
+
+    expect(labels.some((l) => /stale/i.test(l))).toBe(true);
+  });
+
+  it("P.5 / F4: a fresh crawl (<48h) emits NO staleness warning", async () => {
+    const runsRepo = createSearchRunsRepo(state.testDb);
+    await insertResume(state.testDb, { ...resumeFixture, isActive: true });
+    await insertSource(state.testDb, { id: "src-good", kind: "ats", persona: "remote" });
+    await state.testDb.insert(crawlRuns).values({
+      status: "completed",
+      startedAt: new Date(Date.now() - 3600 * 1000),
+      finishedAt: new Date(), // fresh
+    });
+
+    const runPromise = startSearch(BOOTSTRAP_ADMIN_ID, { persona: "remote" }, { llm: testLlm });
+    const reservedId = getActiveRunForPersona(BOOTSTRAP_ADMIN_ID, "remote")!;
+    const handle = getRunHandle(reservedId)!;
+    const labels: string[] = [];
+    handle.subscribe((event) => {
+      if (event.event === "progress") labels.push((event.data as { label: string }).label);
+    });
+
+    const run = await runPromise;
+    await waitForTerminal(runsRepo, run.id);
+
+    expect(labels.some((l) => /stale|freshness unknown/i.test(l))).toBe(false);
+  });
 });
 
-// Task 1.2: the top-N slice (scoreTopCandidates, ~run.ts:541) must be a pure
+// Task 1.2: the top-N slice (scoreTopCandidates ranking) must be a pure
 // function of posting content — NOT of the order postings land in the `pool`
-// array, which upstream depends on connector network-race timing / Map
-// (groupByCollision) insertion order. No stage1Score exists yet (matching is
-// boolean); postedAt desc (nulls last) + dedupeKey asc is deterministic and
-// sufficient until a real stage-1 score lands in a later phase.
+// array. postedAt desc (nulls last) + dedupeKey asc is deterministic.
 describe("sortCandidatesForRanking (Task 1.2 — deterministic top-N ranking)", () => {
   type MinimalCandidate = { job: { postedAt: Date | null; dedupeKey: string } };
 
@@ -999,8 +860,7 @@ describe("sortCandidatesForRanking (Task 1.2 — deterministic top-N ranking)", 
   }
 
   // Deterministic seeded PRNG (LCG) — NOT unseeded Math.random. Produces a
-  // fixed, reproducible permutation per seed so the test itself is
-  // deterministic, while still exercising many different input orderings.
+  // fixed, reproducible permutation per seed.
   function seededShuffle<T>(arr: T[], seed: number): T[] {
     const out = [...arr];
     let s = seed;
@@ -1014,13 +874,7 @@ describe("sortCandidatesForRanking (Task 1.2 — deterministic top-N ranking)", 
 
   it("top-30 slice is byte-identical (same postings, same order) across shuffled insertion orders", () => {
     const base = Date.now();
-    // 40 candidates (> TOP_N_CANDIDATES=30): 20 with distinct postedAt values
-    // (desc ordering), 10 sharing one postedAt (dedupeKey-asc tiebreak) — 30
-    // dated total, so the top-30 slice is exactly these and excludes the
-    // remaining 10 null-postedAt candidates (nulls-last).
     const candidates: MinimalCandidate[] = [
-      // Strictly greater than the tie cluster's timestamp (base) and
-      // strictly decreasing with i, so desc order matches ascending index.
       ...Array.from({ length: 20 }, (_, i) => candidate(`distinct-${String(i).padStart(2, "0")}`, new Date(base + (20 - i) * 1000))),
       ...Array.from({ length: 10 }, (_, i) => candidate(`tie-${String(i).padStart(2, "0")}`, new Date(base))),
       ...Array.from({ length: 10 }, (_, i) => candidate(`null-${String(i).padStart(2, "0")}`, null)),
@@ -1028,8 +882,6 @@ describe("sortCandidatesForRanking (Task 1.2 — deterministic top-N ranking)", 
     expect(candidates.length).toBeGreaterThan(TOP_N_CANDIDATES);
 
     const expectedTop30 = sortCandidatesForRanking(candidates).slice(0, TOP_N_CANDIDATES);
-    // Sanity: nulls really do land after every dated posting, and the tie
-    // cluster is ordered by dedupeKey ascending.
     expect(expectedTop30.some((c) => c.job.postedAt === null)).toBe(false);
     expect(expectedTop30.map((c) => c.job.dedupeKey).slice(20, 30)).toEqual(
       Array.from({ length: 10 }, (_, i) => `tie-${String(i).padStart(2, "0")}`),
@@ -1037,8 +889,6 @@ describe("sortCandidatesForRanking (Task 1.2 — deterministic top-N ranking)", 
 
     for (const seed of [1, 2, 3, 4, 5]) {
       const shuffled = seededShuffle(candidates, seed);
-      // Insertion order must have actually changed for this seed to be a
-      // meaningful check against Map-insertion-order leakage.
       expect(shuffled.map((c) => c.job.dedupeKey)).not.toEqual(candidates.map((c) => c.job.dedupeKey));
 
       const top30 = sortCandidatesForRanking(shuffled).slice(0, TOP_N_CANDIDATES);
@@ -1047,12 +897,8 @@ describe("sortCandidatesForRanking (Task 1.2 — deterministic top-N ranking)", 
   });
 });
 
-// DECISION A (operator, 2026-07-17, full soft rank — see
-// docs/superpowers/plans/2026-07-17-global-postings-pool-build.md "DECISION
-// A"): a stated-but-out-of-band tz_band must no longer drop a candidate
-// pre-score (the old `scoreTopCandidates` filter dropped it outright, and
-// since `jobsRepo.listScored` inner-joins job_scores, a never-scored job
-// never surfaced in the feed either — a de-facto hide). It now demotes.
+// DECISION A (operator, 2026-07-17, full soft rank): a stated-but-out-of-band
+// tz_band must no longer drop a candidate pre-score — it demotes.
 describe("rankCandidatesForScoring (DECISION A — tz_band demotes, never drops)", () => {
   type MinimalCandidate = { job: { postedAt: Date | null; dedupeKey: string; tzBand: "apac" | "emea" | "americas" | null } };
 
@@ -1063,7 +909,7 @@ describe("rankCandidatesForScoring (DECISION A — tz_band demotes, never drops)
   it("a misaligned candidate is NOT dropped — it survives in the returned pool", () => {
     const aligned = candidate("aligned-apac", "apac");
     const misaligned = candidate("misaligned-americas", "americas");
-    const allowedBands: ("apac" | "emea" | "americas")[] = ["apac"]; // e.g. scheduleFlex "base-hours"
+    const allowedBands: ("apac" | "emea" | "americas")[] = ["apac"];
 
     const ranked = rankCandidatesForScoring([aligned, misaligned], allowedBands);
 
@@ -1074,9 +920,6 @@ describe("rankCandidatesForScoring (DECISION A — tz_band demotes, never drops)
   });
 
   it("an aligned candidate ranks above a misaligned one, even when the misaligned one would otherwise sort first", () => {
-    // Misaligned candidate wins the underlying postedAt/dedupeKey tiebreak
-    // (it's "first" by every existing rule) — demotion must still push it
-    // below the aligned candidate.
     const misaligned = { job: { postedAt: new Date("2026-01-02"), dedupeKey: "a-misaligned", tzBand: "americas" as const } };
     const aligned = { job: { postedAt: new Date("2026-01-01"), dedupeKey: "z-aligned", tzBand: "apac" as const } };
     const allowedBands: ("apac" | "emea" | "americas")[] = ["apac"];

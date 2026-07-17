@@ -6,6 +6,8 @@ import { encodeCursorId } from "./cursor";
 import { insertJobScore, insertResume, insertSource } from "./__fixtures__/helpers";
 import { createJobsRepo } from "./jobs";
 import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
+import { misalignedCount } from "@/server/score/tzBand";
+import type { HiringStructure, TzBand } from "@/types";
 
 // Identical firstSeenAt across all rows — deterministic same-millisecond
 // collision regardless of host/loop speed. Postgres's timestamp column
@@ -699,7 +701,10 @@ describe("jobsRepo", () => {
     expect(items).toHaveLength(2);
   });
 
-  it("filters by tzBands: NULL passes, listed bands pass, others hidden", async () => {
+  // P.5 / DECISION A: rankBands DEMOTES (out-of-band sorts last), it never
+  // HIDES. The pre-DECISION-A `tzBands` WHERE filter is deleted; the surviving
+  // knob is a rank input consumed only by the ORDER BY.
+  it("rankBands demotes an out-of-band job below aligned ones — nothing hidden (DECISION A)", async () => {
     const db = await createTestDb();
     const repo = createJobsRepo(db);
     const source = await insertSource(db);
@@ -723,15 +728,16 @@ describe("jobsRepo", () => {
       await insertJobScore(db, job.id, resume.id);
       return job;
     };
-    await mk(null, "null"); // passes (unstated)
-    await mk("apac", "apac"); // passes (allowed)
-    await mk("americas", "americas"); // hidden
+    await mk(null, "null"); // aligned (unstated)
+    await mk("apac", "apac"); // aligned (allowed)
+    await mk("americas", "americas"); // misaligned → demoted, NOT hidden
 
-    const { items } = await repo.listScored({ userId: BOOTSTRAP_ADMIN_ID, tzBands: ["apac"] });
-    expect(items).toHaveLength(2);
+    const { items } = await repo.listScored({ userId: BOOTSTRAP_ADMIN_ID, rankBands: ["apac"] });
+    expect(items).toHaveLength(3); // nothing hidden
+    expect(items[items.length - 1].job.tzBand).toBe("americas"); // the misaligned one sorts last
   });
 
-  it("filters by hiringStructures: NULL passes, listed pass, others hidden", async () => {
+  it("rankStructures demotes an out-of-structure job below aligned ones — nothing hidden (DECISION A)", async () => {
     const db = await createTestDb();
     const repo = createJobsRepo(db);
     const source = await insertSource(db);
@@ -755,12 +761,16 @@ describe("jobsRepo", () => {
       await insertJobScore(db, job.id, resume.id);
       return job;
     };
-    await mk(null, "null"); // passes (unstated)
-    await mk("eor", "eor"); // passes (allowed)
-    await mk("contractor", "contractor"); // hidden
+    await mk(null, "null"); // aligned (unstated)
+    await mk("eor", "eor"); // aligned (allowed)
+    await mk("contractor", "contractor"); // misaligned → demoted, NOT hidden
 
-    const { items } = await repo.listScored({ userId: BOOTSTRAP_ADMIN_ID, hiringStructures: ["local-entity", "eor"] });
-    expect(items).toHaveLength(2);
+    const { items } = await repo.listScored({
+      userId: BOOTSTRAP_ADMIN_ID,
+      rankStructures: ["local-entity", "eor"],
+    });
+    expect(items).toHaveLength(3); // nothing hidden
+    expect(items[items.length - 1].job.hiringStructure).toBe("contractor"); // misaligned sorts last
   });
 
   it("countHidden ORs hidden tiers/bands/structures, scored or not, scoped by persona", async () => {
@@ -1083,3 +1093,184 @@ describe("jobsRepo — cross-tenant isolation", () => {
     expect(pageViaForeignCursor.items).toHaveLength(0);
   });
 });
+
+// P.5 pinning tests (option (b), DECISION A): the feed's ORDER BY leads with a
+// deterministic misaligned-count demotion term, so out-of-band/structure jobs
+// sort AFTER every aligned one CROSS-PAGE (never per-page, never hidden), and
+// the expanded 4-key keyset cursor resumes cleanly across the bucket boundary.
+describe("jobsRepo.listScored — P.5 soft-rank ordering + cursor (DECISION A, option b)", () => {
+  async function seedScored(
+    db: Awaited<ReturnType<typeof createTestDb>>,
+    repo: ReturnType<typeof createJobsRepo>,
+    resumeId: string,
+    sourceId: string,
+    opts: { key: string; tzBand?: TzBand | null; hiringStructure?: HiringStructure | null; score: number; firstSeenAt?: Date },
+  ) {
+    const job = await repo.upsertByDedupeKey({
+      userId: BOOTSTRAP_ADMIN_ID,
+      dedupeKey: `dk-${opts.key}`,
+      url: `https://example.com/${opts.key}`,
+      sourceId,
+      title: "Backend Engineer",
+      company: "Acme",
+      location: "Remote",
+      persona: "remote",
+      eligibility: "unknown",
+      eligibilityEvidence: "t",
+      aliases: [],
+      raw: {},
+      tzBand: opts.tzBand ?? null,
+      hiringStructure: opts.hiringStructure ?? null,
+      ...(opts.firstSeenAt ? { firstSeenAt: opts.firstSeenAt } : {}),
+    });
+    await insertJobScore(db, job.id, resumeId, { score: opts.score });
+    return job;
+  }
+
+  // The dataset both #1 and #2 use. rankBands ["apac"] → apac/null aligned,
+  // americas misaligned. Expected GLOBAL order (misaligned asc, score desc,
+  // firstSeenAt desc, id desc): aligned [j1(4.0), j3(3.0, newer), j2(3.0)],
+  // then misaligned [j4(5.0 — highest score of all, still demoted), j5(2.0)].
+  async function seedBucketDataset(
+    db: Awaited<ReturnType<typeof createTestDb>>,
+    repo: ReturnType<typeof createJobsRepo>,
+    resumeId: string,
+    sourceId: string,
+  ) {
+    const j1 = await seedScored(db, repo, resumeId, sourceId, { key: "j1", tzBand: "apac", score: 4.0, firstSeenAt: new Date("2026-01-05") });
+    const j2 = await seedScored(db, repo, resumeId, sourceId, { key: "j2", tzBand: "apac", score: 3.0, firstSeenAt: new Date("2026-01-04") });
+    const j3 = await seedScored(db, repo, resumeId, sourceId, { key: "j3", tzBand: null, score: 3.0, firstSeenAt: new Date("2026-01-06") });
+    const j4 = await seedScored(db, repo, resumeId, sourceId, { key: "j4", tzBand: "americas", score: 5.0, firstSeenAt: new Date("2026-01-10") });
+    const j5 = await seedScored(db, repo, resumeId, sourceId, { key: "j5", tzBand: "americas", score: 2.0, firstSeenAt: new Date("2026-01-01") });
+    return { expected: [j1.id, j3.id, j2.id, j4.id, j5.id] };
+  }
+
+  // #1 — ordering across a page boundary
+  it("misaligned jobs sort after ALL aligned across a page boundary; within-bucket by score DESC then firstSeenAt DESC", async () => {
+    const db = await createTestDb();
+    const repo = createJobsRepo(db);
+    const source = await insertSource(db);
+    const resume = await insertResume(db);
+    const { expected } = await seedBucketDataset(db, repo, resume.id, source.id);
+
+    // limit 2 → 3 pages; concatenating them must equal the single global order
+    // (not a per-page reshuffle).
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    for (let i = 0; i < 5; i += 1) {
+      const page = await repo.listScored({ userId: BOOTSTRAP_ADMIN_ID, rankBands: ["apac"], limit: 2, cursor });
+      seen.push(...page.items.map((it) => it.job.id));
+      if (!page.nextCursor) break;
+      cursor = page.nextCursor;
+    }
+    expect(seen).toEqual(expected);
+  });
+
+  // #2 — cursor resume across the bucket boundary + a score tie, plus the
+  // foreign-cursor tenancy guard
+  it("cursor pages one-at-a-time with no skip/dup across the aligned→misaligned boundary and a score tie", async () => {
+    const db = await createTestDb();
+    const repo = createJobsRepo(db);
+    const source = await insertSource(db);
+    const resume = await insertResume(db);
+    const { expected } = await seedBucketDataset(db, repo, resume.id, source.id);
+
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    for (let i = 0; i < 5; i += 1) {
+      const page = await repo.listScored({ userId: BOOTSTRAP_ADMIN_ID, rankBands: ["apac"], limit: 1, cursor });
+      expect(page.items).toHaveLength(1);
+      seen.push(page.items[0].job.id);
+      if (!page.nextCursor) break;
+      cursor = page.nextCursor;
+    }
+    expect(seen).toEqual(expected); // exact order, no skip, no duplicate
+    expect(new Set(seen).size).toBe(5);
+  });
+
+  it("a foreign-user (and a nonexistent) cursor id yields an empty page — the tenancy guard holds under the 4-key keyset", async () => {
+    const db = await createTestDb();
+    const repo = createJobsRepo(db);
+    const source = await insertSource(db);
+    const resume = await insertResume(db);
+    await seedBucketDataset(db, repo, resume.id, source.id);
+
+    const [userB] = await db
+      .insert(users)
+      .values({ email: `p5-oracle-${crypto.randomUUID()}@example.com`, passwordHash: "h", role: "user", plan: "standard" })
+      .returning();
+    const resumeB = await insertResume(db, { userId: userB.id });
+    const bJob = await repo.upsertByDedupeKey({
+      userId: userB.id,
+      dedupeKey: "dk-b-only",
+      url: "https://example.com/b-only",
+      sourceId: source.id,
+      title: "Backend Engineer",
+      company: "Acme",
+      location: "Remote",
+      persona: "remote",
+      eligibility: "unknown",
+      eligibilityEvidence: "t",
+      aliases: [],
+      raw: {},
+    });
+    await insertJobScore(db, bJob.id, resumeB.id);
+
+    // A's cursor read as B, and a nonexistent id read as B — both must be empty
+    // AND identical (no existence oracle), even though B has a page of its own.
+    const foreignId = expected0(await repo.listScored({ userId: BOOTSTRAP_ADMIN_ID, rankBands: ["apac"], limit: 1 }));
+    const viaForeign = await repo.listScored({ userId: userB.id, cursor: encodeCursorId(foreignId) });
+    const viaNonexistent = await repo.listScored({ userId: userB.id, cursor: encodeCursorId(crypto.randomUUID()) });
+    expect(viaForeign.items).toHaveLength(0);
+    expect(viaNonexistent.items).toHaveLength(0);
+    expect(viaForeign.nextCursor).toBe(viaNonexistent.nextCursor);
+  });
+
+  // #4 (parity half) — the SQL misaligned CASE ≡ tzBand.ts's misalignedCount TS
+  // predicate over the FULL (band × structure × null) matrix.
+  it("SQL misaligned CASE ≡ TS misalignedCount over the full band × structure × null matrix", async () => {
+    const db = await createTestDb();
+    const repo = createJobsRepo(db);
+    const source = await insertSource(db);
+    const resume = await insertResume(db);
+
+    const bands: (TzBand | null)[] = [null, "apac", "emea", "americas"];
+    const structures: (HiringStructure | null)[] = [null, "local-entity", "eor", "contractor"];
+    const rankBands: TzBand[] = ["apac"];
+    const rankStructures: HiringStructure[] = ["local-entity"];
+
+    type Combo = { id: string; band: TzBand | null; structure: HiringStructure | null; score: number };
+    const combos: Combo[] = [];
+    let i = 0;
+    for (const band of bands) {
+      for (const structure of structures) {
+        // Distinct score per combo so within-bucket order is fully determined
+        // (any SQL/TS bucket disagreement reorders the whole list, failing).
+        const score = 5.0 - i * 0.1;
+        const job = await seedScored(db, repo, resume.id, source.id, {
+          key: `matrix-${i}`,
+          tzBand: band,
+          hiringStructure: structure,
+          score,
+        });
+        combos.push({ id: job.id, band, structure, score });
+        i += 1;
+      }
+    }
+
+    const expected = [...combos]
+      .sort(
+        (a, b) =>
+          misalignedCount(a.band, a.structure, rankBands, rankStructures) -
+            misalignedCount(b.band, b.structure, rankBands, rankStructures) || b.score - a.score,
+      )
+      .map((c) => c.id);
+
+    const { items } = await repo.listScored({ userId: BOOTSTRAP_ADMIN_ID, rankBands, rankStructures, limit: 100 });
+    expect(items.map((it) => it.job.id)).toEqual(expected);
+  });
+});
+
+function expected0(page: { items: { job: { id: string } }[] }): string {
+  return page.items[0].job.id;
+}
