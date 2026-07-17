@@ -83,3 +83,88 @@ describe("listJobsFeed — Pasted scope eligibility predicate skip (spec §2.12)
     expect(pastedScope.stats.excluded).toBe(0);
   });
 });
+
+// DECISION A (operator, 2026-07-17, full soft rank — see
+// docs/superpowers/plans/2026-07-17-global-postings-pool-build.md "DECISION
+// A"): tz_band (scheduleFlex) and hiring_structure (employmentPref) used to
+// HARD-GATE the feed (jobsFeed.ts:68-69, pre-fix) — a misaligned job was
+// filtered out of `listScored`/`statsForQuery` entirely and counted in
+// `stats.excluded`. They now only demote rank; relocation/eligibility
+// (STAY_TIERS) remains the sole hard gate.
+describe("listJobsFeed — DECISION A demote-not-hide (tz_band/hiring_structure, 2026-07-17)", () => {
+  beforeAll(async () => {
+    state.testDb = await createTestDb();
+  });
+
+  afterEach(async () => {
+    await state.testDb.delete(jobScores);
+    await state.testDb.delete(jobs);
+    await state.testDb.delete(sources);
+    await state.testDb.delete(resumes);
+    await state.testDb.delete(profile);
+  });
+
+  it("a scheduleFlex/tz-misaligned job is NOT dropped from the feed — it appears, ranked below an aligned job", async () => {
+    // "base-hours" admits only the "apac" band (allowedBandsFor) — a
+    // stated "americas" job is the misaligned case.
+    await insertProfile(state.testDb, { scheduleFlex: "base-hours" });
+    const source = await insertSource(state.testDb);
+    const resume = await insertResume(state.testDb);
+
+    // Misaligned but firstSeenAt-NEWER — under plain recency ordering it
+    // would sort first; demotion must override that ordering.
+    const misaligned = await insertJob(state.testDb, source.id, {
+      dedupeKey: "dk-tz-misaligned",
+      url: "https://example.com/tz-misaligned",
+      tzBand: "americas",
+      firstSeenAt: new Date("2026-01-02T00:00:00Z"),
+    });
+    await insertJobScore(state.testDb, misaligned.id, resume.id);
+
+    const aligned = await insertJob(state.testDb, source.id, {
+      dedupeKey: "dk-tz-aligned",
+      url: "https://example.com/tz-aligned",
+      tzBand: "apac",
+      firstSeenAt: new Date("2026-01-01T00:00:00Z"),
+    });
+    await insertJobScore(state.testDb, aligned.id, resume.id);
+
+    const feed = await listJobsFeed({}, BOOTSTRAP_ADMIN_ID);
+    const ids = feed.items.map((i) => i.id);
+
+    expect(ids).toContain(misaligned.id); // not dropped
+    expect(ids.indexOf(aligned.id)).toBeLessThan(ids.indexOf(misaligned.id)); // demotion is real
+    expect(feed.stats.excluded).toBe(0); // no longer counted as hidden
+  });
+
+  it("an employmentPref/hiring_structure-misaligned job is NOT dropped from the feed — it appears, ranked below an aligned job", async () => {
+    // "local-entity" admits only the "local-entity" structure
+    // (allowedStructuresFor) — a stated "contractor" job is misaligned.
+    await insertProfile(state.testDb, { employmentPref: "local-entity" });
+    const source = await insertSource(state.testDb);
+    const resume = await insertResume(state.testDb);
+
+    const misaligned = await insertJob(state.testDb, source.id, {
+      dedupeKey: "dk-structure-misaligned",
+      url: "https://example.com/structure-misaligned",
+      hiringStructure: "contractor",
+      firstSeenAt: new Date("2026-01-02T00:00:00Z"),
+    });
+    await insertJobScore(state.testDb, misaligned.id, resume.id);
+
+    const aligned = await insertJob(state.testDb, source.id, {
+      dedupeKey: "dk-structure-aligned",
+      url: "https://example.com/structure-aligned",
+      hiringStructure: "local-entity",
+      firstSeenAt: new Date("2026-01-01T00:00:00Z"),
+    });
+    await insertJobScore(state.testDb, aligned.id, resume.id);
+
+    const feed = await listJobsFeed({}, BOOTSTRAP_ADMIN_ID);
+    const ids = feed.items.map((i) => i.id);
+
+    expect(ids).toContain(misaligned.id); // not dropped
+    expect(ids.indexOf(aligned.id)).toBeLessThan(ids.indexOf(misaligned.id)); // demotion is real
+    expect(feed.stats.excluded).toBe(0);
+  });
+});

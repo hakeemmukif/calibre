@@ -143,8 +143,15 @@ vi.mock("@/server/score", async (importOriginal) => {
   return { ...actual, scoreJob: vi.fn(actual.scoreJob) };
 });
 
-const { startSearch, ActiveRunConflictError, NoActiveResumeError, UnknownSourceIdsError, sortCandidatesForRanking, TOP_N_CANDIDATES } =
-  await import("./run");
+const {
+  startSearch,
+  ActiveRunConflictError,
+  NoActiveResumeError,
+  UnknownSourceIdsError,
+  sortCandidatesForRanking,
+  rankCandidatesForScoring,
+  TOP_N_CANDIDATES,
+} = await import("./run");
 const { __resetForTests, get: getRunHandle, getActiveRunForPersona } = await import("@/server/runs/registry");
 const { scoreJob: scoreJobSpy } = await import("@/server/score");
 
@@ -1037,5 +1044,67 @@ describe("sortCandidatesForRanking (Task 1.2 — deterministic top-N ranking)", 
       const top30 = sortCandidatesForRanking(shuffled).slice(0, TOP_N_CANDIDATES);
       expect(top30).toEqual(expectedTop30);
     }
+  });
+});
+
+// DECISION A (operator, 2026-07-17, full soft rank — see
+// docs/superpowers/plans/2026-07-17-global-postings-pool-build.md "DECISION
+// A"): a stated-but-out-of-band tz_band must no longer drop a candidate
+// pre-score (the old `scoreTopCandidates` filter dropped it outright, and
+// since `jobsRepo.listScored` inner-joins job_scores, a never-scored job
+// never surfaced in the feed either — a de-facto hide). It now demotes.
+describe("rankCandidatesForScoring (DECISION A — tz_band demotes, never drops)", () => {
+  type MinimalCandidate = { job: { postedAt: Date | null; dedupeKey: string; tzBand: "apac" | "emea" | "americas" | null } };
+
+  function candidate(dedupeKey: string, tzBand: MinimalCandidate["job"]["tzBand"]): MinimalCandidate {
+    return { job: { postedAt: null, dedupeKey, tzBand } };
+  }
+
+  it("a misaligned candidate is NOT dropped — it survives in the returned pool", () => {
+    const aligned = candidate("aligned-apac", "apac");
+    const misaligned = candidate("misaligned-americas", "americas");
+    const allowedBands: ("apac" | "emea" | "americas")[] = ["apac"]; // e.g. scheduleFlex "base-hours"
+
+    const ranked = rankCandidatesForScoring([aligned, misaligned], allowedBands);
+
+    expect(ranked.map((c) => c.job.dedupeKey)).toEqual(
+      expect.arrayContaining(["aligned-apac", "misaligned-americas"]),
+    );
+    expect(ranked).toHaveLength(2);
+  });
+
+  it("an aligned candidate ranks above a misaligned one, even when the misaligned one would otherwise sort first", () => {
+    // Misaligned candidate wins the underlying postedAt/dedupeKey tiebreak
+    // (it's "first" by every existing rule) — demotion must still push it
+    // below the aligned candidate.
+    const misaligned = { job: { postedAt: new Date("2026-01-02"), dedupeKey: "a-misaligned", tzBand: "americas" as const } };
+    const aligned = { job: { postedAt: new Date("2026-01-01"), dedupeKey: "z-aligned", tzBand: "apac" as const } };
+    const allowedBands: ("apac" | "emea" | "americas")[] = ["apac"];
+
+    const ranked = rankCandidatesForScoring([misaligned, aligned], allowedBands);
+
+    expect(ranked.map((c) => c.job.dedupeKey)).toEqual(["z-aligned", "a-misaligned"]);
+  });
+
+  it("a NULL (unstated) tz_band is always aligned — ranks with the aligned group", () => {
+    const unstated = candidate("unstated", null);
+    const misaligned = candidate("misaligned", "americas");
+    const allowedBands: ("apac" | "emea" | "americas")[] = ["apac"];
+
+    const ranked = rankCandidatesForScoring([misaligned, unstated], allowedBands);
+
+    expect(ranked.map((c) => c.job.dedupeKey)).toEqual(["unstated", "misaligned"]);
+  });
+
+  it("allowedBands: null (e.g. scheduleFlex any-hours) treats every band as aligned — order is untouched by tz_band", () => {
+    const americas = candidate("americas", "americas");
+    const emea = candidate("emea", "emea");
+
+    const ranked = rankCandidatesForScoring([americas, emea], null);
+
+    expect(ranked).toHaveLength(2);
+    expect(ranked.map((c) => c.job.dedupeKey)).toEqual(
+      expect.arrayContaining(["americas", "emea"]),
+    );
   });
 });

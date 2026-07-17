@@ -120,7 +120,17 @@ describe("GET /api/jobs", () => {
     await state.testDb.update(profile).set({ relocation: "stay" }).where(eq(profile.id, "default"));
   });
 
-  it("scheduleFlex 'base-hours' hides americas-band jobs and reports them in stats.excluded; 'any-hours' reveals them (2026-07-14 remote-fit spec §8)", async () => {
+  // Superseded by DECISION A (operator, 2026-07-17, full soft rank — see
+  // docs/superpowers/plans/2026-07-17-global-postings-pool-build.md
+  // "DECISION A"). This test used to assert that scheduleFlex "base-hours"
+  // HID the americas-band job (dropped from `items`, counted in
+  // `stats.excluded`) — that was the 2026-07-14 remote-fit spec §8 behavior,
+  // which is now stale. tz_band (like hiring_structure) is a RANK signal
+  // only: a misaligned job still appears in the feed, demoted below aligned
+  // jobs, and is no longer counted in `stats.excluded` (relocation/
+  // eligibility's STAY_TIERS is the sole remaining hard gate — see
+  // jobsFeed.ts's `hiddenTiers`).
+  it("scheduleFlex 'base-hours' demotes americas-band jobs (not hidden, not counted in stats.excluded, 2026-07-17 DECISION A)", async () => {
     const { profile } = await import("@/server/persistence/schema");
     const { eq } = await import("drizzle-orm");
     const source = await insertSource(state.testDb);
@@ -128,29 +138,34 @@ describe("GET /api/jobs", () => {
 
     await state.testDb.update(profile).set({ scheduleFlex: "base-hours" }).where(eq(profile.id, "default"));
 
+    // Misaligned but firstSeenAt-NEWER — under plain recency ordering
+    // (desc firstSeenAt) it would sort first; demotion must override that.
     const americasJob = await insertJob(state.testDb, source.id, {
       dedupeKey: "dk-tzband-americas",
       url: "https://example.com/tzband-americas",
       tzBand: "americas",
+      firstSeenAt: new Date("2026-01-02T00:00:00Z"),
     });
     await insertJobScore(state.testDb, americasJob.id, resume.id);
     const apacJob = await insertJob(state.testDb, source.id, {
       dedupeKey: "dk-tzband-apac",
       url: "https://example.com/tzband-apac",
       tzBand: "apac",
+      firstSeenAt: new Date("2026-01-01T00:00:00Z"),
     });
     await insertJobScore(state.testDb, apacJob.id, resume.id);
 
-    // scheduleFlex "base-hours" admits only apac — americas hidden, counted.
+    // scheduleFlex "base-hours" admits only apac — americas is demoted, not dropped.
     const baseHours = await (await GET(req(""))).json();
-    expect(baseHours.items).toHaveLength(1);
-    expect(baseHours.items[0].id).toBe(apacJob.id);
-    expect(baseHours.stats.excluded).toBe(1);
+    const baseHoursIds = baseHours.items.map((i: { id: string }) => i.id);
+    expect(baseHoursIds).toEqual([apacJob.id, americasJob.id]); // aligned first, misaligned present and ranked below
+    expect(baseHours.stats.excluded).toBe(0);
 
-    // Flip to "any-hours": the same rows re-scope with zero rescan.
+    // Flip to "any-hours": no gate condition — order reverts to plain recency.
     await state.testDb.update(profile).set({ scheduleFlex: "any-hours" }).where(eq(profile.id, "default"));
     const anyHours = await (await GET(req(""))).json();
-    expect(anyHours.items).toHaveLength(2);
+    const anyHoursIds = anyHours.items.map((i: { id: string }) => i.id);
+    expect(anyHoursIds).toEqual([americasJob.id, apacJob.id]); // recency order, no demotion
     expect(anyHours.stats.excluded).toBe(0);
   });
 

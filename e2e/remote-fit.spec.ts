@@ -15,7 +15,16 @@ import { E2E_DB_URL } from "./globalSetup";
 // inner-joins job_scores, so an unscored job never appears (jobsRepo.listScored).
 const SAMPLE_RESUME = "Jane Doe\nSenior Backend Engineer\nPayments, Node.js, Postgres\n" + "x".repeat(120);
 
-test("remote-fit: flip schedule dial re-scopes the feed and the excluded count moves", async ({ page, request }) => {
+// Superseded by DECISION A (operator, 2026-07-17, full soft rank — see
+// docs/superpowers/plans/2026-07-17-global-postings-pool-build.md
+// "DECISION A"). This journey used to assert that flipping the schedule
+// dial to "base-hours" HID the Americas-band job from the feed and moved
+// `stats.excluded` — that was the 2026-07-14 remote-fit spec §8 behavior,
+// which is now stale. tz_band is a RANK signal only: the misaligned job
+// stays visible, demoted below the aligned one; relocation/eligibility
+// (STAY_TIERS) is the sole remaining hard gate, so `stats.excluded` is
+// untouched by this dial.
+test("remote-fit: flip schedule dial demotes the misaligned job — both stay visible, excluded count untouched", async ({ page, request }) => {
   const client = createClient({ url: E2E_DB_URL });
   const db = drizzle(client, { schema });
 
@@ -72,8 +81,8 @@ test("remote-fit: flip schedule dial re-scopes the feed and the excluded count m
     const before = await (await request.get("/api/jobs?persona=remote")).json();
 
     // Flip to "Malaysia hours" (base-hours) — allowedBandsFor admits only
-    // `apac` (server/score/tzBand.ts), so the Americas job's stated band is
-    // now hidden by the schedule gate.
+    // `apac` (server/score/tzBand.ts). DECISION A: the Americas job's
+    // stated band demotes it in rank, it no longer hides it.
     await page.getByRole("navigation").getByRole("button", { name: "Profile & targets" }).click();
     await expect(page).toHaveURL(/\/profile$/);
     await page.getByRole("button", { name: "Malaysia hours", exact: true }).click();
@@ -85,16 +94,18 @@ test("remote-fit: flip schedule dial re-scopes the feed and the excluded count m
     await page.getByRole("navigation").getByRole("button", { name: "Matches" }).click();
     await expect(page).toHaveURL(/\/feed$/);
     await expect(page.getByText("Remote Fit APAC Co", { exact: false })).toBeVisible();
-    await expect(page.getByText("Remote Fit Americas Co", { exact: false })).not.toBeVisible();
+    await expect(page.getByText("Remote Fit Americas Co", { exact: false })).toBeVisible();
 
-    // The trust signal (spec §8) — not just the row vanishing, the Excluded
-    // count moving to account for it.
+    // DECISION A: no hard gate left here — relocation/eligibility
+    // (STAY_TIERS) is the sole remaining source of `stats.excluded`, so the
+    // schedule dial must not move it. Delta not absolute: the shared
+    // scratch DB may carry rows from other specs, so 0 is the invariant.
     const after = await (await request.get("/api/jobs?persona=remote")).json();
-    // Delta not absolute: the shared scratch DB may carry rows from other specs,
-    // but the schedule gate hides exactly our one Americas-band job, so the delta is the invariant.
-    expect(after.stats.excluded - before.stats.excluded).toBe(1);
-    expect(after.items.some((j: { company: string }) => j.company === "Remote Fit Americas Co")).toBe(false);
-    expect(after.items.some((j: { company: string }) => j.company === "Remote Fit APAC Co")).toBe(true);
+    expect(after.stats.excluded - before.stats.excluded).toBe(0);
+    const afterIds: string[] = after.items.map((j: { id: string }) => j.id);
+    expect(afterIds).toContain(americasJob.id); // demoted, not dropped
+    expect(afterIds).toContain(apacJob.id);
+    expect(afterIds.indexOf(apacJob.id)).toBeLessThan(afterIds.indexOf(americasJob.id)); // aligned ranks above misaligned
   } finally {
     // Restore the seeded default + drop the fixture rows for every other spec (shared scratch DB).
     const restore = await request.put("/api/profile", { data: baseline });

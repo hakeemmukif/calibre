@@ -19,7 +19,7 @@ import { searchRunsRepo, type SearchRunRow } from "@/server/persistence/repos/se
 import { sourcesRepo, type SourceRow } from "@/server/persistence/repos/sources";
 import { create, release, getActiveRunForPersona, type RunHandle } from "@/server/runs/registry";
 import { EmptyJobDescriptionError, scoreJob } from "@/server/score";
-import type { ErrorEnvelope, JobPhaseData, ScanFrame, ScanPersona, SearchRun, SourceEventData } from "@/types";
+import type { ErrorEnvelope, JobPhaseData, ScanFrame, ScanPersona, SearchRun, SourceEventData, TzBand } from "@/types";
 import { toSearchRun } from "./assemble-run";
 import type { RawPosting, SourceConnector } from "./connector";
 import { connectorForSource } from "./connectors";
@@ -534,6 +534,25 @@ export function sortCandidatesForRanking<T extends { job: Pick<JobRow, "postedAt
   });
 }
 
+// DECISION A (operator, 2026-07-17, full soft rank — see
+// docs/superpowers/plans/2026-07-17-global-postings-pool-build.md): a
+// stated-but-out-of-band tz_band no longer drops a candidate pre-score, it
+// demotes it. Aligned candidates fill the TOP_N slice first (each group
+// internally ordered by `sortCandidatesForRanking`'s existing deterministic
+// rule), so a misaligned candidate can still consume a scoring slot once the
+// aligned pool runs out, rather than being dropped outright. This is the
+// minimal honest version — a real fit-weighted stage-1 score (rather than a
+// binary aligned/misaligned split) belongs to P.5's pool cutover, which
+// rewrites this function's only caller anyway.
+export function rankCandidatesForScoring<T extends { job: Pick<JobRow, "postedAt" | "dedupeKey" | "tzBand"> }>(
+  pool: T[],
+  allowedBands: TzBand[] | null,
+): T[] {
+  const aligned = pool.filter((c) => !allowedBands || !c.job.tzBand || allowedBands.includes(c.job.tzBand));
+  const misaligned = pool.filter((c) => allowedBands && c.job.tzBand && !allowedBands.includes(c.job.tzBand));
+  return [...sortCandidatesForRanking(aligned), ...sortCandidatesForRanking(misaligned)];
+}
+
 // Cost-capped scoring phase (system-architecture.md §6 decision 8): score the
 // top-N (~30) candidates surviving the role-fuzzy-match pre-filter, stopping
 // early (without crashing the run) once the daily LLM spend cap is hit. Emits
@@ -551,16 +570,15 @@ async function scoreTopCandidates(
   frame: ScanFrameBuilder,
 ): Promise<{ scored: number; worth: number; ghosts: number; unscored: number; capStopped: boolean; costUsd: number }> {
   // relocation "stay": provably-abroad postings don't consume scoring slots
-  // (spec §5 scan hardening — persisted, just not scored). Likewise a stated
-  // tz_band provably outside the schedule dial (spec §6 rider) — NULL band
-  // (unstated) always passes.
+  // (spec §5 scan hardening — persisted, just not scored). tz_band is NOT a
+  // gate (DECISION A, operator 2026-07-17 "full soft rank, hide nothing" —
+  // docs/superpowers/plans/2026-07-17-global-postings-pool-build.md): a
+  // stated-but-out-of-band candidate is no longer dropped pre-score, it is
+  // demoted by rankCandidatesForScoring below. NULL band (unstated) was
+  // always aligned either way.
   const allowedBands = allowedBandsFor(profile.scheduleFlex); // null = all bands allowed
-  const pool = candidates.filter((c) => {
-    if (profile.relocation === "stay" && c.job.eligibility === "abroad") return false;
-    if (allowedBands && c.job.tzBand && !allowedBands.includes(c.job.tzBand)) return false;
-    return true;
-  });
-  const topCandidates = sortCandidatesForRanking(pool).slice(0, TOP_N_CANDIDATES);
+  const pool = candidates.filter((c) => !(profile.relocation === "stay" && c.job.eligibility === "abroad"));
+  const topCandidates = rankCandidatesForScoring(pool, allowedBands).slice(0, TOP_N_CANDIDATES);
   let scored = 0;
   let worth = 0;
   let ghosts = 0;
