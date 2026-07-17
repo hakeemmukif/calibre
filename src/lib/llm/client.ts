@@ -15,6 +15,7 @@ export type TaskName =
   | "question-answer"
   | "tailor"
   | "correlate"
+  | "function-classify"
   | "url-check-search"
   | "ghost-web";
 

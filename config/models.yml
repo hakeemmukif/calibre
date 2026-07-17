@@ -82,6 +82,22 @@ tasks:
     maxTokens: 4000
     temperature: 0.1
     strict: true
+  function-classify:
+    # Coarse function tag (global postings pool P.4) — only ever called for
+    # the residue neither the department-map nor the title-keyword tier
+    # resolves (arch §3.3): a small, judgment-not-lookup band (altitude and
+    # adjacency cases), cached on the posting after the first call. Same
+    # cheap tier as correlate; single-enum-field emission, strict:true so
+    # the field is schema-required (see the schema-required lesson).
+    # maxTokens sized like the other reasoning-judgment tasks (jd-extract/
+    # correlate), not resume-extract's low-effort transcription tier: this
+    # is "judgment, not lookup" (altitude/adjacency calls), so reasoning
+    # effort is left at the provider default and needs the same overhead
+    # budget, even though the final JSON output is one field.
+    model: openai/gpt-oss-120b
+    maxTokens: 2000
+    temperature: 0.1
+    strict: true
   url-check-search:
     model: perplexity/sonar
     maxTokens: 4000
