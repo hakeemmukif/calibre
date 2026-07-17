@@ -73,6 +73,29 @@ open a real résumé → `docker compose -p caliber-restore-drill down -v`.
 
 **Continuous (recommended for real users):** run [litestream](https://litestream.io) as a sidecar replicating `caliber.db` to S3/B2 for point-in-time restore — the standard SQLite production backup. Wire it when you take on paying users.
 
+## Alerting
+
+Two legs, both landing in the operator's Telegram (Decision 1 — same channel
+as crash-page/feedback support):
+
+1. **External (launch-gate leg 4, operator setup):** UptimeRobot polls
+   `https://caliber.fightbase.co/api/health` — the only check that sees
+   DNS/TLS/host-Caddy from outside — and pushes via the Telegram bot.
+2. **On-box (first-week):** `scripts/alert-check.sh` on cron:
+   ```
+   */10 * * * * /opt/caliber/scripts/alert-check.sh >> /var/log/caliber-alert.log 2>&1
+   ```
+   Checks: on-box `/api/health`, disk ≥90%, stale backup (>26h without
+   `scripts/backup.sh`'s success marker), and a tiered log classifier —
+   **page-on-first** (crashes, the daily cost-cap trip, url-check worker-loop
+   errors) vs **page-above-threshold** (connector/scoring/url-check flakes,
+   `[client-error]` beacons; ≥5 per 10-min window). The designed url-check
+   tier-escalation fallback never pages (allowlist matching). Payloads are
+   summary counts only — raw log lines never leave the box.
+
+Bot token + chat id live in `/root/.config/caliber-alert.env` (box-only, not
+in git, not in `.env.production`).
+
 ## Image runtime: `next start` (not standalone)
 The Dockerfile runs `next start` and keeps full `node_modules` — deliberate, because the tsx/drizzle-kit one-offs (`db:migrate`, `db:seed`, `migrate-uploads`) run via `docker compose run app ...` and need those binaries. `output: "standalone"` was **removed** from `next.config.mjs` (2026-07-16): it conflicts with `next start` (Next 15.5 warns "does not work") and the runtime image isn't the slim standalone bundle anyway. If you ever want the slimmer standalone image, you'd also need a separate migration path for the one-offs (standalone bundles only traced deps — no tsx/drizzle-kit).
 
