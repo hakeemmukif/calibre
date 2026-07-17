@@ -7,10 +7,10 @@ import { sql } from "drizzle-orm";
 import { getDb } from "../persistence/db";
 import { jobs } from "../persistence/schema";
 
-async function report() {
+export async function report() {
   const db = getDb();
   const rows = await db
-    .select({ eligibility: jobs.eligibility, n: sql<number>`count(*)::int` })
+    .select({ eligibility: jobs.eligibility, n: sql<number>`count(*)` })
     .from(jobs)
     .groupBy(jobs.eligibility);
   const total = rows.reduce((s, r) => s + r.n, 0);
