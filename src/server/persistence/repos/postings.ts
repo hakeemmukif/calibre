@@ -15,7 +15,7 @@ export type PostingRow = typeof postings.$inferSelect;
 // scalars (`url`/`applyUrl`/`externalId`/`salaryRaw`) the pool-read path (P.5)
 // needs to materialize a `jobs` row: arch §1.2 names only description/raw/
 // aliases as the intended exclusions, and §3.4 admission requires `url`.
-// A test pins this shape (postings.query-projection.test.ts) — the same
+// A test pins this shape (postings.test.ts) — the same
 // query-text enforcement style as no-db-transaction.test.ts.
 export const listForMatchingProjection = {
   id: postings.id,

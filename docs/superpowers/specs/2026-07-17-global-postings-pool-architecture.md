@@ -425,8 +425,8 @@ Either way the seeded 803 rows are never deleted — `enabled` is the only dial.
 ### 7.2 `crawl_runs` (net-new, small)
 
 Mirror of `search_runs`' pattern: `id, startedAt, finishedAt, status
-(running|completed|failed), stats json {sourcesOk, sourcesFailed, perHost429s, upserts,
-delists, durationMs}`. It exists for F4/F6 and gives the admin surface its crawl-health
+(running|completed|failed), stats json {sourcesOk, sourcesFailed, perHostBackoffs, upserts,
+delists, durationMs, emptyFetches}`. It exists for F4/F6 and gives the admin surface its crawl-health
 read. Not a queue — one row per run.
 
 ### 7.3 What is explicitly NOT a failure mode

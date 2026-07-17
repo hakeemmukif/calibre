@@ -15,7 +15,9 @@
 //  - A 403/429 STOPS that vendor host for the night (legal stop-signal, arch
 //    §2.2) and never routes around it; other hosts keep going.
 //  - The per-source delist sweep runs ONLY after that source's fetch SUCCEEDS —
-//    a network error must never mass-delist a board (F1).
+//    a network error must never mass-delist a board (F1). A fetch that
+//    succeeds but yields ZERO postings also skips the sweep and logs loudly —
+//    a bad slug or an empty vendor payload must not delist a whole board.
 //  - Delisted rows purge (hard-delete) at 60 days; `jobs.posting_id ON DELETE
 //    SET NULL` keeps the user's history intact across the purge (F8).
 //  - A `crawl_runs` lease refuses to start while another run is still young
@@ -47,10 +49,13 @@ import {
 export interface CrawlStats {
   sourcesOk: number;
   sourcesFailed: number;
-  perHost429s: Record<string, number>;
+  perHostBackoffs: Record<string, number>;
   upserts: number;
   delists: number;
   durationMs: number;
+  // Source ids whose fetch SUCCEEDED but returned zero postings this run — a
+  // visible anomaly (bad slug, empty vendor payload), never a delist signal.
+  emptyFetches: string[];
 }
 
 export interface CrawlRunResult {
@@ -339,10 +344,11 @@ export async function runCrawl(deps: CrawlDeps): Promise<CrawlRunResult> {
   const stats: CrawlStats = {
     sourcesOk: 0,
     sourcesFailed: 0,
-    perHost429s: {},
+    perHostBackoffs: {},
     upserts: 0,
     delists: 0,
     durationMs: 0,
+    emptyFetches: [],
   };
   let sourcesSkipped = 0;
   let purged = 0;
@@ -379,7 +385,7 @@ export async function runCrawl(deps: CrawlDeps): Promise<CrawlRunResult> {
     } catch (err) {
       if (isBackoffStatus(err)) {
         stoppedHosts.add(host);
-        stats.perHost429s[host] = (stats.perHost429s[host] ?? 0) + 1;
+        stats.perHostBackoffs[host] = (stats.perHostBackoffs[host] ?? 0) + 1;
       }
       stats.sourcesFailed += 1;
       // Recorded, not thrown — a failing source must not abort the crawl (F1),
@@ -397,7 +403,16 @@ export async function runCrawl(deps: CrawlDeps): Promise<CrawlRunResult> {
         await upsertPosting(db, source, winner, now());
         stats.upserts += 1;
       }
-      stats.delists += await delistSweep(db, source.id, runStartedAt, now());
+      if (boardPostings.length === 0) {
+        // A zero-posting fetch is a visible anomaly (bad slug, transient empty
+        // vendor payload) — NOT a signal that every live row for this source
+        // just vanished from the board. Skip the sweep; record + log it loudly
+        // instead of silently mass-delisting.
+        stats.emptyFetches.push(source.id);
+        console.warn(`crawl ${leaseId}: source "${source.id}" fetch returned 0 postings — skipping delist sweep`);
+      } else {
+        stats.delists += await delistSweep(db, source.id, runStartedAt, now());
+      }
     });
     stats.sourcesOk += 1;
   }

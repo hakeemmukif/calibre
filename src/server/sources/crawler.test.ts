@@ -148,6 +148,42 @@ describe("runCrawl", () => {
     expect(failRow.delistedAt).toBeNull(); // NOT swept — fetch failed
   });
 
+  it("a fetch that SUCCEEDS but yields zero postings does NOT delist — guards against mass-delist", async () => {
+    const db = await createTestDb();
+    const source = await insertSource(db, { config: { connector: "ashby", geo: { scope: "restricted" } } });
+    const stale = new Date(1000);
+    const [staleRow] = await db
+      .insert(postings)
+      .values({
+        canonicalKey: "empty-fetch-stale",
+        url: "https://jobs.example.com/empty/old",
+        sourceId: source.id,
+        title: "Old Role",
+        company: "acme",
+        location: "Remote",
+        persona: "remote",
+        firstSeenAt: stale,
+        lastSeenAt: stale,
+        aliases: [],
+        raw: {},
+      })
+      .returning();
+
+    const result = await runCrawl({
+      db,
+      sources: [source],
+      // The fetch succeeds (no throw) but returns an empty set — a bad slug
+      // or a transient empty vendor payload, not a real delist-everything.
+      connectorFor: connectorFactory({ [source.id]: { postings: [] } }),
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.stats.sourcesOk).toBe(1); // the fetch itself succeeded
+    const [row] = await db.select().from(postings).where(eq(postings.id, staleRow.id));
+    expect(row.delistedAt).toBeNull(); // NOT swept
+    expect(result.stats.emptyFetches).toEqual([source.id]); // surfaced as an anomaly, not a routine delist
+  });
+
   it("a 429 stops one host; other hosts continue", async () => {
     const db = await createTestDb();
     // Two sources on the SAME vendor host (ashby), one on another (lever).
@@ -170,7 +206,7 @@ describe("runCrawl", () => {
     });
 
     expect(result.status).toBe("completed");
-    expect(result.stats.perHost429s["api.ashbyhq.com"]).toBe(1);
+    expect(result.stats.perHostBackoffs["api.ashbyhq.com"]).toBe(1);
     expect(result.stats.sourcesFailed).toBe(1); // a1
     expect(result.sourcesSkipped).toBe(1); // a2, skipped because its host stopped
     expect(result.stats.sourcesOk).toBe(1); // b1, other host continued

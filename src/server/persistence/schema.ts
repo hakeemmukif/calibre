@@ -81,15 +81,20 @@ type CorrelationReportRowJson = {
 
 // Global postings pool (2026-07-17 arch §7.2): one row per nightly crawl run,
 // mirroring search_runs' pattern. Populated at finish — null while a run is
-// still 'running' (honest absence, not a fabricated zero). `perHost429s` keys
-// on vendor host (arch §2.2: ashby/greenhouse/lever/jobstreet).
+// still 'running' (honest absence, not a fabricated zero). `perHostBackoffs`
+// keys on vendor host (arch §2.2: ashby/greenhouse/lever/jobstreet); counts
+// both 429 and 403 responses (either is the vendor's stop-signal).
 type CrawlRunStats = {
   sourcesOk: number;
   sourcesFailed: number;
-  perHost429s: Record<string, number>;
+  perHostBackoffs: Record<string, number>;
   upserts: number;
   delists: number;
   durationMs: number;
+  // Source ids whose fetch succeeded but returned zero postings — an anomaly
+  // flag, never a delist signal (a bad slug or empty vendor payload must not
+  // read as "the whole board vanished").
+  emptyFetches: string[];
 };
 
 // ---- tables ----

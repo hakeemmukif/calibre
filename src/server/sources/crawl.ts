@@ -74,7 +74,8 @@ export async function runCrawlCli(args: CrawlCliArgs): Promise<void> {
       `${result.stats.sourcesOk} ok, ${result.stats.sourcesFailed} failed, ` +
       `${result.sourcesSkipped} skipped, ${result.stats.upserts} upserts, ` +
       `${result.stats.delists} delists, ${result.purged} purged, ` +
-      `${result.stats.durationMs}ms. perHost429s=${JSON.stringify(result.stats.perHost429s)}`,
+      `${result.stats.durationMs}ms. perHostBackoffs=${JSON.stringify(result.stats.perHostBackoffs)}. ` +
+      `emptyFetches=${JSON.stringify(result.stats.emptyFetches)}`,
   );
 }
 
