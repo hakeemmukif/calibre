@@ -28,6 +28,22 @@ absorbs its open item #4 — the gate-vs-rank collision spanning `run.ts:555-560
 radius) and `jobsFeed.ts:68-69` (outside it); see
 `docs/superpowers/reports/2026-07-17-handoff-integration.md` §4. P.5 below is written to this decision.
 
+## Operator decisions — 2026-07-17 (round 2, pre-implementation)
+
+| # | Decision | Binds |
+|---|---|---|
+| **R1** | **Feed order = `fit_score DESC, firstSeenAt DESC`** — one cross-page ordering, replacing today's page-local sort | P.5 |
+| **R2** | **TOP_N stays 30** at cutover — 30→40 is a priced one-liner after the pool is stable; keep P.5's diff about the cutover | P.5 |
+| **R3** | **Crawl once daily @ 03:00** — the arch's v1 call; frequency is a cron dial, and 479 sequential Ashby GETs has unverified per-host tolerance | P.3 |
+| **R4** | **Keep `raw` until purge** (do NOT null it on delist) — delisted rows purge at 60d anyway; replay/debug value at ~4KB/row is negligible against a ~0.12 GB pool. Closes arch §1's named open sub-point | P.1 |
+
+### ⚠ R1 has an unresolved premise — P.5 MUST close it
+R1 was chosen on the rationale "eligibility feeds into fit_score, so demotion is intrinsic." **That is false today** (verified 2026-07-17): `scoreJob.ts` contains **no** tz/eligibility/schedule references — the fit score is résumé-vs-JD only — and `repos/jobs.ts:205` orders by `firstSeenAt desc, id desc`, not by score. So `ORDER BY fit_score DESC` alone would rank by résumé fit and **silently drop DECISION A's demotion**.
+P.5 must pick one, explicitly, and pin it with a test:
+- **(a)** feed eligibility INTO the score (changes `scoreJob`'s inputs/prompt — the honest reading of R1, bigger blast radius), or
+- **(b)** order by a blended expression (`fit_score` adjusted by an eligibility term) — keeps scoring untouched, but eligibility stays a special case.
+Do not ship `ORDER BY fit_score DESC` alone — it satisfies R1's letter and breaks DECISION A.
+
 ## Prerequisite — SATISFIED (`4f5ad11`, 2026-07-17)
 
 - **`tzBand.ts` reconciliation — RESOLVED.** The place-name tz-band map committed as `4f5ad11` is the
