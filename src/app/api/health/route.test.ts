@@ -1,19 +1,47 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-afterEach(() => vi.unstubAllEnvs());
+const state = vi.hoisted(() => ({ shouldFail: false }));
+vi.mock("@/server/persistence/db", () => ({
+  getDb: () => ({
+    run: async () => {
+      if (state.shouldFail) throw new Error("db gone");
+      return { rowsAffected: 0 };
+    },
+  }),
+}));
+
+import { GET } from "./route";
+
+const originalKey = process.env.OPENROUTER_API_KEY;
+afterAll(() => {
+  if (originalKey === undefined) delete process.env.OPENROUTER_API_KEY;
+  else process.env.OPENROUTER_API_KEY = originalKey;
+});
+
+beforeEach(() => {
+  state.shouldFail = false;
+  delete process.env.OPENROUTER_API_KEY;
+});
 
 describe("GET /api/health", () => {
-  it("reports mode 'doubles' when the flag is set", async () => {
-    vi.stubEnv("CALIBER_TEST_DOUBLES", "1");
-    const { GET } = await import("./route");
-    const body = await (GET() as Response).json();
-    expect(body).toEqual({ ok: true, mode: "doubles" });
+  it("reports llmKeyConfigured: false when the key is absent", async () => {
+    const res = await GET();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true, llmKeyConfigured: false });
   });
 
-  it("reports mode 'real' when the flag is unset", async () => {
-    vi.stubEnv("CALIBER_TEST_DOUBLES", "");
-    const { GET } = await import("./route");
-    const body = await (GET() as Response).json();
-    expect(body).toEqual({ ok: true, mode: "real" });
+  it("reports llmKeyConfigured: true on key PRESENCE only — no LLM call", async () => {
+    process.env.OPENROUTER_API_KEY = "sk-test";
+    const res = await GET();
+    expect((await res.json()).llmKeyConfigured).toBe(true);
+  });
+
+  it("503s ok:false when the db ping throws", async () => {
+    state.shouldFail = true;
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await GET();
+    expect(res.status).toBe(503);
+    expect((await res.json()).ok).toBe(false);
+    spy.mockRestore();
   });
 });

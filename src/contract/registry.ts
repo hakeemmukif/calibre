@@ -124,7 +124,7 @@ registry.registerPath({
       description: "Service is healthy",
       content: {
         "application/json": {
-          schema: z.object({ ok: z.boolean(), mode: z.enum(["real", "doubles"]) }),
+          schema: z.object({ ok: z.boolean(), mode: z.enum(["real", "doubles"]), llmKeyConfigured: z.boolean() }),
         },
       },
     },

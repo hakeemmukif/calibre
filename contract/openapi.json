@@ -3847,6 +3847,9 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "llmKeyConfigured": {
+                      "type": "boolean"
+                    },
                     "mode": {
                       "enum": [
                         "real",
@@ -3860,7 +3863,8 @@
                   },
                   "required": [
                     "ok",
-                    "mode"
+                    "mode",
+                    "llmKeyConfigured"
                   ],
                   "type": "object"
                 }
