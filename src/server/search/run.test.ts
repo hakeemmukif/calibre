@@ -142,7 +142,8 @@ vi.mock("@/server/score", async (importOriginal) => {
   return { ...actual, scoreJob: vi.fn(actual.scoreJob) };
 });
 
-const { startSearch, ActiveRunConflictError, NoActiveResumeError, UnknownSourceIdsError } = await import("./run");
+const { startSearch, ActiveRunConflictError, NoActiveResumeError, UnknownSourceIdsError, sortCandidatesForRanking, TOP_N_CANDIDATES } =
+  await import("./run");
 const { __resetForTests, get: getRunHandle, getActiveRunForPersona } = await import("@/server/runs/registry");
 const { scoreJob: scoreJobSpy } = await import("@/server/score");
 
@@ -912,5 +913,67 @@ describe("startSearch", () => {
 
     const rows = await state.testDb.select().from(creditLedger).where(eq(creditLedger.userId, BOOTSTRAP_ADMIN_ID));
     expect(rows).toHaveLength(0);
+  });
+});
+
+// Task 1.2: the top-N slice (scoreTopCandidates, ~run.ts:541) must be a pure
+// function of posting content — NOT of the order postings land in the `pool`
+// array, which upstream depends on connector network-race timing / Map
+// (groupByCollision) insertion order. No stage1Score exists yet (matching is
+// boolean); postedAt desc (nulls last) + dedupeKey asc is deterministic and
+// sufficient until a real stage-1 score lands in a later phase.
+describe("sortCandidatesForRanking (Task 1.2 — deterministic top-N ranking)", () => {
+  type MinimalCandidate = { job: { postedAt: Date | null; dedupeKey: string } };
+
+  function candidate(dedupeKey: string, postedAt: Date | null): MinimalCandidate {
+    return { job: { postedAt, dedupeKey } };
+  }
+
+  // Deterministic seeded PRNG (LCG) — NOT unseeded Math.random. Produces a
+  // fixed, reproducible permutation per seed so the test itself is
+  // deterministic, while still exercising many different input orderings.
+  function seededShuffle<T>(arr: T[], seed: number): T[] {
+    const out = [...arr];
+    let s = seed;
+    for (let i = out.length - 1; i > 0; i--) {
+      s = (s * 1103515245 + 12345) & 0x7fffffff;
+      const j = s % (i + 1);
+      [out[i], out[j]] = [out[j], out[i]];
+    }
+    return out;
+  }
+
+  it("top-30 slice is byte-identical (same postings, same order) across shuffled insertion orders", () => {
+    const base = Date.now();
+    // 40 candidates (> TOP_N_CANDIDATES=30): 20 with distinct postedAt values
+    // (desc ordering), 10 sharing one postedAt (dedupeKey-asc tiebreak) — 30
+    // dated total, so the top-30 slice is exactly these and excludes the
+    // remaining 10 null-postedAt candidates (nulls-last).
+    const candidates: MinimalCandidate[] = [
+      // Strictly greater than the tie cluster's timestamp (base) and
+      // strictly decreasing with i, so desc order matches ascending index.
+      ...Array.from({ length: 20 }, (_, i) => candidate(`distinct-${String(i).padStart(2, "0")}`, new Date(base + (20 - i) * 1000))),
+      ...Array.from({ length: 10 }, (_, i) => candidate(`tie-${String(i).padStart(2, "0")}`, new Date(base))),
+      ...Array.from({ length: 10 }, (_, i) => candidate(`null-${String(i).padStart(2, "0")}`, null)),
+    ];
+    expect(candidates.length).toBeGreaterThan(TOP_N_CANDIDATES);
+
+    const expectedTop30 = sortCandidatesForRanking(candidates).slice(0, TOP_N_CANDIDATES);
+    // Sanity: nulls really do land after every dated posting, and the tie
+    // cluster is ordered by dedupeKey ascending.
+    expect(expectedTop30.some((c) => c.job.postedAt === null)).toBe(false);
+    expect(expectedTop30.map((c) => c.job.dedupeKey).slice(20, 30)).toEqual(
+      Array.from({ length: 10 }, (_, i) => `tie-${String(i).padStart(2, "0")}`),
+    );
+
+    for (const seed of [1, 2, 3, 4, 5]) {
+      const shuffled = seededShuffle(candidates, seed);
+      // Insertion order must have actually changed for this seed to be a
+      // meaningful check against Map-insertion-order leakage.
+      expect(shuffled.map((c) => c.job.dedupeKey)).not.toEqual(candidates.map((c) => c.job.dedupeKey));
+
+      const top30 = sortCandidatesForRanking(shuffled).slice(0, TOP_N_CANDIDATES);
+      expect(top30).toEqual(expectedTop30);
+    }
   });
 });

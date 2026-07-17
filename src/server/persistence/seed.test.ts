@@ -5,16 +5,18 @@ import { seedAdmin, seedSources, sourceSeeds } from "./seed";
 import { sources, users } from "./schema";
 import { BOOTSTRAP_ADMIN_ID } from "@/server/auth/ids";
 import { verifyPassword } from "@/server/auth/password";
+import { connectorForSource } from "@/server/search/connectors";
 
 describe("seedSources", () => {
-  it("inserts the 13 sources rows against libsql", async () => {
+  it("inserts the 17 sources rows against libsql", async () => {
     const db = await createTestDb();
     const inserted = await seedSources(db);
-    expect(inserted).toHaveLength(14);
+    expect(inserted).toHaveLength(17);
 
     const rows = await db.select().from(sources);
     expect(rows.map((r) => r.id).sort()).toEqual([
       "ashby-airwallex",
+      "ashby-bjak",
       "ashby-deel",
       "ashby-elevenlabs",
       "ashby-perplexity",
@@ -26,10 +28,28 @@ describe("seedSources", () => {
       "gh-remote",
       "gh-stripe",
       "jobstreet",
+      "lever-gotogroup",
+      "lever-shopback",
       "lever-toptal",
       "manual",
     ]);
-    expect(sourceSeeds).toHaveLength(14);
+    expect(sourceSeeds).toHaveLength(17);
+  });
+});
+
+describe("seedSources — SEA seeds (task-2-brief 2.1, live-verified slugs)", () => {
+  it.each([
+    ["lever-gotogroup", "lever", "GoToGroup"],
+    ["lever-shopback", "lever", "shopback-2"],
+    ["ashby-bjak", "ashby", "bjakcareer"],
+  ])("%s resolves via connectorForSource with connector %s and slug %s", (id, connector, slug) => {
+    const row = sourceSeeds.find((s) => s.id === id);
+    expect(row).toBeDefined();
+    expect(row?.persona).toBe("local");
+    expect(row?.config).toMatchObject({ connector, slug });
+
+    const resolved = connectorForSource(row as never);
+    expect(resolved.id).toBe(id);
   });
 });
 

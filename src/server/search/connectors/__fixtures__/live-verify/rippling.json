@@ -1,0 +1,68 @@
+{
+  "items": [
+    {
+      "id": "836568ae-5bd5-4727-b543-9b15476abdd4",
+      "name": "Sr. Financial Analyst",
+      "url": "https://ats.rippling.com/joinroot/jobs/836568ae-5bd5-4727-b543-9b15476abdd4",
+      "department": {
+        "name": "CFO Org"
+      },
+      "locations": [
+        {
+          "name": "Remote (United States)",
+          "country": "United States",
+          "countryCode": "US",
+          "state": null,
+          "stateCode": null,
+          "city": null,
+          "workplaceType": "REMOTE"
+        }
+      ],
+      "language": "en-US"
+    },
+    {
+      "id": "f4a777b6-499d-49b5-aedd-50c2fdb6abec",
+      "name": "Insurance State Manager",
+      "url": "https://ats.rippling.com/joinroot/jobs/f4a777b6-499d-49b5-aedd-50c2fdb6abec",
+      "department": {
+        "name": "Decision Science"
+      },
+      "locations": [
+        {
+          "name": "Remote (United States)",
+          "country": "United States",
+          "countryCode": "US",
+          "state": null,
+          "stateCode": null,
+          "city": null,
+          "workplaceType": "REMOTE"
+        }
+      ],
+      "language": "en-US"
+    },
+    {
+      "id": "8d7cb037-d859-48a4-8dc1-bf781f99c992",
+      "name": "Senior Insurance State Manager",
+      "url": "https://ats.rippling.com/joinroot/jobs/8d7cb037-d859-48a4-8dc1-bf781f99c992",
+      "department": {
+        "name": "Decision Science"
+      },
+      "locations": [
+        {
+          "name": "Remote (United States)",
+          "country": "United States",
+          "countryCode": "US",
+          "state": null,
+          "stateCode": null,
+          "city": null,
+          "workplaceType": "REMOTE"
+        }
+      ],
+      "language": "en-US"
+    }
+  ],
+  "page": 0,
+  "pageSize": 20,
+  "totalItems": 12,
+  "totalPages": 1
+}

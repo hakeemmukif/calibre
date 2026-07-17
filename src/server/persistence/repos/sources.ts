@@ -13,6 +13,14 @@ export function createSourcesRepo(db: Db) {
       const [inserted] = await db.insert(sources).values(row).returning();
       return inserted;
     },
+    // Task 2.5 bulk-seed: mirrors `insert` above (`db.insert(sources)
+    // .values(...).returning()`), plus `onConflictDoNothing()` — same
+    // pattern seed.ts's `seedSources` already uses on `id` (the primary
+    // key) — so a re-run of the engine never overwrites a row an admin or
+    // an earlier run already seeded.
+    async bulkInsert(rows: NewSource[]): Promise<SourceRow[]> {
+      return db.insert(sources).values(rows).onConflictDoNothing().returning();
+    },
     // GLOBAL-BY-DECISION: sources are admin-managed reference data, not
     // user-owned (Step 3 plan Global Constraints: "sources reads stay
     // global") — no userId dimension exists on this table.
@@ -42,13 +50,27 @@ export function createSourcesRepo(db: Db) {
       const [updated] = await db.update(sources).set({ enabled }).where(eq(sources.id, id)).returning();
       return updated;
     },
+    // Task 2.6 freshness loop: config rewrite (health fields, ATS re-detection)
+    // + enabled flip in one statement. Mirrors setEnabled above; undefined on
+    // an unknown id, same as setEnabled.
+    // GLOBAL-BY-DECISION: sources are admin-managed reference data, not
+    // user-owned — same as getById above.
+    async update(
+      id: string,
+      patch: Partial<Pick<NewSource, "config" | "enabled">>,
+    ): Promise<SourceRow | undefined> {
+      const [updated] = await db.update(sources).set(patch).where(eq(sources.id, id)).returning();
+      return updated;
+    },
   };
 }
 
 export const sourcesRepo: ReturnType<typeof createSourcesRepo> = {
   insert: (row) => createSourcesRepo(getDb()).insert(row),
+  bulkInsert: (rows) => createSourcesRepo(getDb()).bulkInsert(rows),
   getById: (id) => createSourcesRepo(getDb()).getById(id),
   listEnabledByPersona: (persona) => createSourcesRepo(getDb()).listEnabledByPersona(persona),
   listAll: () => createSourcesRepo(getDb()).listAll(),
   setEnabled: (id, enabled) => createSourcesRepo(getDb()).setEnabled(id, enabled),
+  update: (id, patch) => createSourcesRepo(getDb()).update(id, patch),
 };

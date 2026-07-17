@@ -31,7 +31,7 @@ import { ensureDescription } from "./describe";
 import { resolveIsNewCutoff } from "./jobsFeed";
 import { deriveRoleTargets, roleFuzzyMatch } from "./roleMatch";
 
-const TOP_N_CANDIDATES = 30; // system-architecture.md §6 decision 8 "per-run score cap (~30 jobs)"
+export const TOP_N_CANDIDATES = 30; // system-architecture.md §6 decision 8 "per-run score cap (~30 jobs)"
 const SCORE_CONCURRENCY = 3; // rolling scoring pool width — each match-score call is observed at 25-60s
 
 export class NoActiveResumeError extends Error {
@@ -512,6 +512,22 @@ function startOfToday(): Date {
   return start;
 }
 
+// Task 1.2: the top-N slice below must be a pure function of posting content,
+// never of the order `pool` arrives in — that order comes from connector
+// network-race timing / groupByCollision's Map insertion order, both
+// nondeterministic across runs of the same postings. No stage1Score exists
+// yet (matching is boolean; a real stage-1 score arrives in a later phase),
+// so postedAt desc (nulls last) + dedupeKey asc is the deterministic,
+// sufficient stand-in tiebreak.
+export function sortCandidatesForRanking<T extends { job: Pick<JobRow, "postedAt" | "dedupeKey"> }>(pool: T[]): T[] {
+  return [...pool].sort((a, b) => {
+    const aTime = a.job.postedAt ? a.job.postedAt.getTime() : -Infinity;
+    const bTime = b.job.postedAt ? b.job.postedAt.getTime() : -Infinity;
+    if (aTime !== bTime) return bTime - aTime;
+    return a.job.dedupeKey < b.job.dedupeKey ? -1 : a.job.dedupeKey > b.job.dedupeKey ? 1 : 0;
+  });
+}
+
 // Cost-capped scoring phase (system-architecture.md §6 decision 8): score the
 // top-N (~30) candidates surviving the role-fuzzy-match pre-filter, stopping
 // early (without crashing the run) once the daily LLM spend cap is hit. Emits
@@ -538,7 +554,7 @@ async function scoreTopCandidates(
     if (allowedBands && c.job.tzBand && !allowedBands.includes(c.job.tzBand)) return false;
     return true;
   });
-  const topCandidates = pool.slice(0, TOP_N_CANDIDATES);
+  const topCandidates = sortCandidatesForRanking(pool).slice(0, TOP_N_CANDIDATES);
   let scored = 0;
   let worth = 0;
   let ghosts = 0;

@@ -31,6 +31,14 @@ export const sourceSeeds: (typeof sources.$inferInsert)[] = [
   { id: "ashby-perplexity", name: "Perplexity", kind: "ats", persona: "remote", enabled: true, config: { connector: "ashby", slug: "perplexity", geo: { scope: "restricted" } } },
   { id: "ashby-zapier", name: "Zapier", kind: "ats", persona: "remote", enabled: true, config: { connector: "ashby", slug: "zapier", geo: { scope: "anywhere" } } },
   { id: "ashby-supabase", name: "Supabase", kind: "ats", persona: "remote", enabled: true, config: { connector: "ashby", slug: "supabase", geo: { scope: "anywhere" } } },
+  // SEA seeds (design 2026-07-16-remote-startup-niche-source-expansion-design.md
+  // §4.2/§7 "Verified SEA seeds") — slugs live-verified against their real ATS
+  // endpoints (task-2-brief.md Step 8); persona 'local' is the legal growth
+  // path for the SEA-local persona. Aspire's listing slug 404s live — omitted
+  // deliberately, not a fallback guess.
+  { id: "lever-gotogroup", name: "GoTo Group", kind: "ats", persona: "local", enabled: true, config: { connector: "lever", slug: "GoToGroup", geo: { scope: "restricted", regions: ["SEA"] } } },
+  { id: "lever-shopback", name: "ShopBack", kind: "ats", persona: "local", enabled: true, config: { connector: "lever", slug: "shopback-2", geo: { scope: "restricted", regions: ["SEA"] } } },
+  { id: "ashby-bjak", name: "Bjak", kind: "ats", persona: "local", enabled: true, config: { connector: "ashby", slug: "bjakcareer", geo: { scope: "restricted", regions: ["SEA"] } } },
   {
     id: "jobstreet", name: "JobStreet Malaysia", kind: "board", persona: "local", enabled: true,
     config: {

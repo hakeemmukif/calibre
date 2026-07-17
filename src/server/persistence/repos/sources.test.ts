@@ -66,4 +66,84 @@ describe("sourcesRepo", () => {
     const updated = await repo.setEnabled("nope", true);
     expect(updated).toBeUndefined();
   });
+
+  it("update rewrites config and enabled together and returns the row", async () => {
+    const db = await createTestDb();
+    const repo = createSourcesRepo(db);
+
+    await repo.insert({ id: "lever:acme", name: "Acme", kind: "ats", persona: "remote", enabled: true, config: { slug: "acme" } });
+
+    const updated = await repo.update("lever:acme", { config: { slug: "acme-new", status: "dead" }, enabled: false });
+    expect(updated?.enabled).toBe(false);
+    expect(updated?.config).toEqual({ slug: "acme-new", status: "dead" });
+
+    const fetched = await repo.getById("lever:acme");
+    expect(fetched?.enabled).toBe(false);
+    expect(fetched?.config).toEqual({ slug: "acme-new", status: "dead" });
+  });
+
+  it("update on an unknown id resolves undefined", async () => {
+    const db = await createTestDb();
+    const repo = createSourcesRepo(db);
+
+    const updated = await repo.update("nope", { config: {} });
+    expect(updated).toBeUndefined();
+  });
+});
+
+describe("sourcesRepo.bulkInsert", () => {
+  it("round-trips the config shape (insert then read back, deep-equal)", async () => {
+    const db = await createTestDb();
+    const repo = createSourcesRepo(db);
+
+    const config = {
+      connector: "greenhouse",
+      slug: "vercel",
+      provenance: ["jobhive", "yc-oss"],
+      companyDomain: "vercel.com",
+      lastValidatedAt: 1_752_700_000_000,
+      jobCount: 87,
+      consecutiveFailures: 0,
+      status: "active",
+    };
+
+    const [inserted] = await repo.bulkInsert([
+      { id: "gh:vercel", name: "Vercel", kind: "ats", persona: "remote", enabled: true, config },
+    ]);
+
+    expect(inserted.config).toEqual(config);
+
+    const fetched = await repo.getById("gh:vercel");
+    expect(fetched?.config).toEqual(config);
+  });
+
+  it("conflict on an existing id is a no-op (second insert of same id ignored, first row unchanged)", async () => {
+    const db = await createTestDb();
+    const repo = createSourcesRepo(db);
+
+    await repo.bulkInsert([
+      { id: "gh:vercel", name: "Vercel", kind: "ats", persona: "remote", enabled: true, config: { jobCount: 1 } },
+    ]);
+    await repo.bulkInsert([
+      { id: "gh:vercel", name: "Vercel (stale)", kind: "ats", persona: "remote", enabled: false, config: { jobCount: 999 } },
+    ]);
+
+    const fetched = await repo.getById("gh:vercel");
+    expect(fetched?.name).toBe("Vercel");
+    expect(fetched?.enabled).toBe(true);
+    expect(fetched?.config).toEqual({ jobCount: 1 });
+  });
+
+  it("listEnabledByPersona returns the bulk-seeded rows", async () => {
+    const db = await createTestDb();
+    const repo = createSourcesRepo(db);
+
+    await repo.bulkInsert([
+      { id: "gh:vercel", name: "Vercel", kind: "ats", persona: "remote", enabled: true, config: {} },
+      { id: "lever:acme", name: "Acme", kind: "ats", persona: "remote", enabled: true, config: {} },
+    ]);
+
+    const remote = await repo.listEnabledByPersona("remote");
+    expect(remote.map((r) => r.id).sort()).toEqual(["gh:vercel", "lever:acme"]);
+  });
 });

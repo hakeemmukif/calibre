@@ -34,15 +34,28 @@ describe("roleFuzzyMatch", () => {
     expect(roleFuzzyMatch(target(["Backend Engineer"]), posting("Frontend Designer"))).toBe(false);
   });
 
-  it("does not match when Jaccard overlap falls below 0.6 despite 2+ shared tokens incl. a non-baseline one", () => {
-    // shared: {data, engineer} (data discriminating) but the posting's token
-    // set is much larger → Jaccard well under 0.6.
+  // DELIBERATELY RE-PINNED false → true (2026-07-17). This was a donor-derived
+  // negative: it pinned the donor's Jaccard-only rule, where {data, engineer}
+  // against a much larger posting token set lands well under 0.6 and rejects.
+  // The stress test over 2,906 live ATS postings
+  // (docs/superpowers/reports/2026-07-17-matching-stress-test.md §3.1) shows the
+  // pin encodes the under-matching bug itself rather than a real negative: the
+  // "<Role>, <Department>" shape it is written in is the single largest
+  // false-negative family on real boards — the same shape as "Product Manager,
+  // Cash Platform" (Stripe) and "Engineering Manager, Data Foundations"
+  // (GitLab), which cost 500+ real matches and drove product recall to 0.14.
+  // The résumé title is FULLY contained and in order; an appended department
+  // qualifier is not evidence of a different role. Overriding the donor here is
+  // what takes overall recall 0.425 → 0.722 at FP 190 → 141. The Jaccard floor
+  // itself is UNCHANGED and still guards the token path (see the negative pins
+  // below); this pair now matches via the phrase path.
+  it("matches a fully-contained title under an appended department qualifier (was a donor Jaccard rejection)", () => {
     expect(
       roleFuzzyMatch(
         target(["Data Engineer"]),
         posting("Data Engineer, Kubernetes Platform Infrastructure Reliability And Observability Systems"),
       ),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("keywords widen the target token pool (skills contribute discriminating tokens)", () => {
@@ -99,17 +112,19 @@ describe("roleFuzzyMatch — all-baseline full-title-containment exception", () 
     ).toBe(false);
   });
 
-  // Pins the regression the first (unscoped) containment attempt introduced:
-  // a NON-baseline title ("data" is discriminating) fully contained in a long
-  // unrelated posting must NOT match via containment — the all-baseline gate
-  // excludes it, leaving the donor's Jaccard guard to reject it.
-  it("does not extend containment to domain-flavored titles contained in long unrelated postings", () => {
+  // Same assertion as the re-pinned fixture in the first describe block (this
+  // file pinned the pair twice); see that comment for why the donor negative is
+  // deliberately overridden by the real-data evidence. Kept here because this
+  // block owns the containment rule: containment is no longer scoped to
+  // all-baseline titles — it is now ORDERED (phrase) containment for every
+  // title, which is what makes admitting a domain-flavored title safe.
+  it("extends phrase containment to domain-flavored titles (no longer scoped to all-baseline)", () => {
     expect(
       roleFuzzyMatch(
         target(["Data Engineer"]),
         posting("Data Engineer, Kubernetes Platform Infrastructure Reliability And Observability Systems"),
       ),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("does not match via containment for a single-token résumé title (>=2 guard)", () => {
@@ -117,9 +132,211 @@ describe("roleFuzzyMatch — all-baseline full-title-containment exception", () 
   });
 });
 
+// Spec 2026-07-16 §3 verified the donor-inherited matcher rejects every
+// non-engineering title — even against a LITERALLY IDENTICAL posting title —
+// because (1) roleTokens dropped all words ≤3 chars unless in a tech-only
+// acronym list (CEO/CTO/CFO/COO/VP → []), and (2) the overlap ≥2 floor killed
+// single-token roles (Head of Finance → ["finance"]). §4.1/§5 mandate these
+// fixtures: each title must match its identical posting AND a plausible
+// variant, without the matcher becoming match-everything.
+describe("roleFuzzyMatch — de-biased across job functions (spec §4.1/§5)", () => {
+  const identicalAndVariant: Array<[resumeTitle: string, variantPosting: string]> = [
+    ["CEO", "CEO (Remote)"],
+    ["CFO", "CFO - Remote"],
+    ["CTO", "CTO (Remote)"],
+    ["COO", "COO (Remote, APAC)"],
+    ["VP of Marketing", "VP, Marketing"],
+    ["Head of Finance", "Finance Lead"],
+    ["Head of Operations", "Operations Lead"],
+    ["Chief of Staff", "Chief of Staff (Remote)"],
+    ["Recruiter", "Senior Recruiter"],
+  ];
+
+  for (const [resumeTitle, variantPosting] of identicalAndVariant) {
+    it(`"${resumeTitle}" matches its identical posting title`, () => {
+      expect(roleFuzzyMatch(target([resumeTitle]), posting(resumeTitle))).toBe(true);
+    });
+
+    it(`"${resumeTitle}" matches the plausible variant "${variantPosting}"`, () => {
+      expect(roleFuzzyMatch(target([resumeTitle]), posting(variantPosting))).toBe(true);
+    });
+  }
+
+  // De-biasing must not become match-everything: baseline-only collisions and
+  // cross-function pairs still reject. ("Backend Engineer" vs "Frontend
+  // Designer" and the Jaccard-fail donor rejections stay pinned in the first
+  // describe block above.)
+  it("still rejects a bare baseline-token collision (Manager vs Manager)", () => {
+    expect(roleFuzzyMatch(target(["Manager"]), posting("Manager"))).toBe(false);
+  });
+
+  it("still rejects a bare baseline title against a broader posting (Engineer vs Software Engineer)", () => {
+    expect(roleFuzzyMatch(target(["Engineer"]), posting("Software Engineer"))).toBe(false);
+  });
+
+  it("does not match across C-suite functions (CEO vs CTO)", () => {
+    expect(roleFuzzyMatch(target(["CEO"]), posting("CTO"))).toBe(false);
+  });
+
+  it("a shared seniority acronym alone is not a match (VP of Marketing vs VP of Engineering)", () => {
+    expect(roleFuzzyMatch(target(["VP of Marketing"]), posting("VP of Engineering"))).toBe(false);
+  });
+
+  it("does not match across Head-of functions (Head of Finance vs Head of Engineering)", () => {
+    expect(roleFuzzyMatch(target(["Head of Finance"]), posting("Head of Engineering"))).toBe(false);
+  });
+
+  it("Chief of Staff does not bleed into Staff Engineer", () => {
+    expect(roleFuzzyMatch(target(["Chief of Staff"]), posting("Staff Engineer"))).toBe(false);
+  });
+});
+
+// The task-1.1 de-bias replaced the donor's >3-char token floor with >=2,
+// which started admitting abbreviated seniority ("sr"/"jr") and roman-numeral
+// levels ("ii"/"iii"/"iv") as if they were discriminating words. Every §3
+// fixture spells out "Senior", so the hole went unseen: for titles whose
+// surviving overlap is ALL-BASELINE, the stray glue token makes the title no
+// longer all-baseline, skipping the containment shortcut, and can never
+// contribute overlap against a posting that lacks it. These are among the most
+// common résumé spellings in the shipped engineering niche.
+describe("roleFuzzyMatch — abbreviated seniority and roman-numeral levels are glue", () => {
+  const seniorityGlue: Array<[resumeTitle: string, postingTitle: string]> = [
+    ["Sr. Software Engineer", "Software Engineer"],
+    ["Jr. Software Engineer", "Software Engineer"],
+    ["Software Engineer II", "Software Engineer"],
+    ["Software Engineer III", "Software Engineer"],
+    ["Software Engineer IV", "Software Engineer"],
+    ["Software Engineer II", "Software Engineer III"],
+    ["Sr Software Engineer", "Software Engineer II"],
+  ];
+
+  for (const [resumeTitle, postingTitle] of seniorityGlue) {
+    it(`"${resumeTitle}" matches "${postingTitle}"`, () => {
+      expect(roleFuzzyMatch(target([resumeTitle]), posting(postingTitle))).toBe(true);
+    });
+  }
+
+  // Never regressed (the "data" token carries it) — pinned so the stopword
+  // additions can't be blamed for a future break here.
+  it("keeps matching when the surviving overlap is discriminating (Sr. Data Engineer)", () => {
+    expect(roleFuzzyMatch(target(["Sr. Data Engineer"]), posting("Data Engineer"))).toBe(true);
+  });
+
+  // Dropping the level glue must not manufacture a match: "Engineer II" and
+  // "Engineer" both reduce to the single baseline token ["engineer"], which the
+  // bare-baseline guard already rejects.
+  it("does not turn a bare baseline title into a match once the level token is dropped", () => {
+    expect(roleFuzzyMatch(target(["Engineer II"]), posting("Engineer"))).toBe(false);
+  });
+});
+
+// Every title below is quoted VERBATIM from
+// src/server/search/__fixtures__/live-titles.json — 2,906 postings harvested
+// live from the 15 seeded ATS boards on 2026-07-17. The synthetic fixtures above
+// passed while the SHIPPED matcher scored 0.425 recall on this real inventory
+// (product 0.14, exec 0.11, people 0.06, recruiter 0.00) — invented titles do
+// not carry the forms real boards write, so these pin the measured causes
+// directly. Analysis + per-function numbers:
+// docs/superpowers/reports/2026-07-17-matching-stress-test.md.
+describe("roleFuzzyMatch — real harvested ATS titles (stress-test report 2026-07-17)", () => {
+  // §3.1, the dominant FN cause (~500+): "<Role>, <Department/Geo/Program>".
+  // 80 of the 94 labeled product-manager titles failed exactly like this.
+  it('matches the "<Role>, <Department>" form (Stripe: "Product Manager, Cash Platform")', () => {
+    expect(roleFuzzyMatch(target(["Product Manager"]), posting("Product Manager, Cash Platform"))).toBe(true);
+  });
+
+  // §3.1: all 14 real Chief-of-Staff postings rejected at J=0.25 despite full
+  // containment. Bjak carries the only real CoS/CEO postings in the sample.
+  it('matches a real Chief-of-Staff posting (Bjak: "Chief of Staff - AI Neobank App (Singapore)")', () => {
+    expect(
+      roleFuzzyMatch(target(["Chief of Staff"]), posting("Chief of Staff - AI Neobank App (Singapore)")),
+    ).toBe(true);
+  });
+
+  // §3.2: single-token roles under the Jaccard floor. "Technical Recruiter" is a
+  // LITERAL sub-phrase of nothing — it is the posting; the résumé title is the
+  // single token — and rejected at 0.50. Recruiter recall was 0.00 across all
+  // 47 real recruiter titles. Head-noun path.
+  it('matches a single-token role against its qualified posting (ElevenLabs: "Technical Recruiter")', () => {
+    expect(roleFuzzyMatch(target(["Recruiter"]), posting("Technical Recruiter"))).toBe(true);
+  });
+
+  it('matches a single-token role across a segment separator (Ramp: "Senior Recruiter | Design")', () => {
+    expect(roleFuzzyMatch(target(["Recruiter"]), posting("Senior Recruiter | Design"))).toBe(true);
+  });
+
+  // §3.3: Bjak's country-parenthetical pattern (×23 countries per role) plus the
+  // developer→engineer fold. Both tokens are baseline, so no discriminating
+  // overlap is possible and "engineer" ≠ "developer" broke the old bag test.
+  it('matches the developer→engineer fold under a country suffix (Bjak: "Backend Developer (Philippines)")', () => {
+    expect(roleFuzzyMatch(target(["Backend Engineer"]), posting("Backend Developer (Philippines)"))).toBe(true);
+  });
+
+  // §3.4: the interposed baseline token (~90 FNs, mobile recall was 0.21).
+  // "Software" sits between "iOS" and "Engineer"; it is BASELINE_TOKENS, so the
+  // phrase test skips it.
+  it('matches across an interposed baseline token (Bjak: "iOS Software Engineer - AI Neobank App (Austria)")', () => {
+    expect(
+      roleFuzzyMatch(target(["iOS Engineer"]), posting("iOS Software Engineer - AI Neobank App (Austria)")),
+    ).toBe(true);
+  });
+
+  // --- Negative pins for the FP classes the report names (§4) ---------------
+
+  // §4.1: the word-order-blind bag containment matched {platform, engineer}
+  // anywhere in the title — 55 FPs on this one target, including this manager
+  // role. Replacing the bag test with ORDERED phrase containment is what
+  // removes them; "engineer" precedes "platform" here, so no phrase match.
+  it('rejects word-scattered bag containment (Stripe: "ML Engineer Manager, AI Conversation Platform")', () => {
+    expect(
+      roleFuzzyMatch(target(["Platform Engineer"]), posting("ML Engineer Manager, AI Conversation Platform")),
+    ).toBe(false);
+  });
+
+  // §4.2 — HONEST PIN: this MATCHES, and it is a false positive. The phrase path
+  // correctly rejects it ("marketing" is not baseline, so it is not a legal
+  // skip), but the untouched TOKEN rule admits it: {product, manager} ∩
+  // {product, marketing, manager} = 2/3 = J=0.67 ≥ 0.6. Pre-existing (the
+  // donor's rule, not introduced by the phrase path) and low volume (~15 FPs);
+  // fixing it means moving the Jaccard floor, which the report measured as
+  // strictly worse (J≥0.5 → +120 FPs). Pinned as-is so the behaviour is visible
+  // rather than assumed, and so a future fix has a fixture to flip.
+  it('MATCHES a J=0.67 modifier collision — known FP, token path (Stripe: "Product Marketing Manager")', () => {
+    expect(roleFuzzyMatch(target(["Product Manager"]), posting("Product Marketing Manager"))).toBe(true);
+  });
+
+  // §6.1 rule 3: the head-noun path is head-FINAL, not "token appears anywhere".
+  it("head-noun path does not match when the role token is not the segment head", () => {
+    expect(roleFuzzyMatch(target(["Recruiter"]), posting("Recruiting Coordinator"))).toBe(false);
+    expect(roleFuzzyMatch(target(["CEO"]), posting("Executive Assistant to CEO"))).toBe(false);
+    expect(roleFuzzyMatch(target(["CEO"]), posting("CEO Office - Business Operations"))).toBe(false);
+  });
+});
+
 describe("roleTokens", () => {
   it("drops stopwords and short generic words, keeps short specialty acronyms", () => {
     expect(roleTokens("Senior Remote QA Engineer")).toEqual(["qa", "engineer"]);
+  });
+
+  it("keeps role acronyms (function-agnostic short-token retention)", () => {
+    expect(roleTokens("CEO")).toEqual(["ceo"]);
+    expect(roleTokens("VP of Marketing")).toEqual(["vp", "marketing"]);
+  });
+
+  it("drops function-neutral glue words admitted by the >=2 length rule", () => {
+    expect(roleTokens("Head of Finance and Operations for the APAC Team")).toEqual(["finance", "operations"]);
+  });
+
+  it("keeps 'staff' as the function token of Chief of Staff", () => {
+    expect(roleTokens("Chief of Staff")).toEqual(["staff"]);
+  });
+
+  it("drops abbreviated seniority and roman-numeral levels (punctuation is stripped first)", () => {
+    expect(roleTokens("Sr. Software Engineer")).toEqual(["software", "engineer"]);
+    expect(roleTokens("Jr. Software Engineer")).toEqual(["software", "engineer"]);
+    expect(roleTokens("Software Engineer II")).toEqual(["software", "engineer"]);
+    expect(roleTokens("Software Engineer III")).toEqual(["software", "engineer"]);
+    expect(roleTokens("Software Engineer IV")).toEqual(["software", "engineer"]);
   });
 });
 
