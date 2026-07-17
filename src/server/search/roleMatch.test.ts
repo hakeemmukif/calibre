@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { deriveRoleTargets, roleFuzzyMatch, roleTokens } from "./roleMatch";
+import { expandRoleTitles } from "./roleSynonyms";
 
 function target(titles: string[], keywords: string[] = []) {
   return { titles, keywords, persona: "remote" as const };
@@ -310,6 +311,113 @@ describe("roleFuzzyMatch — real harvested ATS titles (stress-test report 2026-
     expect(roleFuzzyMatch(target(["Recruiter"]), posting("Recruiting Coordinator"))).toBe(false);
     expect(roleFuzzyMatch(target(["CEO"]), posting("Executive Assistant to CEO"))).toBe(false);
     expect(roleFuzzyMatch(target(["CEO"]), posting("CEO Office - Business Operations"))).toBe(false);
+  });
+});
+
+// Alias-expanded target, exactly as deriveRoleTargets builds it. Synonym rules
+// live at deriveRoleTargets (via roleSynonyms.expandRoleTitles), NOT inside
+// roleFuzzyMatch, so these fixtures must expand first — bare target() would
+// bypass the table.
+function expanded(titles: string[], keywords: string[] = []) {
+  return { titles: expandRoleTitles(titles), keywords, persona: "remote" as const };
+}
+
+// The 4-entry fold table (tiers report 2026-07-17 §3), extending the shipped
+// developer→engineer fold. Each fold is pinned BOTH ways over the real corpus: a
+// verbatim title it must now MATCH via the fold, and a near-miss it must still
+// reject. Tested through the RAW matcher (no synonym expansion) so the fold is
+// the only thing under test; every posting is quoted from live-titles.json.
+describe("roleFuzzyMatch — role-word folds (tiers report 2026-07-17 §3)", () => {
+  const folds: Array<[fold: string, resumeTitle: string, matchPosting: string, nearMissPosting: string]> = [
+    // accounting→account AND accountant→account: the "Accountant" résumé folds to
+    // "account", the "Corporate Accounting" posting folds to "account" (head-noun).
+    ["accounting/accountant→account", "Accountant", "Corporate Accounting", "Account Executive"],
+    // partnerships→partnership: plural/singular unified ("Partnerships Manager"
+    // résumé ≡ "Brand Partnership Manager" posting).
+    ["partnerships→partnership", "Partnerships Manager", "Brand Partnership Manager", "People Partner"],
+    // management→manager: folds INTO BASELINE — an "…Management" tail is altitude,
+    // not a distinct role.
+    ["management→manager", "Account Manager", "Head of Account Management", "Senior Director, Enterprise Risk Management"],
+  ];
+
+  for (const [fold, resumeTitle, matchPosting, nearMissPosting] of folds) {
+    it(`${fold}: "${resumeTitle}" matches "${matchPosting}"`, () => {
+      expect(roleFuzzyMatch(target([resumeTitle]), posting(matchPosting))).toBe(true);
+    });
+    it(`${fold}: "${resumeTitle}" does not admit "${nearMissPosting}"`, () => {
+      expect(roleFuzzyMatch(target([resumeTitle]), posting(nearMissPosting))).toBe(false);
+    });
+  }
+});
+
+// The curated synonym table (tiers report 2026-07-17 §4) — 10 strict + 8 sibling
+// rules. Each rule is pinned BOTH ways: a verbatim corpus posting the alias now
+// admits, and a plausible verbatim near-miss the table must still reject (so a
+// rule cannot silently over-match later). All titles are quoted from
+// live-titles.json.
+describe("roleFuzzyMatch — curated synonym expansion (tiers report 2026-07-17 §4)", () => {
+  const rules: Array<[rule: string, resumeTitle: string, matchPosting: string, nearMissPosting: string]> = [
+    // -- strict (same role, different name) --
+    ["recruiter", "Recruiter", "Talent Acquisition Partner", "Recruiting Coordinator"],
+    ["accountant", "Accountant", "Corporate Accounting", "Account Executive"],
+    ["engineering manager", "Engineering Manager", "Engineering Lead, Billing", "Product Manager"],
+    ["solutions/sales engineer", "Solutions Engineer", "Solutions Architect", "Data Platform Principal Architect"],
+    ["sdr", "Sales Development Representative", "Business Development Representative - Enterprise", "Business Development Manager"],
+    ["account executive", "Account Executive", "Sales Executive, Enterprise Accounts", "Executive Assistant to CEO"],
+    ["legal/corporate counsel", "Corporate Counsel", "Corporate Paralegal", "Contract Finance Executive - GL (6 months)"],
+    ["compliance", "Compliance Manager", "Manager, Regulatory Compliance, Vietnam", "Product Manager"],
+    ["risk (strict)", "Risk Analyst", "Risk Operations Analyst - SSO", "Data Analyst"],
+    ["people ops / hr", "People Operations Manager", "People Partner", "Product Manager"],
+    // -- sibling (same function, different specialization/grade) --
+    ["product designer", "Product Designer", "Brand Designer", "Design Engineer"],
+    ["marketing manager", "Marketing Manager", "Head of Product Marketing", "Product Manager"],
+    ["customer success manager", "Customer Success Manager", "Customer Success Architect", "Customer Activation Manager | Enterprise"],
+    ["support", "Customer Support Specialist", "Product Support Specialist", "Product Manager"],
+    ["operations manager", "Operations Manager", "Bridge Operations Associate", "Product Manager"],
+    ["partnerships manager", "Partnerships Manager", "Director, Strategic Partnerships", "Product Manager"],
+    ["content", "Content Writer", "Content Lead", "Design Systems Lead"],
+    ["risk (sibling)", "Risk Manager", "Fraud Operations Manager", "Engineering Manager"],
+  ];
+
+  for (const [rule, resumeTitle, matchPosting, nearMissPosting] of rules) {
+    it(`${rule}: "${resumeTitle}" now matches "${matchPosting}"`, () => {
+      expect(roleFuzzyMatch(expanded([resumeTitle]), posting(matchPosting))).toBe(true);
+    });
+    it(`${rule}: "${resumeTitle}" does not admit "${nearMissPosting}"`, () => {
+      expect(roleFuzzyMatch(expanded([resumeTitle]), posting(nearMissPosting))).toBe(false);
+    });
+  }
+
+  // Extra verbatim MATCH pins for the highest-volume aliases.
+  it('recruiter alias admits "Sr. Technical Sourcer" (Perplexity)', () => {
+    expect(roleFuzzyMatch(expanded(["Recruiter"]), posting("Sr. Technical Sourcer"))).toBe(true);
+  });
+  it('account-executive alias admits "Client Sales Representative" (Toptal)', () => {
+    expect(roleFuzzyMatch(expanded(["Account Executive"]), posting("Client Sales Representative"))).toBe(true);
+  });
+  it('marketing alias admits "Digital Marketing Executive" (Bjak)', () => {
+    expect(roleFuzzyMatch(expanded(["Marketing Manager"]), posting("Digital Marketing Executive"))).toBe(true);
+  });
+});
+
+// Trigger-hygiene: the two bugs the report found and fixed during measurement
+// (§4). A specialization résumé must NOT inherit the generalist expansion — the
+// negative lookbehinds in roleSynonyms.ts are what prevent it.
+describe("expandRoleTitles — trigger hygiene (tiers report 2026-07-17 §4)", () => {
+  it('"Content Marketing Manager" does not inherit the generalist marketing expansion', () => {
+    const out = expandRoleTitles(["Content Marketing Manager"]);
+    expect(out).not.toContain("Growth Marketing");
+    expect(out).not.toContain("Performance Marketing");
+    // it still gets its OWN content aliases
+    expect(out).toContain("Content Lead");
+  });
+
+  it('"People Operations Manager" does not inherit the operations-manager expansion', () => {
+    const out = expandRoleTitles(["People Operations Manager"]);
+    expect(out).not.toContain("Operations Associate");
+    expect(out).not.toContain("Strategy Operations");
+    // it still gets its OWN people aliases
+    expect(out).toContain("People Partner");
   });
 });
 

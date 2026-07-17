@@ -18,6 +18,7 @@
 // discovery entirely.
 import type { ResumeRow } from "@/server/persistence/repos/resumes";
 import type { RawPosting, RoleTarget } from "./connector";
+import { expandRoleTitles } from "./roleSynonyms";
 
 // From career-ops/role-matcher.mjs — seniority/mode/location words that must
 // not count as matching signal on their own. Deviations from the donor (spec
@@ -60,6 +61,26 @@ export const BASELINE_TOKENS = new Set([
   "backend", "frontend", "full", "stack", "fullstack",
 ]);
 
+// Role-word folds — spellings that are the SAME role word across boards, unified
+// so a résumé and a posting written with different morphology still match. The
+// shipped precedent is "developer" → "engineer" (in `phraseTokens`); these four
+// are the ONLY other families where a full Porter stemmer measurably won without
+// collisions (tiers report 2026-07-17 §3: Porter over-stems "marketing" → "market"
+// and "officer" → "office", a net FP loss that also breaks the head-noun path — so
+// its profitable mergers are hand-encoded here instead of taking a stemmer
+// dependency). Applied symmetrically in BOTH token paths (`roleTokens` and
+// `phraseTokens`). "management" → "manager" folds INTO BASELINE_TOKENS on purpose:
+// an "…Engineering Management" qualifier is altitude, not a distinct role.
+const ROLE_FOLDS: Record<string, string> = {
+  accounting: "account",
+  accountant: "account",
+  partnerships: "partnership",
+  management: "manager",
+};
+function foldRoleWord(word: string): string {
+  return ROLE_FOLDS[word] ?? word;
+}
+
 /**
  * Strips punctuation ("Sr." → "sr", "Full-Stack" → "full"/"stack") and keeps
  * ANY token of ≥2 chars that is not a stopword. The donor's >3-char floor plus
@@ -75,7 +96,8 @@ export function roleTokens(text: string): string[] {
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
-    .filter((w) => w.length >= 2 && !ROLE_STOPWORDS.has(w));
+    .filter((w) => w.length >= 2 && !ROLE_STOPWORDS.has(w))
+    .map(foldRoleWord);
 }
 
 // --- Phrase path (stress-test report 2026-07-17 §6.1) -----------------------
@@ -107,7 +129,8 @@ function phraseTokens(text: string, fold: boolean): string[] {
     .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
     .filter((w) => w.length > 0 && !PHRASE_GLUE.has(w) && !PHRASE_SENIORITY.has(w))
-    .map((w) => (fold && w === "developer" ? "engineer" : w));
+    .map((w) => (fold && w === "developer" ? "engineer" : w))
+    .map(foldRoleWord);
 }
 
 /**
@@ -234,7 +257,10 @@ function dedupePreserveOrder(items: string[]): string[] {
  * (`structured.headline`, else the most recent experience's title — same
  * precedence as `server/resume/derive-view.ts`, kept independent since this
  * is a best-effort search input, not the fail-loud wire-view boundary).
- * Keywords from `structured.skills`.
+ * Keywords from `structured.skills`. Titles are then alias-expanded through the
+ * curated synonym table (`roleSynonyms.ts`, tiers report 2026-07-17 §4) — the
+ * recall lever that carries Talent-Acquisition↔Recruiter, AE↔Sales-Executive,
+ * People-Ops↔HR, etc.; `roleFuzzyMatch` runs unchanged against the wider set.
  */
 export function deriveRoleTargets(resume: Pick<ResumeRow, "structured">, persona: "remote" | "local"): RoleTarget[] {
   const store = resume.structured;
@@ -243,5 +269,5 @@ export function deriveRoleTargets(resume: Pick<ResumeRow, "structured">, persona
   const titles = dedupePreserveOrder([...store.experience.map((e) => e.title), ...(headline ? [headline] : [])]);
   const keywords = dedupePreserveOrder(store.skills.flatMap((g) => g.items));
 
-  return [{ titles, keywords, persona }];
+  return [{ titles: expandRoleTitles(titles), keywords, persona }];
 }
