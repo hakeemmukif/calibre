@@ -5,15 +5,15 @@ Extends: `2026-07-12-remote-local-eligibility-design.md` (the eligibility tier s
 
 ## 1. Goal
 
-A remote-global job the user sees should be as applyable as a local one. Geography is already gated (eligibility tiers vs `baseCountry`/`relocation`); the remaining restrictions that make a "remote" job un-takeable from Malaysia are **schedule** (foreign-timezone overlap requirements) and **employment structure** (contractor/EOR vs local-entity employment). The system captures the user's tolerance for each as profile dials and extracts the job's stated requirements as facts; provable mismatches are hidden before the user ever sees them.
+A remote-global job the user sees should be as applyable as a local one. Geography is already gated (eligibility tiers vs `baseCountry`/`relocation`); the remaining restrictions that make a "remote" job un-takeable from Malaysia are **schedule** (foreign-timezone overlap requirements) and **employment structure** (contractor/EOR vs local-entity employment). The system captures the user's tolerance for each as profile dials and extracts the job's stated requirements as facts. *(Amended by DECISION A, full soft rank, 2026-07-17, shipped `b5d244a`: provable schedule/structure mismatches rank lower, never hidden — the user always sees the full pool. Geography stays the one hard hide, unchanged below.)*
 
 ## 2. Operator decisions (locked)
 
-1. **Undecidable stays visible.** The predecessor contract holds: only *provably* restricted jobs are hidden; postings that state nothing keep the "Location unverified" warn pill. No strict allowlist.
+1. **Undecidable stays visible.** The predecessor's geography gate stays the pattern for geography only: only *provably* restricted jobs are hidden there (relocation `stay` vs `abroad`, unchanged). *(Amended by DECISION A, full soft rank, 2026-07-17: schedule and employment-structure restrictions below no longer hide — a provable mismatch ranks lower instead.)* Postings that state nothing keep the "Location unverified" warn pill. No strict allowlist.
 2. **Schedule tolerance is an ordered 3-level scale**: `base-hours` / `flex-evenings` / `any-hours`. Higher tolerance includes lower. Not binary, not a region checklist.
 3. **Archetypes are presets, not state.** "Malaysia-only remote / Global remote / Digital nomad / Open to relocate" are preset cards that set the dials; the dials are the only stored truth.
 4. **Calendar (working to the employer country's holidays): extract + display only.** No dial in v1 — postings almost never state it, and inferring it from employer country would hide nearly everything for a "no". Revisit only if stated-calendar facts prove common.
-5. **Employment structure ships as a dial with a stated-only hard gate.** Stated conflict (contractor-only vs employee-required) → hidden. Unstated — the common case — no effect and **no warn pill**: unlike geography, an unstated structure is a negotiable detail, not an applyability risk.
+5. **Employment structure ships as a dial with a stated-only gate** *(was a hard gate at spec-approval time; amended by DECISION A, full soft rank, 2026-07-17)*. Stated conflict (contractor-only vs employee-required) → ranks lower, never hidden. Unstated — the common case — no effect and **no warn pill**: unlike geography, an unstated structure is a negotiable detail, not an applyability risk.
 6. **Capture UX = `/profile` extension** (preset row + dials on ProfileTargets). No onboarding wizard in v1.
 7. **Architecture: facts on the job, dials on the profile, composed at feed-read** (the proven eligibility pattern). No per-user stamps, no LLM-judged gating; match-score stays orthogonal to geography/schedule/structure.
 8. **The Layer-C liveness fix rides along** (§4): jd-extract facts become required-but-nullable so gpt-oss-120b actually emits them. `job_scores.policyVersion` bumps.
@@ -61,7 +61,7 @@ New pure resolver beside `resolveEligibility` (`src/server/score/`): `resolveTzB
   - `emea`: CET/CEST/GMT/BST/UTC/"EU hours"/EMEA
   - `apac`: SGT/MYT/AEST/JST/"APAC hours"
 - Band → minimum dial, **relative to `baseCountry` (MY-only at launch**, same honest extension point as `REGIONS_INCLUDING_MY`): `apac → base-hours` · `emea → flex-evenings` · `americas → any-hours`.
-- **`"CST"` is ambiguous** (US Central vs China Standard) → `null` + log. Unmapped token → `null` + log (curated-map drift signal, mirrors `eligibility.ts:86`). **No branch guesses a band**; a job with no band is never hidden by the schedule gate.
+- **`"CST"` is ambiguous** (US Central vs China Standard) → `null` + log. Unmapped token → `null` + log (curated-map drift signal, mirrors `eligibility.ts:86`). **No branch guesses a band**; a job with no band is never touched by the schedule gate — and, per DECISION A (full soft rank, 2026-07-17), a job *with* a mapped band ranks lower, never hidden, either.
 - Overlap-hour arithmetic ("4h with PST") deliberately dropped — bands are coarse; refine in v2 only if logs demand it.
 - Fact precedence, eligibility-style: JD `tzRequirement` (authority) → Layer-B location-string tokens ("Remote (EST hours)") at ingest.
 - `hiringStructure` needs no normalization — the enum is emitted directly, stated-only.
@@ -75,17 +75,19 @@ New pure resolver beside `resolveEligibility` (`src/server/score/`): `resolveTzB
 
 ## 7. Feed behaviour
 
-Server-side predicate composes three gates per request (dial flips re-scope instantly, zero restamps):
+*(Amended by DECISION A, full soft rank, 2026-07-17, shipped `b5d244a` — see `src/server/search/jobsFeed.ts`. Geography stays the one hard hide; schedule and structure were downgraded from gates to rank signals.)*
 
-| Gate | Hides when | Passes when |
+Server-side, relocation (geography) is the only remaining **hard** filter; schedule and structure are **rank signals** applied as a stable, page-local reorder (aligned jobs first) over an already-fetched page — they never remove a job from the pool. Dial flips re-scope instantly, zero restamps.
+
+| Signal | Demotes/hides when | Aligned/passes when |
 |---|---|---|
-| Geography (exists) | `abroad` under `stay` | per predecessor spec |
-| Schedule (new) | `tz_band` demands more than `scheduleFlex` | `tz_band IS NULL` or within tolerance |
-| Structure (new) | stated `hiring_structure` conflicts with `employmentPref` (`employee` admits `local-entity`+`eor`; `local-entity` admits only `local-entity`) | `NULL` or compatible |
+| Geography (exists) — **hides** | `abroad` under `stay` | per predecessor spec |
+| Schedule (new) — **ranks, never hides** | `tz_band` demands more than `scheduleFlex` | `tz_band IS NULL` or within tolerance |
+| Structure (new) — **ranks, never hides** | stated `hiring_structure` conflicts with `employmentPref` (`employee` admits `local-entity`+`eor`; `local-entity` admits only `local-entity`) | `NULL` or compatible |
 
-- `stats.excluded` counts all three gates; strip message generalizes to "N excluded — outside your remote preferences".
+- `stats.excluded` counts **only the geography gate** — schedule/structure never hide a job, so they never contribute to `excluded`; strip message stays scoped to relocation ("N excluded — outside your location eligibility").
 - Row pills (existing Tag pattern, no new primitives): schedule pill "US hours"/"EU hours" when a band is known (`apac` suppressed — business-as-usual from MY, same logic as suppressing "Malaysia" on local rows; tooltip = verbatim stated requirement); structure pill "Contractor"/"EOR"/"Local entity" only when stated. `workCalendar` renders in the detail gaps panel when stated.
-- Pasted-scope exemption carries over: pasted jobs stay exempt from visibility predicates in their own scope.
+- Pasted-scope exemption carries over: pasted jobs stay exempt from visibility predicates (and the rank demotion) in their own scope.
 
 ## 8. Profile page (`/profile`)
 
@@ -113,7 +115,7 @@ ProfileTargets card grows, existing primitives only, save-on-change `PUT /api/pr
 - **Repo**: predicate per dial combination; `excluded` count across gates; migration no-op proof (permissive seed ⇒ identical feed).
 - **DOM**: preset cards set dials; segmented controls busy/error/retry; pill rendering + `apac`/unstated suppression.
 - **Live**: one 3/3 verification that gpt-oss-120b emits the required-nullable facts.
-- **E2E**: one journey — flip the schedule dial on `/profile`, a US-hours job leaves the feed, excluded count moves.
+- **E2E**: one journey — flip the schedule dial on `/profile`, a US-hours job reorders to the back of the page (demoted, not removed — DECISION A, full soft rank); `excluded` count is unaffected, since only the geography gate feeds it.
 
 ## 11. Validation gate
 

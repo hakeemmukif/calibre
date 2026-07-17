@@ -88,8 +88,10 @@ exec/fractional sweeps that first died were re-run as standalone agents (the Wor
 orchestrator crashed mid-run twice — agents healthy, parent process gone — so they were
 respawned directly). Both completed with live-endpoint verification. Results are folded
 into §4.2 Tier 2 (Workable et al. — mechanics now confirmed, not UNKNOWN) and §8 (the
-exec ceiling). Remaining unknowns are narrow and named there (SmartRecruiters hit-rate;
-Teamtailor/Pinpoint function-breadth on thin samples; Consider's obfuscated endpoint).
+exec ceiling). Remaining unknowns are narrow and named there (Pinpoint function-breadth
+on a thin sample; Consider's obfuscated endpoint) — SmartRecruiters is dropped outright
+(§4.2/§7, SAP API Policy prohibition) and Teamtailor's function-breadth was resolved live
+across four tenants (§4.2), so neither is an open unknown anymore.
 
 ## 4. Design
 
@@ -206,12 +208,20 @@ resolved the mechanics; these are no longer UNKNOWN):
   the LinkedInBot carve-out. This is the same standard §7 applies to Getro (verbatim
   reviewed prohibition → Dangerous, dropped) — SmartRecruiters carries *more* signals
   than Getro (ToS + API policy + a targeted robots `Disallow: /`).
-- **Positive finding (added 2026-07-17):**
-  <!-- see reports/2026-07-17-connector-live-verification.md ("Slug supply (all vendors)"). -->
+- **Positive finding (added 2026-07-17; totals recomputed 2026-07-17 to include
+  Teamtailor):**
+  <!-- see reports/2026-07-17-connector-live-verification.md ("Slug supply (all vendors)")
+  and reports/2026-07-17-rippling-pinpoint-teamtailor-live-verification.md (Teamtailor).
+  Recomputed by fetching each jobhive CSV directly (2026-07-17):
+  raw.githubusercontent.com/kalil0321/ats-scrapers/main/ats-companies/{greenhouse,lever,
+  ashby,workable,personio,rippling,recruitee,pinpoint,teamtailor}.csv, row count minus
+  header — matches docs/superpowers/reports/2026-07-17-engine-dry-run.md's live-run
+  ingest counts for greenhouse/lever/ashby (9,935) exactly. -->
   jobhive ships slug CSVs for **all five** of the above unbuilt vendors, not just
   Workable — workable 4,269, personio 2,463, rippling 1,923, recruitee 888, pinpoint 350
-  (~9,893 additional slugs, all MIT via jobhive), taking total nominal reach to **~19.8k
-  slugs across 8 vendors** (the 3 shipped ATS connectors' ~9,935 plus these 5).
+  (~9,893 additional slugs, all MIT via jobhive) — **plus Teamtailor** (1,010 slugs, also
+  MIT via jobhive, see below), taking total nominal reach to **~20.8k slugs across 9
+  vendors** (the 3 shipped ATS connectors' ~9,935 plus these 6, 10,903 total).
 - **Teamtailor** — public RSS at `https://{slug}.teamtailor.com/jobs.rss` (no auth); the
   REST API needs a key. EU-startup-heavy. RSS mechanics confirmed; multi-function breadth
   not (only sample was a design agency). Effort **S** if RSS suffices.
@@ -449,8 +459,13 @@ when the admin UI needs to query them.
    politeness, global dedupe, `jobs` re-cast as match view, `run.ts` split into crawl
    and match loops. **Then flip on the full validated list.** **L, ~1.5–2 weeks.**
 4. **New connectors, in order (post-decoupling, optional reach)** — **Workable** first
-   (S, verified all-function, 4,269 slugs waiting), then Recruitee → Personio → Pinpoint
-   (all S, vendor-documented), then Rippling (M, N+1 descriptions).
+   (S, verified all-function, 4,269 slugs waiting), then Personio → Teamtailor → Recruitee
+   → Pinpoint (S–M, vendor-documented), then Rippling (M, N+1 descriptions, conditional
+   on operator ToS acceptance).
+   <!-- corrected 2026-07-17: order amended per DECISION B / D6
+   (docs/superpowers/plans/2026-07-17-source-engine-ignition.md) — Teamtailor inserted
+   after Personio, Rippling moved last and marked conditional; see
+   reports/2026-07-17-handoff-integration.md §1. -->
    <!-- corrected/added 2026-07-17: see reports/2026-07-17-handoff-integration.md
    (§3 item 3, stale rollout line). --> **Correction: SmartRecruiters dropped (§4.2/§7),
    do not probe** — the earlier "only after a batch hit-rate check" line contradicted the
