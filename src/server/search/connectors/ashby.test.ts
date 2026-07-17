@@ -64,6 +64,15 @@ describe("ashby connector", () => {
     ]);
   });
 
+  it("carries the vendor `department` string into RawPosting (P.4 tag input)", async () => {
+    const fixture = { jobs: [{ title: "Eng", jobUrl: "https://jobs.ashbyhq.com/acme/dep-1", department: "Engineering" }] };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(fixture), { status: 200 })));
+    const [posting] = await collect(
+      createAshbyConnector(source()).discover({ targets: [], since: new Date(0), signal: new AbortController().signal, onProgress: () => {} }),
+    );
+    expect(posting.department).toBe("Engineering");
+  });
+
   it("maps confirmed geo fields: isRemote -> workMode, addressCountry -> countryCode (capture 2026-07-12)", async () => {
     const fixture = {
       jobs: [

@@ -6,6 +6,7 @@ import { policyVersion, renderTemplate } from "./templates";
 import { ApplicationAnswer, ApplicationQuestion, LegitimacyTier, RequirementStatus } from "@/types";
 import { EvalScoresSchema } from "@/server/score/evalScores";
 import { DiffEntrySchema } from "@/server/tailor/merge";
+import { FUNCTION_TAGS } from "@/server/sources/function";
 
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
@@ -118,6 +119,7 @@ const TEMPLATES: TaskName[] = [
   "question-answer",
   "tailor",
   "correlate",
+  "function-classify",
 ];
 
 function readTemplateFile(name: TaskName): string {
@@ -180,5 +182,12 @@ describe("template <-> schema seam (no LLM calls)", () => {
     expect(statusGroup).not.toBeNull();
     const tokens = [...statusGroup![1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
     expect(new Set(tokens)).toEqual(new Set(RequirementStatus.options));
+  });
+
+  it("function-classify.md fixed list matches exactly the FUNCTION_TAGS taxonomy", () => {
+    const listLine = readTemplateFile("function-classify").match(/fixed list:([^\n]*)/);
+    expect(listLine).not.toBeNull();
+    const tokens = [...listLine![1].matchAll(/"([a-z-]+)"/g)].map((m) => m[1]);
+    expect(new Set(tokens)).toEqual(new Set(FUNCTION_TAGS));
   });
 });

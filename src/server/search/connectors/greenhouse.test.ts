@@ -73,6 +73,24 @@ describe("greenhouse connector", () => {
     expect(onProgress).toHaveBeenCalled();
   });
 
+  it("carries departments[0].name into RawPosting.department (P.4 tag input)", async () => {
+    const fixture = {
+      jobs: [
+        {
+          id: 321,
+          title: "Eng",
+          absolute_url: "https://boards.greenhouse.io/acme/jobs/321",
+          departments: [{ name: "Sales" }],
+        },
+      ],
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(fixture), { status: 200 })));
+    const [posting] = await collect(
+      createGreenhouseConnector(source()).discover({ targets: [], since: new Date(0), signal: new AbortController().signal, onProgress: () => {} }),
+    );
+    expect(posting.department).toBe("Sales");
+  });
+
   it("caps the yielded description at 40_000 chars", async () => {
     const fixture = {
       jobs: [

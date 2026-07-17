@@ -79,6 +79,24 @@ type CorrelationReportRowJson = {
   reason: string; note: string | null;
 };
 
+// Global postings pool (2026-07-17 arch §7.2): one row per nightly crawl run,
+// mirroring search_runs' pattern. Populated at finish — null while a run is
+// still 'running' (honest absence, not a fabricated zero). `perHostBackoffs`
+// keys on vendor host (arch §2.2: ashby/greenhouse/lever/jobstreet); counts
+// both 429 and 403 responses (either is the vendor's stop-signal).
+type CrawlRunStats = {
+  sourcesOk: number;
+  sourcesFailed: number;
+  perHostBackoffs: Record<string, number>;
+  upserts: number;
+  delists: number;
+  durationMs: number;
+  // Source ids whose fetch succeeded but returned zero postings — an anomaly
+  // flag, never a delist signal (a bad slug or empty vendor payload must not
+  // read as "the whole board vanished").
+  emptyFetches: string[];
+};
+
 // ---- tables ----
 
 export const sources = sqliteTable("sources", {
@@ -171,6 +189,13 @@ export const jobs = sqliteTable(
     // stated TZ requirement (resolveTzBand); hiring_structure is stated-only.
     tzBand: text("tz_band", { enum: ["apac", "emea", "americas"] }),
     hiringStructure: text("hiring_structure", { enum: ["local-entity", "eor", "contractor"] }),
+    // Global postings pool (2026-07-17 arch §1.3): provenance link to the
+    // shared `postings` row this per-user job was admitted from. Nullable —
+    // every pre-pool row and every pasted job (persona 'pasted') has no pool
+    // ancestor. ON DELETE SET NULL so a 60-day pool purge (arch §2.5) never
+    // cascades into a user's history: a job they saw, scored, or applied to
+    // survives its pool row.
+    postingId: text("posting_id").references(() => postings.id, { onDelete: "set null" }),
   },
   (table) => [
     unique("jobs_user_id_dedupe_key_unique").on(table.userId, table.dedupeKey),
@@ -362,4 +387,68 @@ export const sessions = sqliteTable("sessions", {
   tokenHash: text("token_hash").notNull().unique(), // SHA-256 of the opaque cookie token
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
   lastUsedAt: integer("last_used_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+
+// ---- global postings pool (2026-07-17 arch §1) ----
+
+// The shared, system-owned crawl result: ONE row per opening across all users
+// (no user_id). Per-user `jobs` rows are materialized match-views admitted from
+// here (jobs.posting_id). Eligibility/hiringStructure deliberately do NOT live
+// here — both are profile-relative and would need a fabricated default user
+// (arch §1.1). `tzBand` stays: resolveTzBand reads only the posting's location.
+export const postings = sqliteTable(
+  "postings",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    // Global dedupe key (arch §4): ats:{sourceId}:{externalId} else url:{key}.
+    // The re-crawl stability key — a re-fetched posting hits ON CONFLICT and
+    // bumps lastSeenAt rather than inserting a duplicate.
+    canonicalKey: text("canonical_key").notNull().unique(),
+    url: text("url").notNull(), // canonical posting URL (ATS-direct wins collisions)
+    applyUrl: text("apply_url"), // when the connector supplies it
+    sourceId: text("source_id").notNull().references(() => sources.id), // canonical source (collision winner)
+    externalId: text("external_id"), // ATS id when present
+    title: text("title").notNull(),
+    company: text("company").notNull(),
+    location: text("location").notNull(), // "" when the connector omits (mirrors jobs.location)
+    salaryRaw: text("salary_raw"),
+    // FULL JD at crawl time (D2), ≤40k cap enforced by the crawler (P.3), not the
+    // schema. Null when the connector carries no detail. Structurally ABSENT from
+    // listForMatching's projection (arch §1.2) so a stage-1 scan never drags it.
+    description: text("description"),
+    postedAt: integer("posted_at", { mode: "timestamp_ms" }), // board-stated; null when absent
+    firstSeenAt: integer("first_seen_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()), // first crawl sighting (pool-level)
+    lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()), // bumped every crawl that re-sees it
+    delistedAt: integer("delisted_at", { mode: "timestamp_ms" }), // arch §2.5; null = live
+    persona: text("persona", { enum: ["remote", "local", "both"] }).notNull(), // copied from the source row at crawl
+    tzBand: text("tz_band", { enum: ["apac", "emea", "americas"] }), // resolveTzBand(location): profile-independent, stamped at crawl (P.3)
+    // Coarse function classification (arch §3.3). Null = not yet classified; the
+    // first scan to surface a posting classifies it and writes back via
+    // setFunctionTag. functionTagVersion carries the classifier version so a
+    // version bump re-tags (arch §9) — provisioned here for P.4, no second migration.
+    functionTag: text("function_tag"),
+    functionTagVersion: text("function_tag_version"),
+    // Vendor-stated department (plan "Department provenance"): P.4's primary tag
+    // input, plumbed connector→RawPosting→here by P.3. Null when the board omits it.
+    // Short string — kept in listForMatching's projection (no read-amplification).
+    department: text("department"),
+    aliases: text("aliases", { mode: "json" }).$type<JobAlias[]>().notNull(), // cross-board sightings, merged not replaced
+    raw: text("raw", { mode: "json" }).$type<unknown>().notNull(), // connector RawPosting verbatim; kept until purge (R4)
+  },
+  (table) => [
+    index("postings_source_id_last_seen_at_idx").on(table.sourceId, table.lastSeenAt), // per-source delist sweep
+    // Live-pool stage-1 scan (arch §1.1): partial index over live rows only.
+    index("postings_live_idx").on(table.delistedAt).where(sql`${table.delistedAt} is null`),
+  ],
+);
+
+// Crawl-run health + overlap lease (arch §7.2). System-owned, no user_id; one
+// row per run, not a queue. F4 (silent-rot detection) reads "last successful
+// crawl" here; F6 (double-crawler) leases on a young 'running' row.
+export const crawlRuns = sqliteTable("crawl_runs", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  startedAt: integer("started_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  finishedAt: integer("finished_at", { mode: "timestamp_ms" }),
+  status: text("status", { enum: ["running", "completed", "failed"] }).notNull(),
+  stats: text("stats", { mode: "json" }).$type<CrawlRunStats>(), // null while running; populated at finish
 });
