@@ -49,6 +49,7 @@ export default function RegisterPage() {
       error={error}
       switchHref="/login"
       switchLabel="Sign in instead"
+      footnote="By creating an account you agree that Caliber stores your résumé, job matches, and application history to run matching and legitimacy checks. Message the operator any time to have your account and all data deleted."
     />
   );
 }
