@@ -530,6 +530,64 @@ export const SourcesHealthResponse = z.object({
 });
 export type SourcesHealthResponse = z.infer<typeof SourcesHealthResponse>;
 
+// AdminCrawlStatus — GET /api/admin/crawl (Crawl status panel, spec
+// 2026-07-17: the operator's live view of the global postings pool). Mirrors
+// SourcesHealthResponse's degrade philosophy: `pool`/`staleness`/`lastRuns`/
+// `perSource` are each independently computed, so a failing sub-query nulls
+// just that section and appends to `errors` rather than 500ing the route.
+// `staleness`'s own null ("no crawl has ever completed") is a legitimate
+// value, not an error — `errors` is how a caller tells the two apart.
+export const CrawlPoolStatus = z.object({
+  live: z.number().int(),
+  delisted: z.number().int(),
+  total: z.number().int(),
+});
+export type CrawlPoolStatus = z.infer<typeof CrawlPoolStatus>;
+
+export const CrawlRunningStatus = z.object({
+  startedAt: z.string().datetime(),
+  postingsSeenThisRun: z.number().int(),
+  sourcesWrittenThisRun: z.number().int(),
+});
+export type CrawlRunningStatus = z.infer<typeof CrawlRunningStatus>;
+
+// `skipped` = enabledCrawlableSources − (sourcesOk + sourcesFailed), computed
+// against the CURRENT sources table (not a historical snapshot) — the single
+// most important derived number here: a 429-stopped host leaves a run
+// "completed" while whole boards were silently skipped.
+export const CrawlRunSummary = z.object({
+  status: z.enum(["completed", "failed"]),
+  startedAt: z.string().datetime(),
+  finishedAt: z.string().datetime(),
+  durationMs: z.number().int(),
+  sourcesOk: z.number().int(),
+  sourcesFailed: z.number().int(),
+  skipped: z.number().int(),
+  upserts: z.number().int(),
+  delists: z.number().int(),
+  perHostBackoffs: z.record(z.string(), z.number().int()),
+  emptyFetches: z.array(z.string()),
+});
+export type CrawlRunSummary = z.infer<typeof CrawlRunSummary>;
+
+export const CrawlSourceRow = z.object({
+  sourceId: z.string(),
+  name: z.string(),
+  liveCount: z.number().int(),
+  lastSeenAt: z.string().datetime().nullable(),
+});
+export type CrawlSourceRow = z.infer<typeof CrawlSourceRow>;
+
+export const AdminCrawlStatus = z.object({
+  pool: CrawlPoolStatus.nullable(),
+  staleness: z.number().nullable(),
+  runningCrawl: CrawlRunningStatus.nullable(),
+  lastRuns: z.array(CrawlRunSummary).nullable(),
+  perSource: z.object({ items: z.array(CrawlSourceRow), totalSources: z.number().int() }).nullable(),
+  errors: z.array(z.string()),
+});
+export type AdminCrawlStatus = z.infer<typeof AdminCrawlStatus>;
+
 // ClientErrorReport — POST /api/client-error crash-beacon body (pre-launch
 // hardening Task 4). userId is NEVER part of this schema — the route attaches
 // it server-side from the session; a client-supplied id would be spoofable.

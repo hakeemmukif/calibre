@@ -41,7 +41,9 @@ function parseArgs(argv: string[]): CrawlCliArgs {
   return args;
 }
 
-function isCrawlable(source: SourceRow): boolean {
+// Exported for the crawl-status admin surface (enabled-crawlable count feeds
+// `skipped` math) — the same predicate, not re-derived.
+export function isCrawlable(source: SourceRow): boolean {
   if (!source.enabled) return false;
   if (source.kind === "manual") return false; // no discover
   const status = (source.config as { status?: string } | null)?.status;

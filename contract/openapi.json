@@ -2,6 +2,87 @@
   "components": {
     "parameters": {},
     "schemas": {
+      "AdminCrawlStatus": {
+        "properties": {
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "lastRuns": {
+            "items": {
+              "$ref": "#/components/schemas/CrawlRunSummary"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "perSource": {
+            "properties": {
+              "items": {
+                "items": {
+                  "$ref": "#/components/schemas/CrawlSourceRow"
+                },
+                "type": "array"
+              },
+              "totalSources": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "items",
+              "totalSources"
+            ],
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "pool": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CrawlPoolStatus"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
+          },
+          "runningCrawl": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CrawlRunningStatus"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
+          },
+          "staleness": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "pool",
+          "staleness",
+          "runningCrawl",
+          "lastRuns",
+          "perSource",
+          "errors"
+        ],
+        "type": "object"
+      },
       "AdminGrantRequest": {
         "properties": {
           "delta": {
@@ -554,6 +635,135 @@
           "costUsd",
           "createdAt",
           "completedAt"
+        ],
+        "type": "object"
+      },
+      "CrawlPoolStatus": {
+        "properties": {
+          "delisted": {
+            "type": "integer"
+          },
+          "live": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "live",
+          "delisted",
+          "total"
+        ],
+        "type": "object"
+      },
+      "CrawlRunSummary": {
+        "properties": {
+          "delists": {
+            "type": "integer"
+          },
+          "durationMs": {
+            "type": "integer"
+          },
+          "emptyFetches": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "finishedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "perHostBackoffs": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object"
+          },
+          "skipped": {
+            "type": "integer"
+          },
+          "sourcesFailed": {
+            "type": "integer"
+          },
+          "sourcesOk": {
+            "type": "integer"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "completed",
+              "failed"
+            ],
+            "type": "string"
+          },
+          "upserts": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "status",
+          "startedAt",
+          "finishedAt",
+          "durationMs",
+          "sourcesOk",
+          "sourcesFailed",
+          "skipped",
+          "upserts",
+          "delists",
+          "perHostBackoffs",
+          "emptyFetches"
+        ],
+        "type": "object"
+      },
+      "CrawlRunningStatus": {
+        "properties": {
+          "postingsSeenThisRun": {
+            "type": "integer"
+          },
+          "sourcesWrittenThisRun": {
+            "type": "integer"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "startedAt",
+          "postingsSeenThisRun",
+          "sourcesWrittenThisRun"
+        ],
+        "type": "object"
+      },
+      "CrawlSourceRow": {
+        "properties": {
+          "lastSeenAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "liveCount": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sourceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sourceId",
+          "name",
+          "liveCount",
+          "lastSeenAt"
         ],
         "type": "object"
       },
@@ -2561,6 +2771,43 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/admin/crawl": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCrawlStatus"
+                }
+              }
+            },
+            "description": "Pool counts + staleness + running-crawl strip + last-runs health + bottom-10 sources (each section degrades independently)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Caller is not an admin"
+          }
+        },
+        "summary": "Admin: crawl status panel — live pool fill, run health, and skipped-source detection"
+      }
+    },
     "/api/admin/sources": {
       "get": {
         "responses": {

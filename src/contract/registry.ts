@@ -67,6 +67,11 @@ import {
   ClientErrorReport,
   SourceHealthRow,
   SourcesHealthResponse,
+  CrawlPoolStatus,
+  CrawlRunningStatus,
+  CrawlRunSummary,
+  CrawlSourceRow,
+  AdminCrawlStatus,
 } from "@/types";
 
 const entitySchemas: Record<string, z.ZodType> = {
@@ -113,6 +118,11 @@ const entitySchemas: Record<string, z.ZodType> = {
   ClientErrorReport,
   SourceHealthRow,
   SourcesHealthResponse,
+  CrawlPoolStatus,
+  CrawlRunningStatus,
+  CrawlRunSummary,
+  CrawlSourceRow,
+  AdminCrawlStatus,
 };
 
 for (const [name, schema] of Object.entries(entitySchemas)) {
@@ -765,6 +775,17 @@ registry.registerPath({
   summary: "Admin: source-health surface — total/enabled/dead counts + dead/disabled rows (Track O §4.3)",
   responses: {
     200: { description: "Source-health aggregates + the dead/disabled rows", content: { "application/json": { schema: SourcesHealthResponse } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    403: { description: "Caller is not an admin", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/admin/crawl",
+  summary: "Admin: crawl status panel — live pool fill, run health, and skipped-source detection",
+  responses: {
+    200: { description: "Pool counts + staleness + running-crawl strip + last-runs health + bottom-10 sources (each section degrades independently)", content: { "application/json": { schema: AdminCrawlStatus } } },
     401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
     403: { description: "Caller is not an admin", content: { "application/json": { schema: ErrorEnvelope } } },
   },
