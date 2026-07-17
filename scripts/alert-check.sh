@@ -25,7 +25,7 @@ set -euo pipefail
 CONF="${CALIBER_ALERT_CONF:-/root/.config/caliber-alert.env}"
 COMPOSE_DIR="${CALIBER_COMPOSE_DIR:-/opt/caliber}"
 STATE_DIR="${CALIBER_ALERT_STATE_DIR:-/root/.local/state/caliber}"
-WINDOW="${CALIBER_ALERT_WINDOW:-10m}"
+WINDOW="${CALIBER_ALERT_WINDOW:-11m}"
 THRESHOLD="${CALIBER_ALERT_THRESHOLD:-5}"
 HEALTH_URL="${CALIBER_ALERT_HEALTH_URL:-http://localhost:3000/api/health}"
 
@@ -49,13 +49,38 @@ if [ "$DISK_PCT" -ge 90 ]; then
 fi
 
 # 3. Stale backup (>26h since scripts/backup.sh last wrote its marker).
+# A corrupt/empty marker is treated as STALE rather than tripping a bash
+# arithmetic error that would abort the run before health/disk findings push.
 MARKER="$STATE_DIR/backup-last-success"
-if [ ! -f "$MARKER" ] || [ "$(( $(date +%s) - $(cat "$MARKER") ))" -gt $((26 * 3600)) ]; then
+STALE=0
+if [ ! -f "$MARKER" ]; then
+  STALE=1
+else
+  ts="$(cat "$MARKER")"
+  case "$ts" in
+    ''|*[!0-9]*) STALE=1 ;;
+    *)
+      if [ "$(( $(date +%s) - ts ))" -gt $((26 * 3600)) ]; then
+        STALE=1
+      fi
+      ;;
+  esac
+fi
+if [ "$STALE" -eq 1 ]; then
   alerts+=("backup: no successful off-box snapshot in >26h")
 fi
 
 # 4. Log classifier over the cron window.
 LOGS="$(cd "$COMPOSE_DIR" && docker compose logs app --since "$WINDOW" 2>&1 || true)"
+
+# The unauthenticated POST /api/client-error beacon logs client-controlled
+# message/stack/url verbatim as `[client-error]` lines. Classifying those
+# lines' TEXT against the page-on-first / page-above-threshold literals would
+# let an anonymous request spoof a page (e.g. message: "x crashed
+# unexpectedly"). LOGS_NO_BEACON strips `[client-error]` lines before pattern
+# matching; only the `\[client-error\]` marker itself (the legitimate
+# beacon-volume signal) is still counted against the full, unfiltered $LOGS.
+LOGS_NO_BEACON="$(printf '%s\n' "$LOGS" | grep -v '\[client-error\]' || true)"
 
 PAGE_FIRST=(
   "crashed unexpectedly"
@@ -82,7 +107,7 @@ PAGE_THRESHOLD=(
 
 first_hits=()
 for pattern in "${PAGE_FIRST[@]}"; do
-  n="$(printf '%s\n' "$LOGS" | grep -cE "$pattern" || true)"
+  n="$(printf '%s\n' "$LOGS_NO_BEACON" | grep -cE "$pattern" || true)"
   [ "$n" -gt 0 ] && first_hits+=("${pattern} x${n}")
 done
 if [ "${#first_hits[@]}" -gt 0 ]; then
@@ -92,7 +117,14 @@ fi
 threshold_total=0
 threshold_summary=()
 for pattern in "${PAGE_THRESHOLD[@]}"; do
-  n="$(printf '%s\n' "$LOGS" | grep -cE "$pattern" || true)"
+  # The `\[client-error\]` marker itself is the legitimate beacon-volume
+  # signal — count it against the full $LOGS. Every other pattern runs
+  # against $LOGS_NO_BEACON so beacon-controlled text can't double-count.
+  if [ "$pattern" = '\[client-error\]' ]; then
+    n="$(printf '%s\n' "$LOGS" | grep -cE "$pattern" || true)"
+  else
+    n="$(printf '%s\n' "$LOGS_NO_BEACON" | grep -cE "$pattern" || true)"
+  fi
   if [ "$n" -gt 0 ]; then
     threshold_total=$((threshold_total + n))
     threshold_summary+=("${pattern} x${n}")
