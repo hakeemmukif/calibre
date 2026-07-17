@@ -13,17 +13,23 @@ export type ResumeRow = typeof resumes.$inferSelect;
 export function createResumesRepo(db: Db) {
   return {
     async insertReplacingActive(row: NewResume): Promise<ResumeRow> {
-      return db.transaction(async (tx) => {
-        await tx
-          .update(resumes)
-          .set({ isActive: false })
-          .where(and(eq(resumes.isActive, true), eq(resumes.userId, row.userId)));
-        const [inserted] = await tx
-          .insert(resumes)
-          .values({ ...row, isActive: true })
-          .returning();
-        return inserted;
-      });
+      // Ordered single statements, NOT db.transaction() — the libsql file:
+      // driver recreates its connection when an interactive transaction
+      // begins and corrupts state under concurrency (test-db.ts header;
+      // proven twice 2026-07-16). A crash between the two statements leaves
+      // ZERO active rows for the user — visible (resume page 404s), healed
+      // by the next upload. The resumes_user_id_active_unique partial index
+      // (schema.ts:127) keeps "at most one active" true under any interleaving;
+      // a concurrent loser fails loud on it instead of corrupting.
+      await db
+        .update(resumes)
+        .set({ isActive: false })
+        .where(and(eq(resumes.isActive, true), eq(resumes.userId, row.userId)));
+      const [inserted] = await db
+        .insert(resumes)
+        .values({ ...row, isActive: true })
+        .returning();
+      return inserted;
     },
     // Every read is scoped by userId (Step 3 task 2): a foreign id/owner
     // combination returns null, never a row, so callers 404 instead of

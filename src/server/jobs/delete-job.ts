@@ -57,11 +57,16 @@ export async function deletePastedJob(jobId: string, userId: string): Promise<vo
     .limit(1);
   if (existingApp) throw new ApplicationExistsError(jobId);
 
-  await db.transaction(async (tx) => {
-    await tx.delete(applicationAnswers).where(eq(applicationAnswers.jobId, jobId));
-    await tx.delete(tailoredResumes).where(eq(tailoredResumes.jobId, jobId));
-    await tx.delete(correlationReports).where(eq(correlationReports.jobId, jobId));
-    await tx.delete(jobScores).where(eq(jobScores.jobId, jobId));
-    await tx.delete(jobs).where(eq(jobs.id, jobId));
-  });
+  // Ordered single deletes, NOT db.transaction() (global constraint — the
+  // libsql file: driver corrupts under concurrent interactive transactions).
+  // Every statement is idempotent and the `jobs` row goes last, so a crash
+  // mid-sequence re-runs cleanly: the guards above still resolve the job and
+  // the earlier deletes are no-ops the second time. Order is FK-driven (see
+  // the module doc-comment): dependents before `jobs`, tailored_resumes
+  // before correlation_reports.
+  await db.delete(applicationAnswers).where(eq(applicationAnswers.jobId, jobId));
+  await db.delete(tailoredResumes).where(eq(tailoredResumes.jobId, jobId));
+  await db.delete(correlationReports).where(eq(correlationReports.jobId, jobId));
+  await db.delete(jobScores).where(eq(jobScores.jobId, jobId));
+  await db.delete(jobs).where(eq(jobs.id, jobId));
 }
