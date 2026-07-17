@@ -48,22 +48,53 @@ The DB is a single SQLite file and upload keys are relative (no absolute paths i
 ## Backup (ops floor before a second user)
 SQLite is one file, but do **not** `cp` a live WAL DB — take a consistent snapshot.
 
-**Nightly snapshot (floor).** `VACUUM INTO` is a safe hot copy while the app runs (single-writer). Cron on the host:
+**Nightly off-box snapshot (the floor, scripted).** `scripts/backup.sh` (repo-tracked,
+runs at `/opt/caliber/scripts/backup.sh`) does the whole pipeline: `VACUUM INTO`
+(rm-first — VACUUM INTO refuses to overwrite) → tar the uploads volume →
+`age -r <pubkey>` encrypt → `rclone` to R2, then writes the
+`/root/.local/state/caliber/backup-last-success` marker that the alerting
+check watches (>26h stale pages the operator). Cron on the host:
+
 ```
-# VACUUM INTO refuses to overwrite an existing file — clear last night's snapshot
-# FIRST or the job fails silently from night two (verified on the running stack:
-# "SQLITE_ERROR: output file already exists"). rm-first is idempotent even after
-# a partial run (e.g. died between vacuum and cp).
-docker compose exec -T app rm -f /var/lib/caliber/data/snapshot.db
-# consistent db snapshot written into the dbdata volume, then copied off
-docker compose exec -T app npx tsx -e "const{createClient}=require('@libsql/client');const c=createClient({url:process.env.DATABASE_URL});c.execute(\"VACUUM INTO '/var/lib/caliber/data/snapshot.db'\").then(()=>console.log('ok'))"
-cp   /var/lib/docker/volumes/<project>_dbdata/_data/snapshot.db /backups/caliber-$(date +%F).db
-# uploads
-rsync -a /var/lib/docker/volumes/<project>_uploads/_data/ /backups/uploads/
+17 3 * * * /opt/caliber/scripts/backup.sh >> /var/log/caliber-backup.log 2>&1
 ```
-Copy `/backups` off-box.
+
+Config in `/root/.config/caliber-backup.env` (NOT in git, NOT `.env.production`):
+`AGE_RECIPIENT` (age public key) + `RCLONE_REMOTE` (R2 remote:bucket; creds in
+rclone config). The age **private key lives in two places only**: the operator's
+Mac and the password manager. `.env.production` is NOT automated — copy it to
+the password manager manually whenever it changes.
+
+**Restore drill (once, before invites, on the Mac):** `rclone copy` the latest
+pair down → `age -d` both → boot an isolated stack
+`docker compose -p caliber-restore-drill up` (distinct volumes — cannot touch
+prod or dev) with the decrypted `caliber.db` + uploads dir mounted → log in,
+open a real résumé → `docker compose -p caliber-restore-drill down -v`.
 
 **Continuous (recommended for real users):** run [litestream](https://litestream.io) as a sidecar replicating `caliber.db` to S3/B2 for point-in-time restore — the standard SQLite production backup. Wire it when you take on paying users.
+
+## Alerting
+
+Two legs, both landing in the operator's Telegram (Decision 1 — same channel
+as crash-page/feedback support):
+
+1. **External (launch-gate leg 4, operator setup):** UptimeRobot polls
+   `https://caliber.fightbase.co/api/health` — the only check that sees
+   DNS/TLS/host-Caddy from outside — and pushes via the Telegram bot.
+2. **On-box (first-week):** `scripts/alert-check.sh` on cron:
+   ```
+   */10 * * * * /opt/caliber/scripts/alert-check.sh >> /var/log/caliber-alert.log 2>&1
+   ```
+   Checks: on-box `/api/health`, disk ≥90%, stale backup (>26h without
+   `scripts/backup.sh`'s success marker), and a tiered log classifier —
+   **page-on-first** (crashes, the daily cost-cap trip, url-check worker-loop
+   errors) vs **page-above-threshold** (connector/scoring/url-check flakes,
+   `[client-error]` beacons; ≥5 per 10-min window). The designed url-check
+   tier-escalation fallback never pages (allowlist matching). Payloads are
+   summary counts only — raw log lines never leave the box.
+
+Bot token + chat id live in `/root/.config/caliber-alert.env` (box-only, not
+in git, not in `.env.production`).
 
 ## Image runtime: `next start` (not standalone)
 The Dockerfile runs `next start` and keeps full `node_modules` — deliberate, because the tsx/drizzle-kit one-offs (`db:migrate`, `db:seed`, `migrate-uploads`) run via `docker compose run app ...` and need those binaries. `output: "standalone"` was **removed** from `next.config.mjs` (2026-07-16): it conflicts with `next start` (Next 15.5 warns "does not work") and the runtime image isn't the slim standalone bundle anyway. If you ever want the slimmer standalone image, you'd also need a separate migration path for the one-offs (standalone bundles only traced deps — no tsx/drizzle-kit).

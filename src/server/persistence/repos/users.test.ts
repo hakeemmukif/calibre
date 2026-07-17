@@ -138,4 +138,13 @@ describe("usersRepo", () => {
 
     await expect(repo.updatePlan(crypto.randomUUID(), "standard")).rejects.toThrow();
   });
+
+  it("updatePasswordHash swaps the hash; unknown id throws (fail loud)", async () => {
+    const db = await createTestDb();
+    const repo = createUserRepo(db);
+    const u = await repo.create({ email: "pw@x.co", passwordHash: "old-hash", role: "user" });
+    await repo.updatePasswordHash(u.id, "new-hash");
+    expect((await repo.findById(u.id))?.passwordHash).toBe("new-hash");
+    await expect(repo.updatePasswordHash("nope", "h")).rejects.toThrow("updatePasswordHash: unknown user nope");
+  });
 });

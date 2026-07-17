@@ -70,4 +70,18 @@ describe("AuthCard", () => {
     expect(screen.getByLabelText("Password")).toBeDisabled();
     expect(screen.getByRole("button", { name: "Please wait…" })).toBeDisabled();
   });
+
+  it("renders the register consent footnote when provided (Task 5, PDPA-aware)", () => {
+    render(
+      <AuthCard
+        mode="register"
+        onSubmit={() => {}}
+        busy={false}
+        switchHref="/login"
+        switchLabel="Sign in instead"
+        footnote="consent caption here"
+      />,
+    );
+    expect(screen.getByText("consent caption here")).toBeInTheDocument();
+  });
 });

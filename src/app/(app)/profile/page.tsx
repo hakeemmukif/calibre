@@ -6,15 +6,34 @@
 // unseeded install — surfaced, not defaulted (fail loud).
 import * as React from "react";
 import { ProfileTargets, type ProfileDialsBundle } from "@/caliber-ui/compositions/Profile/ProfileTargets";
+import { ChangePasswordCard } from "@/caliber-ui/compositions/Profile/ChangePasswordCard";
 import { Button } from "@/caliber-ui/components/Button";
 import { Icon } from "@/caliber-ui/components/Icon";
 import { getProfile, updateProfile } from "@/features/profile/client";
+import { changePassword } from "@/features/auth/client";
 import type { Profile, RelocationPref, ScheduleFlex, EmploymentPref } from "@/types";
 
 export default function ProfilePage() {
   const [profile, setProfile] = React.useState<Profile | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | undefined>();
+  const [pwBusy, setPwBusy] = React.useState(false);
+  const [pwError, setPwError] = React.useState<string | undefined>();
+  const [pwSuccess, setPwSuccess] = React.useState(false);
+
+  async function handleChangePassword(currentPassword: string, newPassword: string) {
+    setPwBusy(true);
+    setPwError(undefined);
+    setPwSuccess(false);
+    try {
+      await changePassword({ currentPassword, newPassword });
+      setPwSuccess(true);
+    } catch (err) {
+      setPwError(err instanceof Error ? err.message : "Couldn't change the password.");
+    } finally {
+      setPwBusy(false);
+    }
+  }
 
   const load = React.useCallback(async () => {
     setError(undefined);
@@ -114,6 +133,12 @@ export default function ProfilePage() {
             onPresetSelect={handlePresetSelect}
           />
         )}
+        <ChangePasswordCard
+          onSubmit={(current, next) => void handleChangePassword(current, next)}
+          busy={pwBusy}
+          error={pwError}
+          success={pwSuccess}
+        />
       </div>
     </div>
   );

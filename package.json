@@ -20,6 +20,8 @@
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx --env-file-if-exists=.env.local src/server/persistence/seed.ts",
     "db:seed:test": "tsx src/server/persistence/seed-test.ts",
+    "user:delete": "tsx --env-file-if-exists=.env.local src/server/persistence/delete-user.ts",
+    "auth:reset-password": "tsx --env-file-if-exists=.env.local src/server/auth/reset-password.ts",
     "eligibility:recompute": "tsx src/server/score/recompute-eligibility.ts",
     "eligibility:report": "tsx src/server/score/eligibility-distribution.ts",
     "remote-fit:coverage": "tsx src/server/score/remote-fit-coverage.ts",

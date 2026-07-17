@@ -61,3 +61,11 @@ describe('JobDetail Re-evaluate action', () => {
     expect(screen.getByRole('button', { name: /^re-evaluate$/i })).toBeEnabled();
   });
 });
+
+describe('JobDetail verdict-feedback link (Task 7)', () => {
+  it('renders the quiet verdict-feedback link (Task 7)', () => {
+    renderDetail();
+    const link = screen.getByRole('link', { name: /verdict look wrong/i });
+    expect(link).toHaveAttribute('href', expect.stringContaining('https://t.me/share/url?'));
+  });
+});

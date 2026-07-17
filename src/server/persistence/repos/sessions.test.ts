@@ -93,4 +93,26 @@ describe("sessionsRepo", () => {
     const found = await repo.findUserByTokenHash("fresh30");
     expect(found?.id).toBe(u.id);
   });
+
+  it("deleteAllByUserId kills every session for that user and nobody else's", async () => {
+    const db = await createTestDb();
+    const [a] = await db
+      .insert(users)
+      .values({ email: "sa@x.co", passwordHash: "h", role: "user", plan: "standard" })
+      .returning();
+    const [b] = await db
+      .insert(users)
+      .values({ email: "sb@x.co", passwordHash: "h", role: "user", plan: "standard" })
+      .returning();
+    const repo = createSessionRepo(db);
+    await repo.create({ userId: a.id, tokenHash: "a1" });
+    await repo.create({ userId: a.id, tokenHash: "a2" });
+    await repo.create({ userId: b.id, tokenHash: "b1" });
+
+    await repo.deleteAllByUserId(a.id);
+
+    expect(await repo.findUserByTokenHash("a1")).toBeNull();
+    expect(await repo.findUserByTokenHash("a2")).toBeNull();
+    expect((await repo.findUserByTokenHash("b1"))?.id).toBe(b.id);
+  });
 });

@@ -340,6 +340,56 @@
         ],
         "type": "object"
       },
+      "ChangePasswordRequest": {
+        "properties": {
+          "currentPassword": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "newPassword": {
+            "maxLength": 200,
+            "minLength": 8,
+            "type": "string"
+          }
+        },
+        "required": [
+          "currentPassword",
+          "newPassword"
+        ],
+        "type": "object"
+      },
+      "ClientErrorReport": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "digest": {
+            "maxLength": 200,
+            "type": "string"
+          },
+          "message": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "stack": {
+            "maxLength": 8000,
+            "type": "string"
+          },
+          "url": {
+            "maxLength": 2000,
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "url",
+          "at"
+        ],
+        "type": "object"
+      },
       "CorrelationReport": {
         "properties": {
           "ats": {
@@ -3639,6 +3689,52 @@
         "summary": "Log out"
       }
     },
+    "/api/auth/password": {
+      "patch": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            },
+            "description": "Password changed; fresh session cookie set"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session, or wrong current password"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Invalid body"
+          }
+        },
+        "summary": "Self-serve change-password — reverifies current password, kills other sessions, re-mints the caller's"
+      }
+    },
     "/api/auth/register": {
       "post": {
         "requestBody": {
@@ -3732,6 +3828,55 @@
         "summary": "Current session"
       }
     },
+    "/api/client-error": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientErrorReport"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Report accepted"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Report exceeds the size cap"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Invalid report shape"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Per-IP report limit exceeded"
+          }
+        },
+        "summary": "Crash beacon — client error report (fire-and-forget; userId attached server-side)"
+      }
+    },
     "/api/credits": {
       "get": {
         "responses": {
@@ -3767,6 +3912,9 @@
               "application/json": {
                 "schema": {
                   "properties": {
+                    "llmKeyConfigured": {
+                      "type": "boolean"
+                    },
                     "mode": {
                       "enum": [
                         "real",
@@ -3780,13 +3928,35 @@
                   },
                   "required": [
                     "ok",
-                    "mode"
+                    "mode",
+                    "llmKeyConfigured"
                   ],
                   "type": "object"
                 }
               }
             },
             "description": "Service is healthy"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "ok": {
+                      "enum": [
+                        false
+                      ],
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "DB ping failed — UptimeRobot + alert-check.sh depend on this to detect on-box outages"
           }
         },
         "summary": "Health check"

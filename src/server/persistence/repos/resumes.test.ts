@@ -1,3 +1,4 @@
+import { and, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { createTestDb } from "../test-db";
 import { resumes, users } from "../schema";
@@ -263,5 +264,42 @@ describe("resumesRepo", () => {
     });
 
     expect(await repo.getById(resumeA.id, userB.id)).toBeNull();
+  });
+
+  it("concurrent insertReplacingActive calls never corrupt: exactly one active row survives", async () => {
+    const db = await createTestDb();
+    const repo = createResumesRepo(db);
+    const base = {
+      userId: BOOTSTRAP_ADMIN_ID,
+      structured: {
+        storeVersion: 2 as const,
+        extractionPath: "text" as const,
+        name: "A",
+        contact: [],
+        summary: "s",
+        experience: [],
+        education: [],
+        skills: [],
+        projects: [],
+        certifications: [],
+        languages: [],
+        sections: [],
+      },
+      sourceKind: "paste" as const,
+      isActive: true,
+    };
+
+    const results = await Promise.allSettled(
+      Array.from({ length: 5 }, (_, i) => repo.insertReplacingActive({ ...base, rawText: `resume ${i}` })),
+    );
+
+    // Losers may reject on the resumes_user_id_active_unique partial index —
+    // fail-loud is acceptable; corruption is not.
+    expect(results.some((r) => r.status === "fulfilled")).toBe(true);
+    const active = await db
+      .select()
+      .from(resumes)
+      .where(and(eq(resumes.userId, BOOTSTRAP_ADMIN_ID), eq(resumes.isActive, true)));
+    expect(active).toHaveLength(1);
   });
 });
