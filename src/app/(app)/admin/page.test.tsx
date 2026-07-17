@@ -1,19 +1,20 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import * as React from "react";
-import { render, screen, cleanup, waitFor } from "@testing-library/react";
+import { render, screen, cleanup, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi, afterEach, beforeEach } from "vitest";
 import { ApiError } from "@/features/http";
-import type { AdminUser } from "@/types";
+import type { AdminUser, SourcesHealthResponse } from "@/types";
 
 afterEach(cleanup);
 
-const { getAdminUsers, grantCredits, patchUserPlan } = vi.hoisted(() => ({
+const { getAdminUsers, getSourcesHealth, grantCredits, patchUserPlan } = vi.hoisted(() => ({
   getAdminUsers: vi.fn(),
+  getSourcesHealth: vi.fn(),
   grantCredits: vi.fn(),
   patchUserPlan: vi.fn(),
 }));
-vi.mock("@/features/admin/client", () => ({ getAdminUsers, grantCredits, patchUserPlan }));
+vi.mock("@/features/admin/client", () => ({ getAdminUsers, getSourcesHealth, grantCredits, patchUserPlan }));
 
 import AdminPage from "./page";
 
@@ -31,8 +32,12 @@ const users: AdminUser[] = [
   },
 ];
 
+const emptySourcesHealth: SourcesHealthResponse = { total: 0, enabledCount: 0, deadCount: 0, items: [] };
+
 beforeEach(() => {
   getAdminUsers.mockReset();
+  getSourcesHealth.mockReset();
+  getSourcesHealth.mockResolvedValue(emptySourcesHealth);
 });
 
 describe("AdminPage load", () => {
@@ -73,5 +78,76 @@ describe("AdminPage generic error", () => {
 
     await waitFor(() => expect(getAdminUsers).toHaveBeenCalledTimes(2));
     expect(await screen.findByText("admin@caliber.dev")).toBeInTheDocument();
+  });
+});
+
+describe("AdminPage sources health", () => {
+  it("renders the total/enabled/dead counts and the dead/disabled rows list", async () => {
+    getAdminUsers.mockResolvedValue(users);
+    getSourcesHealth.mockResolvedValue({
+      total: 4,
+      enabledCount: 2,
+      deadCount: 1,
+      items: [
+        {
+          id: "lever:defunct",
+          name: "Defunct Co",
+          enabled: false,
+          status: "dead",
+          consecutiveFailures: 6,
+          lastValidatedAt: 1_752_600_000_000,
+          jobCount: 0,
+          provenance: ["jobhive"],
+        },
+        // hand-curated row: admin-disabled but no health fields at all —
+        // must render without throwing and without fabricating a status.
+        { id: "gh-curated-off", name: "Curated Off", enabled: false },
+      ],
+    });
+    render(<AdminPage />);
+
+    expect(await screen.findByText("Sources health")).toBeInTheDocument();
+    expect(await screen.findByText("Defunct Co")).toBeInTheDocument();
+    expect(screen.getByText("dead")).toBeInTheDocument();
+    expect(screen.getByText("Curated Off")).toBeInTheDocument();
+    expect(screen.getByText("disabled")).toBeInTheDocument();
+
+    // the three stat tiles (scoped to their own Card so "1"/"2" don't
+    // collide with the unrelated résumé/job counts in the users table)
+    expect(within(screen.getByText("Total").parentElement!).getByText("4")).toBeInTheDocument();
+    expect(within(screen.getByText("Enabled").parentElement!).getByText("2")).toBeInTheDocument();
+    expect(within(screen.getByText("Dead").parentElement!).getByText("1")).toBeInTheDocument();
+  });
+
+  it("shows the empty state when there are no dead or disabled sources", async () => {
+    getAdminUsers.mockResolvedValue(users);
+    getSourcesHealth.mockResolvedValue({ total: 3, enabledCount: 3, deadCount: 0, items: [] });
+    render(<AdminPage />);
+
+    expect(await screen.findByText(/no dead or disabled sources/i)).toBeInTheDocument();
+  });
+
+  it("renders a row's `error` as a danger tag with its message, without fabricating a status", async () => {
+    getAdminUsers.mockResolvedValue(users);
+    getSourcesHealth.mockResolvedValue({
+      total: 1,
+      enabledCount: 1,
+      deadCount: 0,
+      items: [{ id: "gh:broken", name: "Broken", enabled: true, error: "admin/sources: engine source malformed" }],
+    });
+    render(<AdminPage />);
+
+    expect(await screen.findByText("error")).toBeInTheDocument();
+    expect(screen.getByText("admin/sources: engine source malformed")).toBeInTheDocument();
+  });
+
+  it("degrades to a panel-local error when getSourcesHealth rejects, without blanking the users table", async () => {
+    getAdminUsers.mockResolvedValue(users);
+    getSourcesHealth.mockRejectedValue(new Error("sources health boom"));
+    render(<AdminPage />);
+
+    expect(await screen.findByText("admin@caliber.dev")).toBeInTheDocument();
+    expect(await screen.findByText(/couldn't load sources health/i)).toBeInTheDocument();
+    expect(screen.getByText(/sources health boom/)).toBeInTheDocument();
   });
 });

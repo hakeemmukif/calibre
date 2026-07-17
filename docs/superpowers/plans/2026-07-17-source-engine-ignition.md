@@ -129,14 +129,14 @@ Takes recall 0.722 → 0.894 with deterministic, reviewable rules and cuts the e
 > semantics overridden by DECISION A full-soft-rank). Kept for historical reference only; Track P is the
 > executable version of this work.
 
-- [ ] **3.1 Global `postings` table + migration.** (D2: `description` TEXT ≤40k, stored at crawl time)
+- [ ] **3.1 Global `postings` table + migration.** _(SUPERSEDED by Track P — do not execute; see header note above.)_ (D2: `description` TEXT ≤40k, stored at crawl time)
   - No `userId`. Global dedupe key: ATS `externalId` when present, else normalized `companyDomain` + title + location bucket.
   - Test must pass: migration up/down; the dedupe key is stable across re-crawls; **no `db.transaction`** (main's
     `no-db-transaction.test.ts` guard must stay green).
   - Files: `src/server/persistence/schema.ts`, migration, `repos/postings.ts` (+ tests).
   - `model:opus` `effort:xhigh` `@general-purpose` `exec:session` — schema is hard to walk back. Confidence 80%.
 
-- [ ] **3.2 Scheduled crawler.**
+- [ ] **3.2 Scheduled crawler.** _(SUPERSEDED by Track P — do not execute; see header note above.)_
   - Fetch every enabled source once (nightly / 2–4×/day), upsert `postings` in **small sequential batches, no long
     transactions** (libsql `file:` forbids concurrent `db.transaction`); WAL + busy-timeout already at `db.ts:25-29`.
     Per-vendor-host politeness. Skip `config.status === 'dead'` rows. `targets: []` is safe — **no connector reads
@@ -146,14 +146,14 @@ Takes recall 0.722 → 0.894 with deterministic, reviewable rules and cuts the e
   - Files: `src/server/sources/crawler.ts` (+ test).
   - `model:opus` `effort:xhigh` `@general-purpose` `exec:subagent`. Confidence 75%.
 
-- [ ] **3.3 Global dedupe + canonical resolution.**
+- [ ] **3.3 Global dedupe + canonical resolution.** _(SUPERSEDED by Track P — do not execute; see header note above.)_
   - ATS-direct beats aggregator duplicates. Location-bucket definition is UNKNOWN in the design — v1: raw lowercased
     location per `dedupe.ts:56`; weak bucket degrades to duplicate pool rows, not data loss.
   - Test must pass: same job from two sources → one canonical row, ATS-direct wins; differing location strings bucket together.
   - Files: `src/server/sources/dedupe-global.ts` (+ test).
   - `model:opus` `effort:xhigh` `@general-purpose` `exec:subagent`. Confidence 75%.
 
-- [ ] **3.4 Coarse function tag + LLM function classifier.** _(reshaped by the tier study — read
+- [ ] **3.4 Coarse function tag + LLM function classifier.** _(SUPERSEDED by Track P — do not execute; see header note above.)_ _(reshaped by the tier study — read
   `docs/superpowers/reports/2026-07-17-matching-tiers.md` §M3.4 impacts first; 2b.1 must land first, it cuts this load ~60%.)_
   - **Coarse `function` tag = dept-mapped, title fallback** — NOT title-tokens-only. Measured: all 2,909 harvested
     postings carry a board dept/team string; map that to the function enum, fall back to title tokens only when absent.
@@ -172,7 +172,7 @@ Takes recall 0.722 → 0.894 with deterministic, reviewable rules and cuts the e
   - Files: `src/server/llm/…`, `config/models.yml`, `src/server/sources/function.ts` (+ tests).
   - `model:sonnet` `effort:xhigh` `@general-purpose` `exec:subagent`. Confidence 75% (up from 70 — shape now measured).
 
-- [ ] **3.5 Split `run.ts` into crawl + match loops.**
+- [ ] **3.5 Split `run.ts` into crawl + match loops.** _(SUPERSEDED by Track P — do not execute; see header note above.)_
   - User scan → stage-1 filter over the pool (in-process, ms over ~30k) → classifier on ~200 → deep score ~40.
     `jobs` becomes the per-user **materialized match view**; `isNew`/`firstSeen`/`dedupeKey` semantics preserved.
   - **`TOP_N_CANDIDATES` is 30 (`run.ts:34`) but the design says ~40** — conscious operator bump or leave at 30? Decide in-task.
@@ -181,7 +181,7 @@ Takes recall 0.722 → 0.894 with deterministic, reviewable rules and cuts the e
   - Files: `src/server/search/run.ts` (+ test).
   - `model:opus` `effort:xhigh` `@general-purpose` `exec:session` — highest-blast-radius refactor. Confidence 70%.
 
-- [ ] **3.6 OPERATOR: staged rollout.**
+- [ ] **3.6 OPERATOR: staged rollout.** _(SUPERSEDED by Track P — do not execute; see header note above.)_
   - `crawl:once` over the ramp set → real scan per persona → flip the validated list in ~250-source batches.
     JobStreet cap unchanged. Any 403/429 = stop.
   - `exec:session`.

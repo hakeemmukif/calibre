@@ -57,6 +57,11 @@ const ID_PREFIX: Record<JobhiveAts, string> = {
   ashby: "ashby",
 };
 
+/** The single source of `sources.id` for engine-composed rows — growth.ts imports this rather than duplicating ID_PREFIX. */
+export function engineSourceId(ats: JobhiveAts, slug: string): string {
+  return `${ID_PREFIX[ats]}:${slug}`;
+}
+
 /**
  * Composes a `sources` row from a jobhive candidate, its validation result,
  * a provenance list (e.g. ["jobhive", "yc-oss"]), and the company's
@@ -83,7 +88,7 @@ export function seedFromEngine(
   }
 
   return {
-    id: `${ID_PREFIX[row.ats]}:${row.slug}`,
+    id: engineSourceId(row.ats, row.slug),
     name: row.name,
     kind: "ats",
     persona: "remote",

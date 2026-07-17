@@ -65,6 +65,8 @@ import {
   AdminGrantRequest,
   CreditsResponse,
   ClientErrorReport,
+  SourceHealthRow,
+  SourcesHealthResponse,
 } from "@/types";
 
 const entitySchemas: Record<string, z.ZodType> = {
@@ -109,6 +111,8 @@ const entitySchemas: Record<string, z.ZodType> = {
   AdminGrantRequest,
   CreditsResponse,
   ClientErrorReport,
+  SourceHealthRow,
+  SourcesHealthResponse,
 };
 
 for (const [name, schema] of Object.entries(entitySchemas)) {
@@ -750,6 +754,17 @@ registry.registerPath({
   summary: "Admin: every account with per-user résumé/job/application counts",
   responses: {
     200: { description: "All users with counts", content: { "application/json": { schema: AdminUsersResponse } } },
+    401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
+    403: { description: "Caller is not an admin", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/admin/sources",
+  summary: "Admin: source-health surface — total/enabled/dead counts + dead/disabled rows (Track O §4.3)",
+  responses: {
+    200: { description: "Source-health aggregates + the dead/disabled rows", content: { "application/json": { schema: SourcesHealthResponse } } },
     401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
     403: { description: "Caller is not an admin", content: { "application/json": { schema: ErrorEnvelope } } },
   },

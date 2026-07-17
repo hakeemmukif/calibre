@@ -501,6 +501,35 @@ export type AdminPlanPatch = z.infer<typeof AdminPlanPatch>;
 export const AdminGrantRequest = z.object({ delta: z.number().int().refine((n) => n !== 0) });
 export type AdminGrantRequest = z.infer<typeof AdminGrantRequest>;
 
+// SourceHealthRow / SourcesHealthResponse — GET /api/admin/sources (Track O
+// task O.2, spec §4.3: dead/disabled sources "visibly disabled with a count
+// on an admin surface"). Only engine-seeded rows (freshness.ts) carry the
+// health fields below; hand-curated seed.ts rows have none of them — the
+// fields are optional here for exactly that reason (an absent field is a
+// curated row, not a failure).
+export const SourceHealthRow = z.object({
+  id: z.string(),
+  name: z.string(),
+  enabled: z.boolean(),
+  status: z.enum(["active", "dead"]).optional(),
+  consecutiveFailures: z.number().int().optional(),
+  lastValidatedAt: z.number().int().optional(),
+  jobCount: z.number().int().optional(),
+  provenance: z.array(z.string()).optional(),
+  // Set when an engine row's health config is malformed — surfaced in the
+  // admin list, not fatal; mirrors freshness.ts's row-level failure.
+  error: z.string().optional(),
+});
+export type SourceHealthRow = z.infer<typeof SourceHealthRow>;
+
+export const SourcesHealthResponse = z.object({
+  total: z.number().int(),
+  enabledCount: z.number().int(),
+  deadCount: z.number().int(),
+  items: z.array(SourceHealthRow),
+});
+export type SourcesHealthResponse = z.infer<typeof SourcesHealthResponse>;
+
 // ClientErrorReport — POST /api/client-error crash-beacon body (pre-launch
 // hardening Task 4). userId is NEVER part of this schema — the route attaches
 // it server-side from the session; a client-supplied id would be spoofable.

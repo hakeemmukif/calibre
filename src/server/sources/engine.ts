@@ -205,7 +205,7 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
 // waiting).
 const JOBHIVE_ALLOWED_FILES = ["greenhouse.csv", "lever.csv", "ashby.csv"];
 
-async function fetchJobhive(fetchFn: FetchLike): Promise<{ files: string[]; rows: JobhiveRow[] }> {
+export async function fetchJobhive(fetchFn: FetchLike): Promise<{ files: string[]; rows: JobhiveRow[] }> {
   const entries = await listGithubDir(fetchFn, JOBHIVE_DIR_URL, ".csv");
   const allowed = entries.filter((e) => JOBHIVE_ALLOWED_FILES.includes(e.name));
   const missing = JOBHIVE_ALLOWED_FILES.filter((name) => !allowed.some((e) => e.name === name));
