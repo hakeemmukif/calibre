@@ -10,6 +10,7 @@ import { AppliedButton } from "../Apply/AppliedButton";
 import { LegitimacyTag } from "../../lib/legitimacy";
 import { EligibilityTag } from "../../lib/eligibility";
 import { agoLabel, toFitBarTone } from "../../lib/format";
+import { buildVerdictFeedbackUrl } from "../../lib/feedback";
 import type { Job, Application } from "../../../types";
 
 export interface JobDetailProps {
@@ -178,6 +179,17 @@ export function JobDetail({
           appliedAgo={applied ? agoLabel(applied.appliedAt) : undefined}
           onMarkApplied={onMarkApplied}
         />
+      </div>
+
+      <div style={{ marginTop: 10 }}>
+        <a
+          href={buildVerdictFeedbackUrl(job)}
+          target="_blank"
+          rel="noreferrer"
+          style={{ font: "var(--type-caption)", color: "var(--text-muted)" }}
+        >
+          Verdict look wrong? Tell the operator on Telegram
+        </a>
       </div>
     </Card>
   );
