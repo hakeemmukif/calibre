@@ -111,7 +111,7 @@ describe("GET /api/admin/sources", () => {
     expect(curated).not.toHaveProperty("provenance");
   });
 
-  it("throws on an engine row with a malformed health field, even when enabled (fail loud, not defaulted, not skipped just because it looks healthy)", async () => {
+  it("surfaces (does not throw on) an engine row with a malformed health field, even when enabled — reported on that row via `error`, request still 200s", async () => {
     await state.testDb.insert(sources).values([
       {
         id: "gh:broken",
@@ -123,6 +123,23 @@ describe("GET /api/admin/sources", () => {
       },
     ]);
 
-    await expect(GET()).rejects.toThrow(/malformed config field/);
+    const res = await GET();
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    const broken = body.items.find((r: { id: string }) => r.id === "gh:broken");
+    expect(broken.error).toMatch(/malformed config field/);
+    expect(broken).not.toHaveProperty("status");
+  });
+
+  it("excludes the curated `manual` sentinel from items but still counts it toward total", async () => {
+    await state.testDb.insert(sources).values([
+      { id: "manual", name: "Manual URL", kind: "manual", persona: "both", enabled: false, config: {} },
+    ]);
+
+    const res = await GET();
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.total).toBe(1);
+    expect(body.items.find((r: { id: string }) => r.id === "manual")).toBeUndefined();
   });
 });

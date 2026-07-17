@@ -1681,6 +1681,9 @@
           "enabled": {
             "type": "boolean"
           },
+          "error": {
+            "type": "string"
+          },
           "id": {
             "type": "string"
           },

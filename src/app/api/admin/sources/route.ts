@@ -7,11 +7,14 @@
 //
 // Engine-seeded rows (config.provenance is an array — same isEngineRow test
 // freshness.ts uses) carry health fields (status/consecutiveFailures/
-// lastValidatedAt/jobCount); a malformed one throws (fail loud, mirrors
-// freshness.ts's parseEngineConfig). Hand-curated seed.ts rows carry no
-// provenance and so legitimately have none of these fields — that absence
-// is not a failure; such a row can still appear in `items` (if an admin
-// disabled it) with the health fields simply omitted.
+// lastValidatedAt/jobCount); a malformed one is reported on that row via
+// `error`, not thrown — this surface exists to make sick sources visible,
+// so a bad row must not 500 the whole admin page (users+credits included).
+// Mirrors freshness.ts's row-level failure philosophy (FreshnessPassError):
+// fail loud on the row, keep the pass going. Hand-curated seed.ts rows carry
+// no provenance and so legitimately have none of these fields — that
+// absence is not a failure; such a row can still appear in `items` (if an
+// admin disabled it) with the health fields simply omitted.
 import { NextResponse } from "next/server";
 import { ForbiddenError, UnauthorizedError } from "@/server/auth/errors";
 import { requireAdmin } from "@/server/auth/session";
@@ -28,23 +31,40 @@ function isEngineRow(config: Record<string, unknown>): boolean {
   return Array.isArray(config.provenance);
 }
 
-// Only ever called on an engine row (isEngineRow already true) — fails loud
-// on a malformed health field rather than defaulting around it.
-function healthFieldsOf(id: string, config: Record<string, unknown>) {
-  const bad = (field: string, value: unknown) =>
-    new Error(`admin/sources: engine source "${id}" has malformed config field "${field}" (got ${JSON.stringify(value)})`);
+type HealthFields = {
+  status: "active" | "dead";
+  consecutiveFailures: number;
+  lastValidatedAt: number;
+  jobCount: number;
+  provenance: string[];
+};
+
+// Only ever called on an engine row (isEngineRow already true). Reports a
+// malformed field on the row rather than throwing — this row is a problem to
+// surface, not to hide, and a bad row must never abort the whole request.
+function healthFieldsOf(
+  id: string,
+  config: Record<string, unknown>,
+): { ok: true; health: HealthFields } | { ok: false; error: string } {
+  const bad = (field: string, value: unknown): { ok: false; error: string } => ({
+    ok: false,
+    error: `admin/sources: engine source "${id}" has malformed config field "${field}" (got ${JSON.stringify(value)})`,
+  });
   const { status, consecutiveFailures, lastValidatedAt, jobCount, provenance } = config;
-  if (status !== "active" && status !== "dead") throw bad("status", status);
-  if (typeof consecutiveFailures !== "number") throw bad("consecutiveFailures", consecutiveFailures);
-  if (typeof lastValidatedAt !== "number") throw bad("lastValidatedAt", lastValidatedAt);
-  if (typeof jobCount !== "number") throw bad("jobCount", jobCount);
-  if (!Array.isArray(provenance)) throw bad("provenance", provenance);
+  if (status !== "active" && status !== "dead") return bad("status", status);
+  if (typeof consecutiveFailures !== "number") return bad("consecutiveFailures", consecutiveFailures);
+  if (typeof lastValidatedAt !== "number") return bad("lastValidatedAt", lastValidatedAt);
+  if (typeof jobCount !== "number") return bad("jobCount", jobCount);
+  if (!Array.isArray(provenance)) return bad("provenance", provenance);
   return {
-    status: status as "active" | "dead",
-    consecutiveFailures,
-    lastValidatedAt,
-    jobCount,
-    provenance: provenance as string[],
+    ok: true,
+    health: {
+      status: status as "active" | "dead",
+      consecutiveFailures,
+      lastValidatedAt,
+      jobCount,
+      provenance: provenance as string[],
+    },
   };
 }
 
@@ -59,14 +79,23 @@ export async function GET() {
     for (const row of rows) {
       const config = row.config as Record<string, unknown>;
       if (row.enabled) enabledCount++;
+      // N2: "manual" (seed.ts) is the pasted-URL pseudo-source — structurally
+      // always disabled, not a dead/disabled crawl source. It still counts
+      // toward `total` above (rows.length) but never appears in `items`.
+      if (row.id === "manual") continue;
       // Validated unconditionally for every engine row (not only ones that
       // end up in `items`) — same boundary discipline as freshness.ts's
       // parseEngineConfig, which runs over every engine row it sees.
-      const health = isEngineRow(config) ? healthFieldsOf(row.id, config) : undefined;
-      const dead = health?.status === "dead";
+      const result = isEngineRow(config) ? healthFieldsOf(row.id, config) : undefined;
+      const dead = result?.ok === true && result.health.status === "dead";
       if (dead) deadCount++;
-      if (dead || !row.enabled) {
-        items.push({ id: row.id, name: row.name, enabled: row.enabled, ...health });
+      if (result && !result.ok) {
+        // Malformed engine row: surfaced, not fatal, and not hidden even if
+        // the row happens to be enabled — a broken config is itself the
+        // problem to show.
+        items.push({ id: row.id, name: row.name, enabled: row.enabled, error: result.error });
+      } else if (dead || !row.enabled) {
+        items.push({ id: row.id, name: row.name, enabled: row.enabled, ...(result?.ok ? result.health : {}) });
       }
     }
 

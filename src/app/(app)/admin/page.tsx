@@ -78,12 +78,21 @@ function SourcesHealthPanel({ data }: { data: SourcesHealthResponse }) {
                     <div style={{ font: "var(--type-caption)", color: "var(--text-muted)" }}>{row.id}</div>
                   </td>
                   <td style={tdStyle}>
-                    <Tag tone={row.status === "dead" ? "danger" : "warn"}>
-                      {row.status === "dead" ? "dead" : "disabled"}
-                    </Tag>
+                    {row.error ? (
+                      <>
+                        <Tag tone="danger">error</Tag>
+                        <div style={{ font: "var(--type-caption)", color: "var(--text-muted)" }}>{row.error}</div>
+                      </>
+                    ) : (
+                      <Tag tone={row.status === "dead" ? "danger" : "warn"}>
+                        {row.status === "dead" ? "dead" : "disabled"}
+                      </Tag>
+                    )}
                   </td>
                   <td style={tdStyle}>{row.consecutiveFailures ?? "—"}</td>
-                  <td style={tdStyle}>{row.lastValidatedAt ? new Date(row.lastValidatedAt).toLocaleDateString() : "—"}</td>
+                  <td style={tdStyle}>
+                    {row.lastValidatedAt != null ? new Date(row.lastValidatedAt).toLocaleDateString() : "—"}
+                  </td>
                   <td style={tdStyle}>{row.jobCount ?? "—"}</td>
                   <td style={tdStyle}>{row.provenance ? row.provenance.join(", ") : "—"}</td>
                 </tr>
@@ -102,14 +111,31 @@ export default function AdminPage() {
   const [loaded, setLoaded] = React.useState(false);
   const [forbidden, setForbidden] = React.useState(false);
   const [error, setError] = React.useState<string | undefined>();
+  const [sourcesError, setSourcesError] = React.useState<string | undefined>();
 
   const load = React.useCallback(async () => {
     setError(undefined);
     setForbidden(false);
+    setSourcesError(undefined);
     try {
-      const [nextUsers, nextSourcesHealth] = await Promise.all([getAdminUsers(), getSourcesHealth()]);
+      // S3b: getAdminUsers is the critical call — its failure still aborts
+      // the page (403 → forbidden, other → the top banner). getSourcesHealth
+      // is not: a sick admin-source-health surface must not blank the users
+      // table, so its rejection is mapped to a local result here instead of
+      // propagating into Promise.all's rejection path.
+      const [nextUsers, sourcesResult] = await Promise.all([
+        getAdminUsers(),
+        getSourcesHealth().then(
+          (data) => ({ data }),
+          (err) => ({ error: err instanceof Error ? err.message : "Couldn't load sources health." }),
+        ),
+      ]);
       setUsers(nextUsers);
-      setSourcesHealth(nextSourcesHealth);
+      if ("error" in sourcesResult) {
+        setSourcesError(sourcesResult.error);
+      } else {
+        setSourcesHealth(sourcesResult.data);
+      }
     } catch (err) {
       if (err instanceof ApiError && err.status === 403) {
         setForbidden(true);
@@ -185,6 +211,23 @@ export default function AdminPage() {
               </div>
             )}
             {loaded && <AdminUsersTable users={users} onGrant={handleGrant} onTogglePlan={handleTogglePlan} />}
+            {loaded && sourcesError && (
+              <div
+                style={{
+                  marginTop: 32,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "10px 14px",
+                  borderRadius: "var(--radius-sm)",
+                  background: "var(--danger-soft)",
+                  color: "var(--danger-ink)",
+                }}
+              >
+                <Icon name="triangle-alert" size={16} />
+                <span style={{ font: "var(--type-body)" }}>Couldn't load sources health: {sourcesError}</span>
+              </div>
+            )}
             {loaded && sourcesHealth && <SourcesHealthPanel data={sourcesHealth} />}
           </>
         )}

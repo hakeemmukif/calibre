@@ -126,4 +126,28 @@ describe("AdminPage sources health", () => {
 
     expect(await screen.findByText(/no dead or disabled sources/i)).toBeInTheDocument();
   });
+
+  it("renders a row's `error` as a danger tag with its message, without fabricating a status", async () => {
+    getAdminUsers.mockResolvedValue(users);
+    getSourcesHealth.mockResolvedValue({
+      total: 1,
+      enabledCount: 1,
+      deadCount: 0,
+      items: [{ id: "gh:broken", name: "Broken", enabled: true, error: "admin/sources: engine source malformed" }],
+    });
+    render(<AdminPage />);
+
+    expect(await screen.findByText("error")).toBeInTheDocument();
+    expect(screen.getByText("admin/sources: engine source malformed")).toBeInTheDocument();
+  });
+
+  it("degrades to a panel-local error when getSourcesHealth rejects, without blanking the users table", async () => {
+    getAdminUsers.mockResolvedValue(users);
+    getSourcesHealth.mockRejectedValue(new Error("sources health boom"));
+    render(<AdminPage />);
+
+    expect(await screen.findByText("admin@caliber.dev")).toBeInTheDocument();
+    expect(await screen.findByText(/couldn't load sources health/i)).toBeInTheDocument();
+    expect(screen.getByText(/sources health boom/)).toBeInTheDocument();
+  });
 });
