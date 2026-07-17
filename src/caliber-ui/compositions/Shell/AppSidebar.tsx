@@ -29,6 +29,7 @@ export const SIDEBAR_ITEMS: NavItem[] = [
 export const ADMIN_SIDEBAR_ITEMS: NavItem[] = [
   { section: "Admin" },
   { id: "admin-users", label: "Users", icon: "users" },
+  { id: "admin-crawl", label: "Crawl", icon: "activity" },
 ];
 
 export const DEFAULT_ENABLED = new Set(["matches", "applied", "scans", "resume", "sources", "profile"]);
@@ -57,7 +58,7 @@ export interface AppSidebarProps {
 export function AppSidebar({ user, activeId, onSelect, onLogout }: AppSidebarProps) {
   const isAdmin = user?.role === "admin";
   const items = isAdmin ? [...SIDEBAR_ITEMS, ...ADMIN_SIDEBAR_ITEMS] : SIDEBAR_ITEMS;
-  const enabled = isAdmin ? new Set([...DEFAULT_ENABLED, "admin-users"]) : DEFAULT_ENABLED;
+  const enabled = isAdmin ? new Set([...DEFAULT_ENABLED, "admin-users", "admin-crawl"]) : DEFAULT_ENABLED;
 
   return (
     <SidebarNav
