@@ -11,7 +11,12 @@ import { fetchJson } from "./_http";
 interface LeverPosting {
   text?: string;
   hostedUrl?: string;
-  categories?: { location?: string };
+  // Lever splits the org unit across `categories.department` and
+  // `categories.team` (both real vendor fields; orgs use one or the other).
+  // The literal department field wins; `team` is the honest alternative when
+  // it is absent (plan "Department provenance"). Both are real reads — never a
+  // fabricated value.
+  categories?: { location?: string; department?: string; team?: string };
   country?: string;
   workplaceType?: string;
   descriptionPlain?: string;
@@ -50,6 +55,7 @@ export function createLeverConnector(source: SourceRow): SourceConnector {
           title: p.text ?? "",
           company: slug,
           location: p.categories?.location || undefined,
+          department: p.categories?.department || p.categories?.team || undefined,
           geo: leverGeo(p),
           description: typeof p.descriptionPlain === "string" ? p.descriptionPlain : undefined,
           postedAt: typeof p.createdAt === "number" ? new Date(p.createdAt).toISOString() : undefined,

@@ -19,6 +19,8 @@ interface AshbyJob {
   title?: string;
   jobUrl?: string;
   location?: string;
+  // Ashby posting-api top-level department string (plan "Department provenance").
+  department?: string;
   isRemote?: boolean;
   address?: { postalAddress?: { addressCountry?: string } };
   publishedAt?: string;
@@ -81,6 +83,7 @@ export function createAshbyConnector(source: SourceRow): SourceConnector {
           title: j.title ?? "",
           company: slug,
           location: j.location || undefined,
+          department: j.department || undefined,
           geo: ashbyGeo(j),
           description:
             typeof j.descriptionHtml === "string" && j.descriptionHtml.trim().length > 0

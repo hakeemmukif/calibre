@@ -14,6 +14,9 @@ interface GreenhouseJob {
   title?: string;
   absolute_url?: string;
   location?: { name?: string };
+  // Greenhouse job-board jobs carry a `departments` array; the primary unit is
+  // the first entry's name (plan "Department provenance").
+  departments?: { name?: string }[];
   first_published?: string;
   content?: string;
 }
@@ -85,6 +88,7 @@ export function createGreenhouseConnector(source: SourceRow): SourceConnector {
           title: j.title ?? "",
           company: slug,
           location: j.location?.name || undefined,
+          department: j.departments?.[0]?.name || undefined,
           description:
             typeof j.content === "string" && j.content.trim().length > 0
               ? htmlToText(unescapeEntities(j.content)).slice(0, 40_000)

@@ -57,6 +57,19 @@ describe("lever connector", () => {
     ]);
   });
 
+  it("carries categories.department into RawPosting.department, falling back to team (P.4 tag input)", async () => {
+    const fixture = [
+      { text: "A", hostedUrl: "https://jobs.lever.co/acme/dep-1", categories: { department: "Operations", team: "Ignored" } },
+      { text: "B", hostedUrl: "https://jobs.lever.co/acme/dep-2", categories: { team: "Growth" } },
+    ];
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(fixture), { status: 200 })));
+    const postings = await collect(
+      createLeverConnector(source()).discover({ targets: [], since: new Date(0), signal: new AbortController().signal, onProgress: () => {} }),
+    );
+    expect(postings[0].department).toBe("Operations"); // literal department field wins
+    expect(postings[1].department).toBe("Growth"); // team is the honest fallback
+  });
+
   it("maps confirmed geo fields: country (ISO-2) + workplaceType (capture 2026-07-12)", async () => {
     const fixture = [
       {

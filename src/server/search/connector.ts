@@ -25,6 +25,11 @@ export interface RawPosting {
   // a payload's explicit remote flag — none confirmed yet; see the capture
   // task). Absent = derive from `location` via parseLocationGeo.
   geo?: import("./geo").ParsedGeo;
+  // Vendor-stated department/team string (plan 2026-07-17 "Department
+  // provenance"): P.4's primary function-tag input, plumbed connector →
+  // RawPosting → postings.department by P.3's crawler. Absent when the board
+  // omits it — never fabricated. P.3 carries it; P.4 consumes it.
+  department?: string;
   description?: string;
   postedAt?: string;
   salaryRaw?: string;
