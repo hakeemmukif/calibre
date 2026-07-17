@@ -57,6 +57,12 @@ describe("AppShell", () => {
     render(<AppShell user={admin}>content</AppShell>);
     expect(screen.getByText("Admin")).toBeInTheDocument();
     expect(screen.getByText("Users")).toBeInTheDocument();
+    expect(screen.getByText("Crawl")).toBeInTheDocument();
+  });
+
+  it("does not render the Crawl nav row for a non-admin user", () => {
+    render(<AppShell user={user}>content</AppShell>);
+    expect(screen.queryByText("Crawl")).not.toBeInTheDocument();
   });
 
   it("lights up the admin-users nav row when the route is under /admin", () => {
@@ -66,10 +72,23 @@ describe("AppShell", () => {
     expect(usersRow).toHaveTextContent("Users");
   });
 
+  it("lights up the admin-crawl nav row when the route is /admin/crawl", () => {
+    pathname = "/admin/crawl";
+    render(<AppShell user={admin}>content</AppShell>);
+    const crawlRow = screen.getByText("Crawl").closest("button");
+    expect(crawlRow).toHaveTextContent("Crawl");
+  });
+
   it("navigates to /admin when the Users row is clicked", () => {
     render(<AppShell user={admin}>content</AppShell>);
     fireEvent.click(screen.getByText("Users"));
     expect(push).toHaveBeenCalledWith("/admin");
+  });
+
+  it("navigates to /admin/crawl when the Crawl row is clicked", () => {
+    render(<AppShell user={admin}>content</AppShell>);
+    fireEvent.click(screen.getByText("Crawl"));
+    expect(push).toHaveBeenCalledWith("/admin/crawl");
   });
 
   it("renders the Scans nav row", () => {

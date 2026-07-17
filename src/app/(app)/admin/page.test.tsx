@@ -4,21 +4,19 @@ import * as React from "react";
 import { render, screen, cleanup, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi, afterEach, beforeEach } from "vitest";
 import { ApiError } from "@/features/http";
-import type { AdminCrawlStatus, AdminUser, SourcesHealthResponse } from "@/types";
+import type { AdminUser, SourcesHealthResponse } from "@/types";
 
 afterEach(cleanup);
 
-const { getAdminUsers, getSourcesHealth, getCrawlStatus, grantCredits, patchUserPlan } = vi.hoisted(() => ({
+const { getAdminUsers, getSourcesHealth, grantCredits, patchUserPlan } = vi.hoisted(() => ({
   getAdminUsers: vi.fn(),
   getSourcesHealth: vi.fn(),
-  getCrawlStatus: vi.fn(),
   grantCredits: vi.fn(),
   patchUserPlan: vi.fn(),
 }));
 vi.mock("@/features/admin/client", () => ({
   getAdminUsers,
   getSourcesHealth,
-  getCrawlStatus,
   grantCredits,
   patchUserPlan,
 }));
@@ -41,21 +39,10 @@ const users: AdminUser[] = [
 
 const emptySourcesHealth: SourcesHealthResponse = { total: 0, enabledCount: 0, deadCount: 0, items: [] };
 
-const emptyCrawlStatus: AdminCrawlStatus = {
-  pool: { live: 0, delisted: 0, total: 0 },
-  staleness: null,
-  runningCrawl: null,
-  lastRuns: [],
-  perSource: { items: [], totalSources: 0 },
-  errors: [],
-};
-
 beforeEach(() => {
   getAdminUsers.mockReset();
   getSourcesHealth.mockReset();
   getSourcesHealth.mockResolvedValue(emptySourcesHealth);
-  getCrawlStatus.mockReset();
-  getCrawlStatus.mockResolvedValue(emptyCrawlStatus);
 });
 
 describe("AdminPage load", () => {
@@ -167,51 +154,5 @@ describe("AdminPage sources health", () => {
     expect(await screen.findByText("admin@caliber.dev")).toBeInTheDocument();
     expect(await screen.findByText(/couldn't load sources health/i)).toBeInTheDocument();
     expect(screen.getByText(/sources health boom/)).toBeInTheDocument();
-  });
-});
-
-describe("AdminPage crawl status", () => {
-  it("renders the live pool count, staleness chip, and last-runs table", async () => {
-    getAdminUsers.mockResolvedValue(users);
-    getCrawlStatus.mockResolvedValue({
-      pool: { live: 1234, delisted: 56, total: 1290 },
-      staleness: 5,
-      runningCrawl: null,
-      lastRuns: [
-        {
-          status: "completed",
-          startedAt: "2026-07-16T03:00:00.000Z",
-          finishedAt: "2026-07-16T03:10:00.000Z",
-          durationMs: 600_000,
-          sourcesOk: 2,
-          sourcesFailed: 1,
-          skipped: 3,
-          upserts: 40,
-          delists: 2,
-          perHostBackoffs: {},
-          emptyFetches: ["gh:stale-slug"],
-        },
-      ],
-      perSource: { items: [{ sourceId: "gh:quiet", name: "Quiet Co", liveCount: 0, lastSeenAt: null }], totalSources: 5 },
-      errors: [],
-    } satisfies AdminCrawlStatus);
-    render(<AdminPage />);
-
-    expect(await screen.findByText("Crawl")).toBeInTheDocument();
-    expect(screen.getByText("1,234")).toBeInTheDocument();
-    expect(screen.getByText("3")).toBeInTheDocument(); // skipped, rendered red
-    expect(screen.getByText("gh:stale-slug")).toBeInTheDocument();
-    expect(screen.getByText(/upserts = churn, not growth/)).toBeInTheDocument();
-    expect(screen.getByText("Quiet Co")).toBeInTheDocument();
-  });
-
-  it("degrades to a panel-local error when getCrawlStatus rejects, without blanking the users table", async () => {
-    getAdminUsers.mockResolvedValue(users);
-    getCrawlStatus.mockRejectedValue(new Error("crawl status boom"));
-    render(<AdminPage />);
-
-    expect(await screen.findByText("admin@caliber.dev")).toBeInTheDocument();
-    expect(await screen.findByText(/couldn't load crawl status/i)).toBeInTheDocument();
-    expect(screen.getByText(/crawl status boom/)).toBeInTheDocument();
   });
 });
