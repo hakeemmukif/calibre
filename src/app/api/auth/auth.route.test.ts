@@ -2,23 +2,40 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { NextRequest } from "next/server";
 
 const { usersRepo, sessionsRepo, getSession } = vi.hoisted(() => ({
-  usersRepo: { create: vi.fn(), findByEmail: vi.fn() },
-  sessionsRepo: { create: vi.fn(), deleteByTokenHash: vi.fn(), findUserByTokenHash: vi.fn() },
+  usersRepo: { create: vi.fn(), findByEmail: vi.fn(), findById: vi.fn(), updatePasswordHash: vi.fn() },
+  sessionsRepo: {
+    create: vi.fn(),
+    deleteByTokenHash: vi.fn(),
+    findUserByTokenHash: vi.fn(),
+    deleteAllByUserId: vi.fn(),
+  },
   getSession: vi.fn(),
 }));
 vi.mock("@/server/persistence/repos/users", () => ({ usersRepo }));
 vi.mock("@/server/persistence/repos/sessions", () => ({ sessionsRepo }));
 const { grant } = vi.hoisted(() => ({ grant: vi.fn() }));
 vi.mock("@/server/credits", () => ({ grant }));
-vi.mock("@/server/auth/session", async (orig) => ({
-  ...(await orig<typeof import("@/server/auth/session")>()),
-  getSession: () => getSession(),
-}));
+vi.mock("@/server/auth/session", async (orig) => {
+  const actual = await orig<typeof import("@/server/auth/session")>();
+  return {
+    ...actual,
+    getSession: () => getSession(),
+    requireUser: async () => {
+      const user = await getSession();
+      if (!user) {
+        const { UnauthorizedError } = await import("@/server/auth/errors");
+        throw new UnauthorizedError();
+      }
+      return user;
+    },
+  };
+});
 
 import { POST as register } from "./register/route";
 import { POST as login } from "./login/route";
 import { POST as logout } from "./logout/route";
 import { GET as session } from "./session/route";
+import { PATCH as changePassword } from "./password/route";
 import { hashPassword } from "@/server/auth/password";
 import { hashToken } from "@/server/auth/token";
 import { SESSION_COOKIE } from "@/server/auth/session";
@@ -220,5 +237,59 @@ describe("GET /api/auth/session", () => {
     const res = await session();
     expect(res.status).toBe(401);
     expect((await res.json()).error.code).toBe("UNAUTHORIZED");
+  });
+});
+
+describe("PATCH /api/auth/password", () => {
+  function patchRequest(body: unknown): Request {
+    return new Request("http://x/api/auth/password", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it("changes the password, kills all sessions, mints a fresh one", async () => {
+    getSession.mockResolvedValue({ id: "u1", email: "a@b.co", role: "user" });
+    usersRepo.findById.mockResolvedValue({
+      id: "u1",
+      email: "a@b.co",
+      role: "user",
+      passwordHash: await hashPassword("old-password"),
+    });
+    const res = await changePassword(patchRequest({ currentPassword: "old-password", newPassword: "brand-new-pass" }));
+    expect(res.status).toBe(200);
+    expect(usersRepo.updatePasswordHash).toHaveBeenCalledWith("u1", expect.not.stringContaining("brand-new-pass"));
+    expect(sessionsRepo.deleteAllByUserId).toHaveBeenCalledWith("u1");
+    expect(sessionsRepo.create).toHaveBeenCalledOnce();
+    const cookie = res.headers.get("set-cookie") ?? "";
+    expect(cookie).toContain("caliber_session=");
+    expect(cookie.toLowerCase()).toContain("httponly");
+  });
+
+  it("401s on a wrong current password without touching hash or sessions", async () => {
+    getSession.mockResolvedValue({ id: "u1", email: "a@b.co", role: "user" });
+    usersRepo.findById.mockResolvedValue({
+      id: "u1",
+      email: "a@b.co",
+      role: "user",
+      passwordHash: await hashPassword("old-password"),
+    });
+    const res = await changePassword(patchRequest({ currentPassword: "wrong", newPassword: "brand-new-pass" }));
+    expect(res.status).toBe(401);
+    expect(usersRepo.updatePasswordHash).not.toHaveBeenCalled();
+    expect(sessionsRepo.deleteAllByUserId).not.toHaveBeenCalled();
+  });
+
+  it("401s with no session", async () => {
+    getSession.mockResolvedValue(null);
+    const res = await changePassword(patchRequest({ currentPassword: "x", newPassword: "brand-new-pass" }));
+    expect(res.status).toBe(401);
+  });
+
+  it("422s a too-short new password", async () => {
+    getSession.mockResolvedValue({ id: "u1", email: "a@b.co", role: "user" });
+    const res = await changePassword(patchRequest({ currentPassword: "old-password", newPassword: "short" }));
+    expect(res.status).toBe(422);
   });
 });

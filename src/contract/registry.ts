@@ -57,6 +57,7 @@ import {
   AuthUser,
   RegisterRequest,
   LoginRequest,
+  ChangePasswordRequest,
   SessionResponse,
   AdminUser,
   AdminUsersResponse,
@@ -100,6 +101,7 @@ const entitySchemas: Record<string, z.ZodType> = {
   AuthUser,
   RegisterRequest,
   LoginRequest,
+  ChangePasswordRequest,
   SessionResponse,
   AdminUser,
   AdminUsersResponse,
@@ -897,6 +899,18 @@ registry.registerPath({
   responses: {
     200: { description: "Active session", content: { "application/json": { schema: SessionResponse } } },
     401: { description: "No active session", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/auth/password",
+  summary: "Self-serve change-password — reverifies current password, kills other sessions, re-mints the caller's",
+  request: { body: { content: { "application/json": { schema: ChangePasswordRequest } } } },
+  responses: {
+    200: { description: "Password changed; fresh session cookie set", content: { "application/json": { schema: SessionResponse } } },
+    401: { description: "No session, or wrong current password", content: { "application/json": { schema: ErrorEnvelope } } },
+    422: { description: "Invalid body", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
 

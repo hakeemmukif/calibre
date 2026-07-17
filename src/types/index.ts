@@ -462,6 +462,14 @@ export const LoginRequest = z.object({
 });
 export type LoginRequest = z.infer<typeof LoginRequest>;
 
+// ChangePasswordRequest — PATCH /api/auth/password body (Task 6, Decision 2).
+// The route reverifies currentPassword server-side before rehashing.
+export const ChangePasswordRequest = z.object({
+  currentPassword: z.string().min(1).max(200),
+  newPassword: z.string().min(8).max(200),
+});
+export type ChangePasswordRequest = z.infer<typeof ChangePasswordRequest>;
+
 export const SessionResponse = z.object({ user: AuthUser });
 export type SessionResponse = z.infer<typeof SessionResponse>;
 
