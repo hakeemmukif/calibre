@@ -1,8 +1,11 @@
 // PATCH /api/auth/password — self-serve change-password (Task 6, Decision 2).
-// Reverifies the CURRENT password, rehashes, then kills EVERY session for the
-// user (a leaked session must not survive a password change) and mints a
-// fresh one so the caller stays signed in. Shares updatePasswordHash +
-// deleteAllByUserId with the operator reset script.
+// Reverifies the CURRENT password, kills EVERY session for the user (a
+// leaked session must not survive a password change), THEN rehashes and
+// mints a fresh one so the caller stays signed in. Sessions are killed
+// before the hash is updated so a crash in between fails closed: the OLD
+// password stays valid but every session is already dead, rather than
+// leaving a new password set while stale sessions survive. Shares
+// updatePasswordHash + deleteAllByUserId with the operator reset script.
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { ChangePasswordRequest, AuthUser, type ErrorEnvelope } from "@/types";
@@ -32,8 +35,8 @@ export async function PATCH(request: Request) {
     if (!(await verifyPassword(user.passwordHash, currentPassword))) {
       return errorResponse(401, "UNAUTHORIZED", "Current password is incorrect.");
     }
-    await usersRepo.updatePasswordHash(user.id, await hashPassword(newPassword));
     await sessionsRepo.deleteAllByUserId(user.id);
+    await usersRepo.updatePasswordHash(user.id, await hashPassword(newPassword));
     const { raw, hash } = mintSessionToken();
     await sessionsRepo.create({ userId: user.id, tokenHash: hash });
     const res = NextResponse.json({ user: AuthUser.parse(user) }, { status: 200 });
