@@ -3,7 +3,7 @@
 // Never imports server/*; the session cookie is set by the route response,
 // this module only parses the JSON body.
 import { z } from "zod";
-import { AuthUser, LoginRequest, RegisterRequest, SessionResponse } from "@/types";
+import { AuthUser, ChangePasswordRequest, LoginRequest, RegisterRequest, SessionResponse } from "@/types";
 import { requestJson } from "@/features/http";
 
 export async function register(input: RegisterRequest): Promise<AuthUser> {
@@ -26,4 +26,13 @@ export async function login(input: LoginRequest): Promise<AuthUser> {
 
 export async function logout(): Promise<void> {
   await requestJson("/api/auth/logout", { method: "POST" }, z.void());
+}
+
+export async function changePassword(input: ChangePasswordRequest): Promise<AuthUser> {
+  const { user } = await requestJson(
+    "/api/auth/password",
+    { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(input) },
+    SessionResponse,
+  );
+  return user;
 }
