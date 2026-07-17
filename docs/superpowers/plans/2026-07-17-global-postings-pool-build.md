@@ -44,6 +44,16 @@ P.5 must pick one, explicitly, and pin it with a test:
 - **(b)** order by a blended expression (`fit_score` adjusted by an eligibility term) — keeps scoring untouched, but eligibility stays a special case.
 Do not ship `ORDER BY fit_score DESC` alone — it satisfies R1's letter and breaks DECISION A.
 
+**RESOLVED by P.5 → option (b), lexicographic bucket (Fable-adjudicated).** Scoring is left
+untouched (`scoreMatch`'s prompt carries NO tz/eligibility/schedule key — pinned by a test).
+The demotion is a deterministic leading ORDER BY term, not a blended arithmetic score:
+`repos/jobs.ts listScored` orders `misalignedCount ASC, score DESC, firstSeenAt DESC, id DESC`
+(`score` = `jobScores.score`), with a matching SQL CASE ≡ `tzBand.ts` TS predicate pinned over
+the full band × structure × null matrix. Rank inputs (`rankBands`/`rankStructures`) are ORDER-BY
+only — the dead `tzBands`/`hiringStructures` WHERE-filter fields are deleted so nothing can be
+hidden on an eligibility signal (DECISION A). The cursor keyset expands to the same 4 keys, its
+anchor tuple fetched scoped to `userId` (the cross-tenant oracle guard holds).
+
 ## Prerequisite — SATISFIED (`4f5ad11`, 2026-07-17)
 
 - **`tzBand.ts` reconciliation — RESOLVED.** The place-name tz-band map committed as `4f5ad11` is the
@@ -147,7 +157,13 @@ session (operator in loop). Per-task gate: `npm test`. Merge gate: `npm run chec
     admitted to that user's `jobs` exactly once; no `description` in the stage-1 path; JD reaches scoring;
     stale-crawl (>48h) emits the SSE warning; **no job is dropped pre-score on an eligibility signal —
     eligibility affects rank only.**
-  - Files: `src/server/search/run.ts` (+ test).
+  - Files (actual): `src/server/search/run.ts`, `src/server/persistence/repos/jobs.ts`,
+    `src/server/score/tzBand.ts` (shared `isBandAligned`/`isStructureAligned`/`misalignedCount`
+    predicates), `src/server/search/describe.ts` (posting-first), `src/server/search/jobsFeed.ts`
+    (deletes page-local `sortByEligibilityFit`, passes rank params), new
+    `src/server/persistence/repos/crawlRuns.ts` (F4 staleness getter) — plus their tests. The
+    feed ORDER BY (`repos/jobs.ts`) was NOT in the original one-file estimate: R1's resolution
+    (below) put DECISION A's demotion in the feed's SQL, not just the scan.
   - `model:opus` `effort:xhigh` `@general-purpose` `exec:session` — highest blast radius. Confidence 70%.
 
 - [ ] **P.6 Rollout (operator-owned).** _(arch §6; was 3.6)_

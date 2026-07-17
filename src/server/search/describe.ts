@@ -1,19 +1,43 @@
-// Top-N scoring-path detail backfill — a board connector's search API may
-// carry no description (JobStreet's chalice-search v4); this fetches and
-// persists it once, right before scoring, so scoreJob never has to
-// special-case a missing JD beyond EmptyJobDescriptionError. Called by
-// run.ts's scoreTopCandidates loop only (TOP_N_CANDIDATES-bounded), never
-// during discover-time fan-out. Task 6 (per-job evaluate endpoint) reuses
-// this exact export.
+// Top-N scoring-path detail backfill. Posting-first since P.5's pool cutover
+// (arch §3 step 6): a pool-admitted job reads its full JD from the linked
+// `postings` row (crawl-time D2 full text) instead of re-fetching; only a job
+// with no pooled JD (a pasted job, or a board search API that carried none)
+// falls back to the connector's detail fetch. Persist behavior is UNCHANGED —
+// the resolved JD is written to `jobs.description` here, right before scoring,
+// so the hidden downstream consumers (evaluate/tailor/answers, which read
+// `jobs.description`) are untouched by the cutover. Called by run.ts's
+// scoreTopCandidates loop (TOP_N_CANDIDATES-bounded) and Task 6's per-job
+// evaluate endpoint, never during discovery.
 import { jobsRepo, type JobRow } from "@/server/persistence/repos/jobs";
+import { postingsRepo } from "@/server/persistence/repos/postings";
 import type { SourceRow } from "@/server/persistence/repos/sources";
 import type { RawPosting } from "./connector";
 import { connectorForSource } from "./connectors";
 
 const DESCRIPTION_CAP = 40_000;
 
-export async function ensureDescription(job: JobRow, source: SourceRow): Promise<JobRow> {
+// `postingDescription`: the linked posting's stored JD, resolved by the caller
+// (run.ts batches one `getForScoring` over the whole TOP_N). Passing it
+// (string OR null) means "I already resolved the posting — do not re-query";
+// omitting it (evaluate's per-job path) makes this self-resolve from
+// `job.postingId`, so both paths are posting-first.
+export async function ensureDescription(
+  job: JobRow,
+  source: SourceRow,
+  postingDescription?: string | null,
+): Promise<JobRow> {
   if (job.description && job.description.trim().length > 0) return job;
+
+  const callerResolvedPosting = postingDescription !== undefined;
+  let poolText = postingDescription ?? null;
+  if (!callerResolvedPosting && job.postingId) {
+    const [posting] = await postingsRepo.getForScoring([job.postingId]);
+    poolText = posting?.description ?? null;
+  }
+  if (poolText && poolText.trim().length > 0) {
+    return jobsRepo.updateDescription(job.id, job.userId, poolText.slice(0, DESCRIPTION_CAP));
+  }
+
   const connector = connectorForSource(source);
   if (!connector.fetchDetail) return job;
 

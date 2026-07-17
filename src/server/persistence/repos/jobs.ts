@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, gte, inArray, isNull, like, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, like, notInArray, or, sql, type SQL } from "drizzle-orm";
 import type { EligibilityTier, HiringStructure, Persona, TzBand } from "@/types";
 import { getDb } from "../db";
 import { jobs, jobScores, sources, type JobAlias } from "../schema";
@@ -33,13 +33,17 @@ export type JobsQuery = {
   // wire param: relocation "stay" passes the 4 admitted tiers, "open" omits
   // the condition entirely.
   eligibility?: EligibilityTier[];
-  // Server-derived from the profile's scheduleFlex/employmentPref dials
-  // (2026-07-14 remote-fit spec), not wire params: `allowedBandsFor`/
-  // `allowedStructuresFor` (server/score/tzBand.ts) resolve these; `null` from
-  // either ("no gate condition") is passed through as `undefined` by the
-  // caller, never as "hide everything".
-  tzBands?: TzBand[];
-  hiringStructures?: HiringStructure[];
+  // RANK-only demotion inputs (DECISION A, full soft rank, P.5 option (b)):
+  // server-derived from the profile's scheduleFlex/employmentPref dials via
+  // `allowedBandsFor`/`allowedStructuresFor` (server/score/tzBand.ts). These
+  // feed ONLY the ORDER BY's misaligned demotion term — NEVER a WHERE
+  // condition. Routing an allowed-set through a WHERE would silently hard-gate
+  // the feed and violate DECISION A. `null` = "no demotion" (any-hours / any:
+  // every band/structure aligned). The pre-DECISION-A hide-semantics filter
+  // fields (`tzBands`/`hiringStructures`) are DELETED — they were dead since
+  // DECISION A shipped (grep: only this repo + its test referenced them).
+  rankBands?: TzBand[] | null;
+  rankStructures?: HiringStructure[] | null;
   q?: string; // ILIKE over title/company
   cursor?: string;
   limit?: number;
@@ -86,11 +90,9 @@ function buildFilterConditions(q: Omit<JobsQuery, "cursor" | "limit">) {
   const conditions: (SQL<unknown> | undefined)[] = [eq(jobs.userId, q.userId)];
   if (q.persona) conditions.push(eq(jobs.persona, q.persona));
   if (q.eligibility && q.eligibility.length > 0) conditions.push(inArray(jobs.eligibility, q.eligibility));
-  // NULL passes automatically — an unstated tz_band/hiring_structure never
-  // triggers the gate (2026-07-14 remote-fit spec §8: stated facts only).
-  if (q.tzBands && q.tzBands.length > 0) conditions.push(or(isNull(jobs.tzBand), inArray(jobs.tzBand, q.tzBands)));
-  if (q.hiringStructures && q.hiringStructures.length > 0)
-    conditions.push(or(isNull(jobs.hiringStructure), inArray(jobs.hiringStructure, q.hiringStructures)));
+  // NB: tz_band / hiring_structure are DELIBERATELY absent here. Under DECISION
+  // A they are rank inputs (`rankBands`/`rankStructures`, consumed by the ORDER
+  // BY in listScored), never WHERE conditions — nothing is hidden on them.
   if (q.tier && q.tier.length > 0) {
     conditions.push(inArray(sql`json_extract(${jobScores.legitimacy}, '$.tier')`, q.tier));
   }
@@ -117,6 +119,29 @@ function mergeAliases(existing: JobAlias[], incoming: JobAlias[]): JobAlias[] {
   const merged = new Map<string, JobAlias>();
   for (const alias of [...existing, ...incoming]) merged.set(`${alias.sourceId}::${alias.url}`, alias);
   return [...merged.values()];
+}
+
+// Deterministic eligibility demotion term (DECISION A, option (b), P.5): the
+// feed's ORDER BY leads with this so an out-of-band / out-of-structure job
+// sorts AFTER every aligned one — GLOBALLY (cross-page), replacing the old
+// page-local reorder — and is NEVER hidden. NULL band/structure counts as
+// aligned (0), matching the "stated facts only" rule (never fabricate a
+// default). This is the SQL twin of tzBand.ts's `misalignedCount`; a parity
+// test pins SQL ≡ TS over the full band × structure × null matrix. A null/empty
+// rank set contributes 0 (any-hours / any: no demotion).
+function misalignedCountSql(
+  rankBands: TzBand[] | null | undefined,
+  rankStructures: HiringStructure[] | null | undefined,
+): SQL<number> {
+  const band =
+    rankBands && rankBands.length > 0
+      ? sql`(CASE WHEN ${jobs.tzBand} IS NOT NULL AND ${notInArray(jobs.tzBand, rankBands)} THEN 1 ELSE 0 END)`
+      : sql`0`;
+  const structure =
+    rankStructures && rankStructures.length > 0
+      ? sql`(CASE WHEN ${jobs.hiringStructure} IS NOT NULL AND ${notInArray(jobs.hiringStructure, rankStructures)} THEN 1 ELSE 0 END)`
+      : sql`0`;
+  return sql<number>`(${band} + ${structure})`;
 }
 
 export function createJobsRepo(db: Db) {
@@ -179,21 +204,42 @@ export function createJobsRepo(db: Db) {
       const limit = q.limit ?? DEFAULT_LIMIT;
       const conditions = buildFilterConditions(q);
 
-      if (q.cursor) {
-        const c = decodeCursorId(q.cursor);
-        // Cursor-oracle fix (Fable design review): the subquery must carry
-        // the SAME user_id filter as the outer query. Without it, a cursor
-        // encoding another user's job id resolves to a real row here (while
-        // the outer WHERE still hides it), producing a differential — an
-        // empty subquery match (nonexistent id) behaves differently from a
-        // real-but-foreign one — which is an existence oracle across
-        // tenants. Scoping the subquery makes both cases identical: no row.
-        conditions.push(
-          sql`(${jobs.firstSeenAt}, ${jobs.id}) < (SELECT ${jobs.firstSeenAt}, ${jobs.id} FROM ${jobs} WHERE ${jobs.id} = ${c.id} AND ${jobs.userId} = ${q.userId})`,
-        );
-      }
+      // The single demotion expression, reused verbatim by the ORDER BY and the
+      // cursor keyset so both agree on which bucket a row falls in.
+      const misaligned = misalignedCountSql(q.rankBands, q.rankStructures);
 
       const latest = latestJobScores(db, q.userId);
+
+      if (q.cursor) {
+        const c = decodeCursorId(q.cursor);
+        // Cursor tuple (m₀, s₀, f₀, id₀) fetched fresh and SCOPED TO userId —
+        // preserving the cursor-oracle tenancy guard (Fable design review): a
+        // foreign or nonexistent cursor id resolves to no row, so the page is
+        // empty and indistinguishable across both cases (no existence oracle).
+        // Score lives on job_scores (not jobs), so the tuple is read through the
+        // latest-score join, not a 4-column correlated subquery.
+        const latestForCursor = latestJobScores(db, q.userId);
+        const [anchor] = await db
+          .select({ m: misaligned, s: jobScores.score, f: jobs.firstSeenAt, id: jobs.id })
+          .from(jobs)
+          .innerJoin(jobScores, eq(jobScores.jobId, jobs.id))
+          .innerJoin(latestForCursor, eq(latestForCursor.id, jobScores.id))
+          .where(and(eq(jobs.id, c.id), eq(jobs.userId, q.userId)))
+          .limit(1);
+
+        if (!anchor) {
+          // No anchor (foreign / nonexistent / unscored cursor id) → empty
+          // page, matching the old NULL-comparison behavior exactly.
+          conditions.push(sql`1 = 0`);
+        } else {
+          // Expanded 4-key keyset over (misaligned ASC, score DESC, firstSeenAt
+          // DESC, id DESC): everything strictly AFTER the anchor in that order.
+          const f0 = anchor.f.getTime();
+          conditions.push(
+            sql`(${misaligned} > ${anchor.m} OR (${misaligned} = ${anchor.m} AND (${jobScores.score} < ${anchor.s} OR (${jobScores.score} = ${anchor.s} AND (${jobs.firstSeenAt} < ${f0} OR (${jobs.firstSeenAt} = ${f0} AND ${jobs.id} < ${anchor.id}))))))`,
+          );
+        }
+      }
 
       const rows = await db
         .select({ job: jobs, score: jobScores, source: sources })
@@ -202,7 +248,7 @@ export function createJobsRepo(db: Db) {
         .innerJoin(latest, eq(latest.id, jobScores.id))
         .innerJoin(sources, eq(sources.id, jobs.sourceId))
         .where(conditions.length > 0 ? and(...conditions) : undefined)
-        .orderBy(desc(jobs.firstSeenAt), desc(jobs.id))
+        .orderBy(asc(misaligned), desc(jobScores.score), desc(jobs.firstSeenAt), desc(jobs.id))
         .limit(limit + 1);
 
       const hasMore = rows.length > limit;

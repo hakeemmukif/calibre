@@ -261,7 +261,17 @@ Step by step (deltas marked):
    `ensureDescription` (`describe.ts`) checks the linked posting's stored `description`
    FIRST (crawl-time full text, D2) and only falls back to `fetchDetail` when the pool
    text is empty — scan-time detail fetches drop to near zero.
-7. **Feed — unchanged.** `jobsFeed.ts`/`listScored` read `jobs` exactly as today.
+7. **Feed — soft-rank ORDER BY (R1, corrected by P.5).** ~~unchanged~~ — the original
+   "read `jobs` exactly as today" premise was wrong: DECISION A's eligibility demotion has
+   to live *somewhere*, and `scoreJob` does not encode it (verified — the fit score is
+   résumé-vs-JD only). P.5 resolved R1 to **option (b), lexicographic bucket**:
+   `listScored`'s ORDER BY leads with a deterministic `misalignedCount` term
+   (`tz_band`/`hiring_structure` vs the profile's allowed sets) —
+   `ORDER BY misalignedCount ASC, score DESC, firstSeenAt DESC, id DESC` — so out-of-band
+   jobs sort after every aligned one CROSS-PAGE, never hidden (`scoreMatch`'s prompt is
+   untouched). `jobsFeed.ts` passes the allowed sets as `rankBands`/`rankStructures`
+   (rank-only inputs, never a WHERE). The old page-local `sortByEligibilityFit` reorder is
+   deleted.
 
 ### 3.4 Admission semantics
 

@@ -24,6 +24,7 @@ import {
   correlationReports,
   jobs,
   jobScores,
+  postings,
   resumes,
   searchRuns,
   sources,
@@ -163,6 +164,7 @@ describe("F1–F6 spine (route-level, mocked externals)", () => {
     await state.testDb.delete(jobScores);
     await state.testDb.delete(jobs);
     await state.testDb.delete(searchRuns);
+    await state.testDb.delete(postings); // FK sources — before the sources delete
     await state.testDb.delete(resumes);
     await state.testDb.delete(sources);
   });
@@ -176,6 +178,27 @@ describe("F1–F6 spine (route-level, mocked externals)", () => {
       config: { geo: { scope: "anywhere" } }, // bare-"Remote" posting -> `anywhere` (spec §6 prior)
     });
     await insertSource(state.testDb, { id: "jobstreet", kind: "board", persona: "local", enabled: true, config: { country: "MY" } });
+    // P.5 pool cutover: discovery reads the shared `postings` pool the crawler
+    // fills (no more per-source connector fan-out), so the spine seeds the pool
+    // directly — one posting per persona, the same fixtures the old stubConnector
+    // yielded. Descriptions are present, so ensureDescription reads the pool text
+    // and never touches a connector.
+    const poolRow = (canonicalKey: string, persona: "remote" | "local", p: RawPosting) => ({
+      canonicalKey,
+      persona,
+      sourceId: p.sourceId,
+      url: p.url,
+      title: p.title,
+      company: p.company,
+      location: p.location ?? "",
+      description: p.description ?? null,
+      aliases: [],
+      raw: p,
+    });
+    await state.testDb.insert(postings).values([
+      poolRow("gh:greenhouse:6041234", "remote", POSTINGS.greenhouse),
+      poolRow("url:jobstreet-991234", "local", POSTINGS.jobstreet),
+    ]);
     llm.scripted = { "resume-extract": RESUME_STORE, "jd-extract": JD_FACTS, "match-score": MATCH_SCORE };
 
     // --- F1: upload (features/resume/client -> POST/GET /api/resume) ---
