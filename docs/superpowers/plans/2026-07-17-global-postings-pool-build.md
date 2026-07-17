@@ -19,6 +19,15 @@ fan-out wall — not source ramp-down.
 - libsql `file:` is single-writer, forbids concurrent `db.transaction` (main's `no-db-transaction.test.ts`
   guards it) — crawler writes are small sequential single-row upserts.
 
+## DECISION A (operator, 2026-07-17) — full soft rank, hide nothing
+
+tz_band, scheduleFlex, **and** employmentPref all demote/rank; **nothing is hard-gated or hidden**.
+Maximum visibility, fit-sorted — every admitted job is shown to every user, ranked by fit. This overrides
+the handoff-integration report's floated "gate structural (employmentPref), rank soft (tz)" split and
+absorbs its open item #4 — the gate-vs-rank collision spanning `run.ts:555-560` (inside P.5's blast
+radius) and `jobsFeed.ts:68-69` (outside it); see
+`docs/superpowers/reports/2026-07-17-handoff-integration.md` §4. P.5 below is written to this decision.
+
 ## Prerequisite — SATISFIED (`4f5ad11`, 2026-07-17)
 
 - **`tzBand.ts` reconciliation — RESOLVED.** The place-name tz-band map committed as `4f5ad11` is the
@@ -80,6 +89,9 @@ session (operator in loop). Per-task gate: `npm test`. Merge gate: `npm run chec
   to P.5's scan SSE path); `crawl:once` script; VPS cron line (~03:00).
   - **Connector work** (P.4's dependency): add `department?` to `RawPosting` + read it in ashby/greenhouse/
     lever, carry into `postings.department`.
+  - **Seam note**: the crawl-permission gate (robots + Content-Signal) is ignition task 4.4a, generalized —
+    P.3 leaves the seam (this task's per-source fetch loop is the enforcement point when Track-4
+    tenant-hosted vendors ride it) but does not build the gate now; the current three vendors don't need it.
   - Test must pass: write-interleave test (crawler writes while a user scan writes — no `SQLITE_BUSY`);
     a failing source doesn't abort the crawl; delist only after that source's fetch succeeds; 429 stops
     one host, others continue; lease prevents overlapping runs; **60-day purge hard-deletes and
@@ -106,16 +118,19 @@ session (operator in loop). Per-task gate: `npm test`. Merge gate: `npm run chec
 
 - [ ] **P.5 run.ts split — the cutover.** _(arch §3, §5, §6; was 3.5 — highest blast radius)_
   Prerequisite SATISFIED (`4f5ad11`).
-  Goal: replace the per-source discovery block with pool-read → stage-1 (`listForMatching`, no description;
-  tz gate **reads the posting's crawl-time `tzBand`**) → classifier on survivors → deterministic rank →
-  deep score (reads JD via `getForScoring`) → admit into per-user `jobs`; **eligibility stamped at admission**
-  (profile-relative, admission-only) while **`tzBand` is read from the posting** (stamped at crawl by P.3, per
-  arch §1.1 — NOT re-derived at admission); `ensureDescription` posting-first; TOP_N stays 30; `isNew`/
-  `firstSeen` admission-based (arch §5, verbatim `resolveIsNewCutoff`); **the 48h crawl-staleness fail-loud
-  warning surfaces here on the scan SSE** (reads `crawl_runs`).
+  Goal: replace the per-source discovery block with pool-read → stage-1 (`listForMatching`, no description)
+  → classifier on survivors → deterministic rank → deep score (reads JD via `getForScoring`) → admit into
+  per-user `jobs`; **admission stamps eligibility (tz_band/scheduleFlex/employmentPref) as a RANKING
+  signal, NOT a gate — the scan must NOT pre-drop jobs on any eligibility signal** (DECISION A, full soft
+  rank, 2026-07-17, above); **`tzBand` is read from the posting** (stamped at crawl by P.3, per arch §1.1 —
+  NOT re-derived at admission) and demotes rank, it does not filter; `ensureDescription` posting-first;
+  TOP_N stays 30; `isNew`/`firstSeen` admission-based (arch §5, verbatim `resolveIsNewCutoff`); **the 48h
+  crawl-staleness fail-loud warning surfaces here on the scan SSE** (reads `crawl_runs`); **no eligibility
+  hard-gate — all admitted jobs are shown, ranked by fit** (operator decision 2026-07-17, full soft rank).
   - Test must pass: existing `run.test.ts` + determinism test green; a pool posting passing stage-1 is
     admitted to that user's `jobs` exactly once; no `description` in the stage-1 path; JD reaches scoring;
-    stale-crawl (>48h) emits the SSE warning.
+    stale-crawl (>48h) emits the SSE warning; **no job is dropped pre-score on an eligibility signal —
+    eligibility affects rank only.**
   - Files: `src/server/search/run.ts` (+ test).
   - `model:opus` `effort:xhigh` `@general-purpose` `exec:session` — highest blast radius. Confidence 70%.
 

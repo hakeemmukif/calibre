@@ -170,14 +170,21 @@ resolved the mechanics; these are no longer UNKNOWN):
    CORS-open by design, `robots.txt` doesn't block it). Function-coverage breadth
    confirmed only on a thin live sample. Effort **S**.
 5. **Rippling** — `GET https://ats.rippling.com/api/v2/board/{slug}/jobs`, no auth,
-   all-functions confirmed live (joinroot: CFO Org, Product & Design, PR & Comms, …). Three
+   all-functions confirmed live (joinroot: CFO Org, Product & Design, PR & Comms, …). Four
    caveats: **undocumented surface** (Rippling's official docs point to a gated host);
    <!-- corrected 2026-07-17: see reports/2026-07-17-connector-live-verification.md
    (Rippling section). --> **paginated, not a single call** — the envelope is
    `{items, page, pageSize:20, totalItems, totalPages}` (Rippling's own 780-job board costs
    39 list calls); and the list response carries no description/date/company, so
    **descriptions require an N+1 call** per posting (`/jobs/{id}`), which is also where
-   `createdOn` and `companyName` live. Effort **M**.
+   `createdOn` and `companyName` live.
+   <!-- corrected/added 2026-07-17: see reports/2026-07-17-handoff-integration.md
+   (§1, Rippling ToS caveat). --> **governing ToS undiscoverable** — `www.rippling.com/terms`,
+   `/legal/terms-of-service`, `/legal/website-terms-of-use` all 404; no public terms
+   document governing `ats.rippling.com` could be located. §7 class: **Grey** (no explicit
+   prohibition, unlike Getro/SmartRecruiters below) — **conditional: build only after the
+   operator explicitly records acceptance of the ToS-blank**, else defer to last in the
+   build order. Effort **M**.
 - **SmartRecruiters** — *dropped, not merely downgraded.*
   `api.smartrecruiters.com/robots.txt` reads `User-agent: LinkedInBot / Allow:
   /v1/companies/` then `User-agent: * / Disallow: /` — an explicit allowlist this crawler
@@ -188,6 +195,17 @@ resolved the mechanics; these are no longer UNKNOWN):
   zero postings" data point predates the robots review and should not be read as a green
   light to test further. 2,214 slugs on paper, but the hit-rate question is **moot**
   unless the operator makes an explicit contrary legal call; do not build this connector.
+  <!-- corrected/added 2026-07-17: see reports/2026-07-17-handoff-integration.md
+  (§3 item 1, SAP API Policy citation). --> **Binding legal reason:** SmartRecruiters'
+  developer docs state "any use of SmartRecruiters APIs is governed by the SAP API
+  Policy"; the policy's **§2.2.2** expressly prohibits (a) API use by "(semi-)autonomous
+  or generative AI systems that plan, select, or execute sequences of API calls" and
+  (b) "scraping, harvesting, or systematic and/or large-scale data extraction or
+  replication" (binds "third parties", not just customers); **§3** prohibits
+  circumventing API controls "including through … impersonation techniques", foreclosing
+  the LinkedInBot carve-out. This is the same standard §7 applies to Getro (verbatim
+  reviewed prohibition → Dangerous, dropped) — SmartRecruiters carries *more* signals
+  than Getro (ToS + API policy + a targeted robots `Disallow: /`).
 - **Positive finding (added 2026-07-17):**
   <!-- see reports/2026-07-17-connector-live-verification.md ("Slug supply (all vendors)"). -->
   jobhive ships slug CSVs for **all five** of the above unbuilt vendors, not just
@@ -197,6 +215,18 @@ resolved the mechanics; these are no longer UNKNOWN):
 - **Teamtailor** — public RSS at `https://{slug}.teamtailor.com/jobs.rss` (no auth); the
   REST API needs a key. EU-startup-heavy. RSS mechanics confirmed; multi-function breadth
   not (only sample was a design agency). Effort **S** if RSS suffices.
+  <!-- corrected/added 2026-07-17: see reports/2026-07-17-handoff-integration.md
+  (§3 item 4, Teamtailor rewrite). --> **Correction: breadth RESOLVED** — four live
+  tenants (polestar/luminorbank/paysend/unobravo) show the RSS is the full public board,
+  every function, with `tt:department` attached; the "only sample was a design agency"
+  gap is closed. **Slug supply confirmed**: jobhive `teamtailor.csv`, **1,010 rows**
+  (MIT), second-largest of the five new vendors. **Hard build requirement — per-tenant
+  Content-Signal gate**: robots path rules are uniformly permissive (`/jobs.rss` never
+  blocked), but the `Content-Signal` line differs per tenant — polestar declares
+  `search=no, ai-train=no, ai-input=no` even though its path is open; Caliber feeds JD
+  text into an LLM scoring pipeline (the `ai-input` class), so **a tenant declaring
+  `ai-input=no` must be skipped**. Same posture as Recruitee's per-tenant robots gate,
+  one extra field parsed (ignition plan task 4.3a, the generalized crawl-permission gate).
 - **Himalayas API** — free, documented, no auth, ~108k remote jobs, explicit
   Finance/Legal/HR/Sales categories. **Gap-fill, not backbone**: no ATS/careers field,
   24h-stale, 20/page. Needs a startup filter + attribution.
@@ -420,9 +450,14 @@ when the admin UI needs to query them.
    and match loops. **Then flip on the full validated list.** **L, ~1.5–2 weeks.**
 4. **New connectors, in order (post-decoupling, optional reach)** — **Workable** first
    (S, verified all-function, 4,269 slugs waiting), then Recruitee → Personio → Pinpoint
-   (all S, vendor-documented), then Rippling (M, N+1 descriptions). SmartRecruiters only
-   after a batch hit-rate check. Each rides the same seed/validate/crawl machinery from
-   steps 2–3 — the connector is the only new code. **S–M each; sequence, don't batch.**
+   (all S, vendor-documented), then Rippling (M, N+1 descriptions).
+   <!-- corrected/added 2026-07-17: see reports/2026-07-17-handoff-integration.md
+   (§3 item 3, stale rollout line). --> **Correction: SmartRecruiters dropped (§4.2/§7),
+   do not probe** — the earlier "only after a batch hit-rate check" line contradicted the
+   corrected §4.2: running that check would call the very API the robots/SAP-policy
+   prohibition covers, so running it would itself be the violation. Each connector rides
+   the same seed/validate/crawl machinery from steps 2–3 — the connector is the only new
+   code. **S–M each; sequence, don't batch.**
    *(A Getro discovery scraper was considered as a step 5 and dropped — its ToS explicitly
    forbids scraping; see §4.2 Getro and §7. yc-oss + jobhive already supply the company list.)*
 
@@ -456,7 +491,10 @@ targets the *commercially successful* — risk grows with traction, so cap this 
 - **Dangerous** — LinkedIn (adjudicated twice), Indeed, Glassdoor, SEEK/JobStreet *at
   meaningful volume or post-block*; **Getro board scraping** (its Terms verbatim prohibit
   crawling/scraping/spidering — verified 2026-07-16 by fetching `getro.com/terms`; the
-  clean `_next/data` JSON route being open does not license use the ToS forbids); and **any
+  clean `_next/data` JSON route being open does not license use the ToS forbids);
+  **SmartRecruiters** <!-- added 2026-07-17: see reports/2026-07-17-handoff-integration.md
+  (§3 item 2, §7 register). --> (the same pattern with *more* signals than Getro — ToS +
+  SAP API Policy §2.2.2/§3 + a targeted robots `Disallow: /`; §4.2 above); and **any
   circumvention** (fake accounts, CAPTCHA defeat, disguised UAs). Circumvention — not public
   reading — is what sank hiQ and Proxycurl.
 

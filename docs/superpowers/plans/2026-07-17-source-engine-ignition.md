@@ -23,8 +23,8 @@ task below that touches matching or ingestion must be validated against real dat
 | D2 | **Pool stores full text at crawl time** (Option A) | Unblocks Phase 3 schema; `postings.description` ≤40k; copyright handled at the UI layer (excerpt + link-out), not storage |
 | D3 | **Apply all six spec corrections** in-place | Task 0.2 |
 | D4 | **Ignition = script + dry run, no seeding** | Task 0.3/0.4; seeding is a separate later go |
-| D5 | **Build Recruitee's per-board robots gate** | Task 4.4a/b |
-| D6 | **Order: Workable → Personio → Rippling → Recruitee → Pinpoint** | Phase 4 sequence; SmartRecruiters OUT |
+| D5 | **Build Recruitee's per-board robots gate** _(generalized 2026-07-17 into a per-tenant crawl-permission gate covering robots + Content-Signal, also gating Teamtailor — DECISION B)_ | Task 4.3a/4.3b/4.4 |
+| D6 | **Order: Workable → Personio → Teamtailor → Recruitee → Pinpoint → Rippling (conditional)** _(amended 2026-07-17, DECISION B — see `reports/2026-07-17-handoff-integration.md` §1)_ | Phase 4 sequence; SmartRecruiters OUT |
 | D7 | **Engine ids keep the colon** (`gh:vercel`) | No code change; already conformant |
 
 ## Spec references
@@ -177,7 +177,10 @@ Takes recall 0.722 → 0.894 with deterministic, reviewable rules and cuts the e
     JobStreet cap unchanged. Any 403/429 = stop.
   - `exec:session`.
 
-### Track 4 — Connectors. **After Track 3.** Order per D6. Each: build from the captured fixture; live-verified already.
+### Track 4 — Connectors. **After the pool (Track P).** Order per D6 (amended 2026-07-17, DECISION B —
+merged build order from `reports/2026-07-17-handoff-integration.md` §1): **Workable → Personio →
+Teamtailor → Recruitee → Pinpoint → Rippling (conditional)**; SmartRecruiters stays **DROPPED**. Each:
+build from the captured fixture; live-verified already.
 
 - [ ] **4.1 Workable.** `apply.workable.com/api/v1/widget/accounts/{slug}?details=true` — no auth, no pagination
   (1,572 jobs in one call, verified), `telecommuting` bool = remote signal, `shortcode` = externalId,
@@ -186,20 +189,52 @@ Takes recall 0.722 → 0.894 with deterministic, reviewable rules and cuts the e
 - [ ] **4.2 Personio.** `{slug}.jobs.personio.com/xml?language=en` — XML (parser cost), `createdAt` = postedAt,
   remote in office string, **URL absent from XML** — pattern `{slug}.jobs.personio.com/job/{id}` live-verified 200.
   **2,463 slugs.** Fixture: `personio.xml`. `model:sonnet` `effort:xhigh` `exec:subagent`. Confidence 80%.
-- [ ] **4.3 Rippling.** `ats.rippling.com/api/v2/board/{slug}/jobs` — **paginated** (`page/pageSize/totalItems/totalPages`),
-  list lacks description/date/company → **`fetchDetail` required** (N+1, scoring-time only). Undocumented = fragile.
-  **1,923 slugs.** Fixtures: `rippling.json` + `rippling-detail.json`. `model:sonnet` `effort:xhigh` `exec:subagent`. Confidence 70%.
-- [ ] **4.4a Per-board robots gate.** (D5) Reusable: fetch `{board}/robots.txt`, parse, allow/deny, record the verdict in
-  `config`. Test: allow → crawl; `Disallow: /` → skip + marked; unreachable robots → decide + justify (do NOT default to allow).
+- [ ] **4.3a Per-tenant crawl-permission gate.** (D5, generalized 2026-07-17 — see
+  `reports/2026-07-17-handoff-integration.md` §2) Was "per-board robots gate"; too narrow for the vendors it
+  now gates. Reusable: fetch `{board}/robots.txt`, parse (a) path allow/deny rules for the endpoint path AND
+  (b) the `Content-Signal` directive's `ai-input` field — a line *inside* robots.txt that a path-only parser
+  would wrongly pass (Teamtailor's polestar tenant: `/jobs.rss` path-open, but `Content-Signal: search=no,
+  ai-train=no, ai-input=no` — must still be skipped, since Caliber feeds JD text to an LLM scoring pipeline,
+  the `ai-input` class); record the verdict in `config`; **evaluated at crawl time every run**, not only at
+  seed/validation time (a tenant can flip to `Disallow: /` or `ai-input=no` at any time). Gates **4.3b
+  Teamtailor** (Content-Signal) and **4.4 Recruitee** (robots path). Test: path-allow + Content-Signal
+  `ai-input=yes` → crawl; path `Disallow: /` → skip + marked; path-open but `ai-input=no` → skip + marked
+  (the polestar case); unreachable robots → decide + justify (do NOT default to allow); re-evaluated per
+  crawl run, not cached past one run.
   `model:opus` `effort:xhigh` `@general-purpose` `exec:subagent` — legal-boundary logic. Confidence 80%.
-- [ ] **4.4b Recruitee.** `{slug}.recruitee.com/api/offers/` — no auth, `remote/hybrid/on_site` bools, `published_at`,
-  description in list (best payload of the five). **Gated on 4.4a.** 888 slugs; CSV contains zombie boards.
+- [ ] **4.3b Teamtailor.** _(NEW — added 2026-07-17, `reports/2026-07-17-rippling-pinpoint-teamtailor-live-verification.md`)_
+  `{slug}.teamtailor.com/jobs.rss` — RSS/XML (parser cost shared with 4.2's XML decision), no auth, inline
+  full-HTML description (no N+1), `pubDate` = postedAt, `remoteStatus` remote signal (`fully`→remote,
+  `hybrid`→hybrid, others unknown), structured location via `tt:location`/`tt:department`/`tt:role`
+  namespace, dedupe key = `guid` (per-location item expansion: one posting in N cities = N items, same
+  title, distinct `guid`/`link`). Breadth RESOLVED live (polestar/luminorbank/paysend/unobravo — full board,
+  all functions). **1,010 slugs** (jobhive `teamtailor.csv`, MIT — second-largest of the five new vendors).
+  **Gated on 4.3a** (per-tenant Content-Signal `ai-input` check — polestar declares `ai-input=no` and must
+  be skipped even though its RSS path is open). Custom-career-domain caveat: some tenants' `link` resolves
+  off the `{slug}.teamtailor.com` host. RSS vendor-documentation status UNKNOWN (not checked in the
+  verification pass). Fixture: `teamtailor.rss`.
+  `model:sonnet` `effort:xhigh` `@general-purpose` `exec:subagent`. Confidence 80%.
+- [ ] **4.4 Recruitee.** `{slug}.recruitee.com/api/offers/` — no auth, `remote/hybrid/on_site` bools, `published_at`,
+  description in list (best payload of the five). **Gated on 4.3a.** 888 slugs; CSV contains zombie boards.
   Fixture: `recruitee.json`. `model:sonnet` `effort:xhigh` `exec:subagent`. Confidence 80%.
 - [ ] **4.5 Pinpoint.** `{slug}.pinpointhq.com/postings.json` — no auth, `workplace_type` = remote signal.
-  **No postedAt exists** (docs confirm) → fallback is pool `firstSeenAt`, so this **requires Track 3**.
-  350 slugs; trilongroup returned exactly 1,000 rows — possible silent cap, UNKNOWN. Fixture: `pinpoint.json`.
+  **No postedAt exists** (docs confirm) → fallback is pool `firstSeenAt`, so this **requires the pool
+  (Track P)**. 350 slugs; trilongroup returned exactly 1,000 rows — possible silent cap, UNKNOWN
+  (re-observed twice). Fixture: `pinpoint.json`.
   `model:sonnet` `effort:xhigh` `exec:subagent`. Confidence 75%.
-- [x] **4.6 SmartRecruiters — DROPPED.** `api.smartrecruiters.com/robots.txt`: `User-agent: LinkedInBot / Allow: /v1/companies/`,
+- [ ] **4.6 Rippling — CONDITIONAL.** _(amended 2026-07-17, DECISION B — moved last of the built set, was 3rd
+  under old D6; see `reports/2026-07-17-handoff-integration.md` §1)_ `ats.rippling.com/api/v2/board/{slug}/jobs`
+  — **paginated** (`page/pageSize/totalItems/totalPages`), list lacks description/date/company →
+  **`fetchDetail` required** (N+1, scoring-time only). Undocumented = fragile. **1,923 slugs.**
+  **New info post-D6: governing ToS is undiscoverable** — `www.rippling.com/terms`,
+  `/legal/terms-of-service`, `/legal/website-terms-of-use` all 404; no public terms document governing
+  `ats.rippling.com` could be located. §7 class: **Grey** (no explicit prohibition, unlike Getro/
+  SmartRecruiters). **Build only after the operator explicitly records acceptance of the ToS-blank +
+  fragility** (this session gate) — mechanics are twice-verified and ready; the block is legal posture, not
+  technical. `consecutiveFailures` containment + scoring-time-only N+1 stand as designed.
+  Fixtures: `rippling.json` + `rippling-detail.json`. `model:sonnet` `effort:xhigh` `exec:subagent`.
+  Confidence 70% (mechanics); operator go required before build.
+- [x] **4.7 SmartRecruiters — DROPPED (final).** `api.smartrecruiters.com/robots.txt`: `User-agent: LinkedInBot / Allow: /v1/companies/`,
   then `User-agent: * / Disallow: /`. An explicit allowlist we are not on. API never called. Not a judgment call.
 
 ## Risks & uncertainties
