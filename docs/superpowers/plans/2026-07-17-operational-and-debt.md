@@ -111,8 +111,18 @@ it keeps the 803 seeded sources healthy and growing while the pool is built. Wri
     spec's own figures — 9,935 + 1,010 = 10,945, and 19,214 + 1,010 ≈ 20.2k. Count, don't guess.)
   - Ignition plan `2026-07-17-source-engine-ignition.md`: mark the superseded Track 3 (3.1–3.6) body text
     as "SUPERSEDED by Track P" (a header note is not enough — a reader hits the stale tasks).
+  - **Remote-fit spec `2026-07-14-remote-fit-criteria-design.md` — six sections invalidated by DECISION A**
+    (full soft rank, 2026-07-17, shipped in `b5d244a`). All now FALSE and must be corrected:
+    §1 (:8) "provable mismatches are hidden before the user ever sees them"; §2.1 (:12) "only *provably*
+    restricted jobs are hidden"; §2.5 (:16) "Employment structure ships as a dial with a stated-only hard
+    gate… → hidden"; §5 (:64) "a job with no band is never hidden by the schedule gate" (implies the gate
+    hides); **§7 "Feed behaviour" (:76-88) — the gate table (:80-84) and ":86 `stats.excluded` counts all
+    three gates" is the core stale artifact**; §10 (:116) the e2e test-plan line ("a US-hours job leaves
+    the feed"). Correct each to rank-not-hide; the **relocation `stay`/abroad gate remains hard** — do not
+    over-correct it. Note: the widely-cited "§8" does not exist — the gate table is **§7**; fix that
+    reference where it appears.
   - Doc-only; no test. Acceptance: a diff review shows the inconsistencies resolved, nothing else touched.
-  - Files: the two docs above.
+  - Files: the three docs above.
   - `model:sonnet` `effort:low` `@general-purpose` `exec:subagent`. Confidence 90%.
 
 ## Sequencing
