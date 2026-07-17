@@ -11,25 +11,27 @@ import { getLlm } from "@/lib/llm/client";
 import { policyVersion } from "@/lib/llm/templates";
 import { assembleJob } from "@/features/feed/assemble";
 import { assertAndDebit } from "@/server/credits";
+import { crawlRunsRepo } from "@/server/persistence/repos/crawlRuns";
 import { jobsRepo, type JobRow } from "@/server/persistence/repos/jobs";
 import { jobScoresRepo } from "@/server/persistence/repos/jobScores";
+import { postingsRepo, type PostingMatchRow } from "@/server/persistence/repos/postings";
 import { profileRepo, type ProfileRow } from "@/server/persistence/repos/profile";
 import { resumesRepo, type ResumeRow } from "@/server/persistence/repos/resumes";
 import { searchRunsRepo, type SearchRunRow } from "@/server/persistence/repos/searchRuns";
 import { sourcesRepo, type SourceRow } from "@/server/persistence/repos/sources";
 import { create, release, getActiveRunForPersona, type RunHandle } from "@/server/runs/registry";
 import { EmptyJobDescriptionError, scoreJob } from "@/server/score";
-import type { ErrorEnvelope, JobPhaseData, ScanFrame, ScanPersona, SearchRun, SourceEventData, TzBand } from "@/types";
+import type { EligibilityTier, ErrorEnvelope, JobPhaseData, ScanFrame, ScanPersona, SearchRun, SourceEventData, TzBand } from "@/types";
 import { toSearchRun } from "./assemble-run";
-import type { RawPosting, SourceConnector } from "./connector";
-import { connectorForSource } from "./connectors";
-import { companySlugFor, dedupeKeyFor, resolveCanonicalCollision, roleTokensHash, secondaryKey } from "./dedupe";
+import type { RawPosting } from "./connector";
+import { dedupeKeyFor } from "./dedupe";
 import { parseSourceGeo } from "./geo";
 import { resolveEligibility } from "@/server/score/eligibility";
-import { allowedBandsFor, resolveTzBand } from "@/server/score/tzBand";
+import { allowedBandsFor } from "@/server/score/tzBand";
 import { ensureDescription } from "./describe";
 import { resolveIsNewCutoff } from "./jobsFeed";
 import { deriveRoleTargets, roleFuzzyMatch } from "./roleMatch";
+import { ensureFunctionTag } from "@/server/sources/function";
 
 export const TOP_N_CANDIDATES = 30; // system-architecture.md §6 decision 8 "per-run score cap (~30 jobs)"
 const SCORE_CONCURRENCY = 3; // rolling scoring pool width — each match-score call is observed at 25-60s
@@ -59,8 +61,16 @@ export class UnknownSourceIdsError extends Error {
   }
 }
 
-const DEFAULT_CONCURRENCY = 8;
-const DEFAULT_CONNECTOR_TIMEOUT_MS = 15_000;
+// Synthetic discovery lane (P.5 cutover): the per-source connector fan-out is
+// gone, but createScanFrameBuilder / the M2 Scans tab still expect a `source`
+// lane, so the pool read reports as ONE lane instead of leaving the strip empty.
+const POOL_LANE_ID = "pool";
+const POOL_LANE_NAME = "Global postings pool";
+// F4 (arch §7.1): the pool is served stale if the newest successful crawl is
+// older than this — the scan SSE fail-louds a visible warning rather than
+// pretending freshness.
+const STALE_CRAWL_MS = 48 * 60 * 60 * 1000;
+
 // Observed live (task-7b smoke): 25-60s per match-score call on the
 // configured model (gpt-oss-120b). TOP_N (30) scored through a SCORE_CONCURRENCY
 // (3)-wide rolling pool is up to ~10 pool-widths sequential, each bounded
@@ -76,10 +86,7 @@ export interface StartSearchInput {
 }
 
 export interface StartSearchDeps {
-  concurrency?: number;
-  connectorTimeoutMs?: number;
   hardRunTimeoutMs?: number;
-  connectorForSource?: (source: SourceRow) => SourceConnector;
   llm?: LlmClient;
   dailyCapUsd?: number;
   // Rolling scoring-pool width. Default SCORE_CONCURRENCY (3). Injected by
@@ -226,6 +233,12 @@ function createScanFrameBuilder(handle: RunHandle): ScanFrameBuilder {
   };
 }
 
+// P.5 CUTOVER (arch §3, §5, §6): the per-source connector fan-out is REPLACED
+// by a read of the shared `postings` pool the nightly crawler (P.3) fills.
+// Funnel: ~pool rows (NO description) → stage-1 role match in-process → function
+// -tag write-back cache on survivors → deterministic band-demote rank → TOP_N →
+// admit into per-user `jobs` → score (JD read from the posting). Everything
+// per-user still happens, but over LOCAL rows — zero network for discovery.
 async function runFanOut(
   userId: string,
   row: SearchRunRow,
@@ -236,22 +249,22 @@ async function runFanOut(
   handle: RunHandle,
   deps: StartSearchDeps,
 ): Promise<void> {
-  const concurrency = deps.concurrency ?? DEFAULT_CONCURRENCY;
-  const connectorTimeoutMs = deps.connectorTimeoutMs ?? DEFAULT_CONNECTOR_TIMEOUT_MS;
   const hardRunTimeoutMs = deps.hardRunTimeoutMs ?? DEFAULT_HARD_RUN_TIMEOUT_MS;
-  const resolveConnector = deps.connectorForSource ?? connectorForSource;
 
   await searchRunsRepo.updateStatus(row.id, "running");
 
   const hardCapTimer = setTimeout(() => handle.abort("hard runtime cap exceeded"), hardRunTimeoutMs);
 
   // Hoisted above the try so the partial-persist catch below can read the
-  // last known values when the run crashes mid-flight.
+  // last known values when the run crashes mid-flight. perSource is seeded with
+  // every scoped source (so "sources in scope" stays meaningful); .found is the
+  // per-source survivor count — there is no fetch, so .errors stays 0.
   const perSource = new Map<string, { found: number; errors: number }>(
     sources.map((s) => [s.id, { found: 0, errors: 0 }]),
   );
-  const matchedPostings: { posting: RawPosting; source: SourceRow }[] = [];
+  const sourceById = new Map(sources.map((s) => [s.id, s]));
   let scanned = 0;
+  let matched = 0;
   let discoverMs = 0;
   let scoreMs = 0;
   let scored = 0;
@@ -262,94 +275,77 @@ async function runFanOut(
   let capStopped = false;
 
   const frame = createScanFrameBuilder(handle);
+  // ONE synthetic discovery lane (see POOL_LANE_ID note): the fetch phase is
+  // gone, but the M2 frame contract still expects a `source` lane.
+  const emitPoolLane = (data: SourceEventData) => {
+    frame.setSource(data);
+    handle.emit({ event: "source", data });
+    frame.pushFrame({ scored: 0, queued: 0, total: 0 });
+  };
 
   try {
+    // deriveRoleTargets stays INSIDE the try — a corrupted résumé throwing here
+    // must reach the last-resort failRun net, not reject unhandled.
     const targets = deriveRoleTargets(resumeRow, persona);
-    const limit = pLimit(concurrency);
-    const totalSources = sources.length;
-    let sourcesCompleted = 0;
 
     const discoverStartedAt = Date.now();
     handle.emit({
       event: "progress",
-      data: { stage: "sources", current: 0, total: totalSources, label: `Scanning ${totalSources} source(s)…` },
+      data: { stage: "sources", current: 0, total: 0, label: "Reading the global postings pool…" },
     });
+    emitPoolLane({ sourceId: POOL_LANE_ID, name: POOL_LANE_NAME, status: "fetching" });
 
-    const tasks = sources.map((source) =>
-      limit(async () => {
-        const timeoutController = new AbortController();
-        const timer = setTimeout(() => timeoutController.abort(), connectorTimeoutMs);
-        const signal = AbortSignal.any([handle.signal, timeoutController.signal]);
-        const stat = perSource.get(source.id)!;
-        // M2 source delta: absolute state per source (fetching → done|error),
-        // mirrored into the frame on every emit. Discovery-time frames carry
-        // zero counts — the strip is source-focused then; the counts fill in
-        // once scoring starts. Display column is sources.name (NOT NULL).
-        const emitSource = (data: SourceEventData) => {
-          frame.setSource(data);
-          handle.emit({ event: "source", data });
-          frame.pushFrame({ scored: 0, queued: 0, total: 0 });
-        };
-        emitSource({ sourceId: source.id, name: source.name, status: "fetching" });
+    // F4: fail loud on a stale/absent pool BEFORE serving from it.
+    await emitCrawlStalenessWarning(handle);
 
-        try {
-          // Resolution (registry lookup + parseSourceGeo fail-loud check) is
-          // INSIDE this try, not hoisted above it: a throw here (e.g. a
-          // mis-annotated source's config) must be tolerated exactly like a
-          // connector.discover() throw below — recorded on this source's
-          // stat.errors, not left to reject the pLimit task and take down
-          // every other source's Promise.all (Task 0.5).
-          const connector = resolveConnector(source);
-          for await (const posting of connector.discover({
-            targets,
-            since: new Date(0),
-            signal,
-            onProgress: (e) =>
-              handle.emit({ event: "progress", data: { stage: e.stage, current: e.current, total: e.total, label: e.label } }),
-          })) {
-            scanned += 1;
-            stat.found += 1;
-            // Board sources (JobStreet et al) are already query-scoped upstream
-            // — the source's configured search query IS the role filter, so
-            // re-filtering through roleFuzzyMatch double-gates and (observed
-            // live) rejects nearly every all-baseline title ("Graduate Software
-            // Engineer"). ATS sources dump their ENTIRE board, so they still
-            // need the matcher. Mirrors the donor, where board results were
-            // query-scoped at fetch time and roleFuzzyMatch belonged to the
-            // per-user radar, not the scan gate.
-            if (source.kind === "board" || targets.some((t) => roleFuzzyMatch(t, posting))) {
-              matchedPostings.push({ posting, source });
-            }
-          }
-          emitSource({ sourceId: source.id, name: source.name, status: "done", found: stat.found });
-        } catch (err) {
-          // Connector-level failure — TOLERATED (system-architecture.md §3
-          // "partial failure tolerated into stats.perSource"): recorded, the
-          // run continues and still completes. Not a swallowed error — it's
-          // surfaced on the run's `stats.perSource[].errors`.
-          stat.errors += 1;
-          console.error(`search run ${row.id}: connector "${source.id}" failed:`, err);
-          emitSource({ sourceId: source.id, name: source.name, status: "error", error: err instanceof Error ? err.message : String(err) });
-        } finally {
-          clearTimeout(timer);
-          sourcesCompleted += 1;
-          handle.emit({
-            event: "progress",
-            data: { stage: "fetch", current: sourcesCompleted, total: totalSources, label: `${sourcesCompleted}/${totalSources} source(s) done` },
-          });
-        }
-      }),
+    // Discovery — REPLACED. The projection structurally omits `description`
+    // (pinned by postings.query-projection.test.ts), so stage-1 never drags the
+    // ~4.3 KB JD column. persona-scoped + live-only handled by the repo.
+    const poolRows = await postingsRepo.listForMatching(persona);
+    scanned = poolRows.length;
+
+    // Stage-1 over the pool. UNIFORM roleFuzzyMatch across every source kind —
+    // the old board-kind bypass (pre-P.5 run.ts:~320) is DROPPED: it existed
+    // because a board's configured search query pre-scoped its results, but the
+    // crawler fetches whole boards unscoped (targets:[]), so the pool is
+    // uniformly unscoped and keeping the bypass would flood the feed with an
+    // entire board's inventory. The recall risk this re-exposes (roleFuzzyMatch
+    // over-rejecting all-baseline titles) is a matcher-quality concern owned by
+    // the synonym table + P.4 classifier, not the cutover (plan risk table: "the
+    // pool neither helps nor hurts recall, it makes misses cheaper to re-run").
+    // `sourceById.has` applies the input.sources scope (and drops postings whose
+    // canonical source was disabled after the crawl).
+    const survivors = poolRows.filter(
+      (p) => sourceById.has(p.sourceId) && targets.some((t) => roleFuzzyMatch(t, poolRowToRawPosting(p))),
     );
 
-    await Promise.all(tasks);
+    // Function-tag write-back cache (arch §3.3): the first scan to surface an
+    // unclassified posting resolves its tag (deterministic tiers first, LLM only
+    // for the residue) and caches it back to the pool — later scans read free,
+    // the crawl stays LLM-cost-free. Already-tagged rows are a no-op. A classify
+    // failure is tolerated (recorded), never aborts the scan.
+    for (const p of survivors) {
+      await ensureFunctionTag(p, { llm: deps.llm }).catch((err) => {
+        console.error(`search run ${row.id}: function-tag classify for posting ${p.id} failed:`, err);
+      });
+    }
+
+    for (const p of survivors) perSource.get(p.sourceId)!.found += 1;
+    matched = survivors.length;
+
+    emitPoolLane({ sourceId: POOL_LANE_ID, name: POOL_LANE_NAME, status: "done", found: matched });
     discoverMs = Date.now() - discoverStartedAt;
 
-    const upsertedJobs = await upsertMatchedPostings(userId, matchedPostings, persona, profile);
+    // Admit the TOP_N (relocation pre-drop + band-demote rank + slice + upsert),
+    // then score them. Admission stamps postingId/tzBand/eligibility; eligibility
+    // is a RANK/stamp signal here, never a gate (DECISION A).
+    const admitted = await admitSurvivors(userId, survivors, sourceById, persona, profile);
+
     const scoreStartedAt = Date.now();
     ({ scored, worth, ghosts, unscored, capStopped, costUsd } = await scoreTopCandidates(
       userId,
       row,
-      upsertedJobs,
+      admitted,
       resumeRow,
       persona,
       profile,
@@ -363,7 +359,7 @@ async function runFanOut(
 
     const stats = {
       scanned,
-      matched: matchedPostings.length,
+      matched,
       scored,
       worth,
       ghosts,
@@ -394,7 +390,7 @@ async function runFanOut(
     try {
       await searchRunsRepo.updateStats(row.id, {
         scanned,
-        matched: matchedPostings.length,
+        matched,
         scored,
         worth,
         ghosts,
@@ -411,105 +407,134 @@ async function runFanOut(
     }
     throw err; // re-throw to the existing startSearch .catch → failRun (status+error+emit)
   } finally {
-    // The timer now spans discovery AND scoring; the finally clears it on
-    // every exit path (success, or a throw that propagates to startSearch's
-    // failRun net) so it never dangles to abort a run that already finished.
+    // The timer spans pool-read AND scoring; the finally clears it on every exit
+    // path (success, or a throw that propagates to startSearch's failRun net) so
+    // it never dangles to abort a run that already finished.
     clearTimeout(hardCapTimer);
   }
 }
 
-interface CanonicalGroup {
-  canonical: RawPosting;
-  canonicalSource: SourceRow;
-  aliasUrls: { sourceId: string; url: string }[];
+// roleFuzzyMatch takes a RawPosting but reads only `.title`; the stage-1
+// projection (PostingMatchRow, no description) is adapted to that shape.
+function poolRowToRawPosting(p: PostingMatchRow): RawPosting {
+  return {
+    sourceId: p.sourceId,
+    externalId: p.externalId ?? undefined,
+    url: p.url,
+    title: p.title,
+    company: p.company,
+    location: p.location || undefined,
+  };
 }
 
-// Cross-source collision resolution for postings discovered WITHIN this run
-// (system-architecture.md §3/§4: same company + role tokens + location →
-// same opening; ATS beats board for the canonical URL, loser → alias).
-// Re-sightings across DIFFERENT runs are handled by jobsRepo.upsertByDedupeKey
-// itself, which merges aliases rather than replacing them.
-function groupByCollision(matched: { posting: RawPosting; source: SourceRow }[]): Map<string, CanonicalGroup> {
-  const groups = new Map<string, CanonicalGroup>();
-  for (const { posting, source } of matched) {
-    const key = secondaryKey({
-      companySlug: companySlugFor(posting.company),
-      roleTokensHash: roleTokensHash(posting.title),
-      location: posting.location ?? "",
-    });
-
-    const existing = groups.get(key);
-    if (!existing) {
-      groups.set(key, { canonical: posting, canonicalSource: source, aliasUrls: [] });
-      continue;
-    }
-
-    const resolved = resolveCanonicalCollision(
-      { kind: existing.canonicalSource.kind, sourceId: existing.canonicalSource.id, url: existing.canonical.url },
-      { kind: source.kind, sourceId: source.id, url: posting.url },
-    );
-    if (resolved.canonical.url === posting.url) {
-      existing.aliasUrls.push({ sourceId: existing.canonicalSource.id, url: existing.canonical.url });
-      existing.canonical = posting;
-      existing.canonicalSource = source;
-    } else {
-      existing.aliasUrls.push({ sourceId: source.id, url: posting.url });
-    }
-  }
-  return groups;
+// F4 (arch §7.1): a visible, fail-loud staleness warning on the scan SSE when
+// the newest successful crawl is >48h old (or none is on record) — never a
+// silent pretend-fresh fallback. Emitted as a `progress` event (the SSE union
+// has no dedicated warning event); also logged server-side.
+async function emitCrawlStalenessWarning(handle: RunHandle): Promise<void> {
+  const last = await crawlRunsRepo.latestSuccessfulFinishedAt();
+  const ageMs = last ? Date.now() - last.getTime() : Infinity;
+  if (ageMs <= STALE_CRAWL_MS) return;
+  const label = last
+    ? `⚠ Pool may be stale — last successful crawl was ${Math.floor(ageMs / 3_600_000)}h ago`
+    : "⚠ Pool freshness unknown — no successful crawl on record";
+  console.warn(`search run staleness: ${label}`);
+  handle.emit({ event: "progress", data: { stage: "sources", current: 0, total: 0, label } });
 }
 
-// Returns the upserted rows (+ each one's canonical source) so the caller can
-// score them — B5 discarded these since scoring didn't exist yet.
-async function upsertMatchedPostings(
+interface PoolCandidate {
+  posting: PostingMatchRow;
+  source: SourceRow;
+  eligibility: { tier: EligibilityTier; evidence: string };
+}
+
+interface AdmittedCandidate {
+  job: JobRow;
+  source: SourceRow;
+  // The linked posting's stored JD (arch §3.4: NOT copied into jobs at
+  // admission — ensureDescription reads it here and persists it right before
+  // scoring, keeping the downstream jobs.description consumers untouched).
+  postingDescription: string | null;
+}
+
+// Admission (arch §3.4/§3.5): resolve per-user eligibility as a RANK/stamp
+// signal, apply the ONLY pre-score drop (relocation-"stay" × abroad — KEPT,
+// DECISION A does not cover relocation), band-demote rank, slice TOP_N, then
+// upsert into the user's `jobs` (stamping postingId, and reading tz_band FROM
+// the posting — NOT re-derived). Returns the admitted candidates in rank order.
+async function admitSurvivors(
   userId: string,
-  matched: { posting: RawPosting; source: SourceRow }[],
+  survivors: PostingMatchRow[],
+  sourceById: Map<string, SourceRow>,
   persona: ScanPersona,
   profile: ProfileRow,
-): Promise<{ job: JobRow; source: SourceRow }[]> {
-  const groups = groupByCollision(matched);
-  const upserted: { job: JobRow; source: SourceRow }[] = [];
-  for (const { canonical, canonicalSource, aliasUrls } of groups.values()) {
-    // Layers A+B stamp eligibility at first sight (spec §5 write points);
-    // the ON CONFLICT set stays lastSeenAt/aliases-only, so the stamp
-    // freezes until the scoring path's Layer-C refresh.
-    const { tier, evidence } = resolveEligibility({
+): Promise<AdmittedCandidate[]> {
+  // Eligibility is pure (profile × source-kind/geo × location). connectorGeo/
+  // jdFacts are absent here — the match projection carries no structured geo,
+  // and no connector supplies RawPosting.geo today; the scoring path's Layer-C
+  // refresh re-resolves with JD facts for the scored TOP_N.
+  const candidates: PoolCandidate[] = survivors.map((posting) => {
+    const source = sourceById.get(posting.sourceId)!;
+    const eligibility = resolveEligibility({
       baseCountry: profile.baseCountry,
-      sourceKind: canonicalSource.kind,
-      sourceGeo: parseSourceGeo(canonicalSource),
-      location: canonical.location,
-      connectorGeo: canonical.geo,
+      sourceKind: source.kind,
+      sourceGeo: parseSourceGeo(source),
+      location: posting.location || undefined,
     });
-    // Ingest-time tz_band stamp (location string only — no jd_facts yet);
-    // hiring_structure is never derivable from a location string, so it
-    // stays null until the score path's Layer-C refresh.
-    const tzIngest = resolveTzBand({ location: canonical.location });
+    return { posting, source, eligibility };
+  });
+
+  // relocation "stay": provably-abroad postings never consume a scoring slot
+  // (spec §5). tz_band is NOT a gate (DECISION A) — it demotes via
+  // rankCandidatesForScoring below. NULL band was always aligned.
+  const pool = candidates.filter((c) => !(profile.relocation === "stay" && c.eligibility.tier === "abroad"));
+  const allowedBands = allowedBandsFor(profile.scheduleFlex); // null = all bands allowed
+  const ranked = rankCandidatesForScoring(
+    pool.map((c) => ({
+      candidate: c,
+      job: { postedAt: c.posting.postedAt, dedupeKey: dedupeKeyFor(c.posting.url), tzBand: c.posting.tzBand },
+    })),
+    allowedBands,
+  );
+  const top = ranked.slice(0, TOP_N_CANDIDATES).map((r) => r.candidate);
+
+  // One batched getForScoring over the TOP_N (arch §3 step 6): full rows carry
+  // the JD (`description`, read at scoring) and `raw` (jobs.raw is NOT NULL). A
+  // posting purged between the pool read and here isn't returned — admit what
+  // still exists.
+  const fullById = new Map((await postingsRepo.getForScoring(top.map((c) => c.posting.id))).map((p) => [p.id, p]));
+
+  const admitted: AdmittedCandidate[] = [];
+  for (const c of top) {
+    const full = fullById.get(c.posting.id);
+    if (!full) continue;
     const job = await jobsRepo.upsertByDedupeKey({
       userId,
-      dedupeKey: dedupeKeyFor(canonical.url),
-      url: canonical.url,
-      sourceId: canonicalSource.id,
-      externalId: canonical.externalId,
-      title: canonical.title,
-      // A connector's location can be absent (e.g. a board listing with no
-      // location field); jobs.location is NOT NULL, so absence normalizes to
-      // "" rather than a fabricated value.
-      location: canonical.location ?? "",
-      company: canonical.company,
-      salaryRaw: canonical.salaryRaw,
-      description: canonical.description,
-      postedAt: canonical.postedAt ? new Date(canonical.postedAt) : undefined,
+      // Per-user dedupeKey stays dedupeKeyFor(canonical url) (arch §4), so
+      // pool-admitted re-sightings ON CONFLICT onto the user's existing row.
+      dedupeKey: dedupeKeyFor(full.url),
+      url: full.url,
+      applyUrl: full.applyUrl ?? undefined,
+      sourceId: c.source.id,
+      externalId: full.externalId ?? undefined,
+      title: full.title,
+      location: full.location, // postings.location is NOT NULL ("" on absence)
+      company: full.company,
+      salaryRaw: full.salaryRaw ?? undefined,
+      description: undefined, // arch §3.4 — not copied; scoring reads it from the posting
+      postedAt: full.postedAt ?? undefined,
       persona,
-      eligibility: tier,
-      eligibilityEvidence: evidence,
-      tzBand: tzIngest?.band ?? null,
-      hiringStructure: null,
-      aliases: aliasUrls,
-      raw: canonical,
+      eligibility: c.eligibility.tier,
+      eligibilityEvidence: c.eligibility.evidence,
+      tzBand: full.tzBand, // READ FROM the posting (crawl-stamped, arch §1.1 — not re-derived)
+      hiringStructure: null, // stated-only; set by the scoring path's Layer-C refresh
+      aliases: [], // pool cross-board aliases live on the posting; jobs' start empty
+      raw: full.raw,
+      postingId: full.id, // P.1 FK — the delist/purge link + Stage-A diff key
     });
-    upserted.push({ job, source: canonicalSource });
+    admitted.push({ job, source: c.source, postingDescription: full.description });
   }
-  return upserted;
+  return admitted;
 }
 
 function startOfToday(): Date {
@@ -540,10 +565,11 @@ export function sortCandidatesForRanking<T extends { job: Pick<JobRow, "postedAt
 // demotes it. Aligned candidates fill the TOP_N slice first (each group
 // internally ordered by `sortCandidatesForRanking`'s existing deterministic
 // rule), so a misaligned candidate can still consume a scoring slot once the
-// aligned pool runs out, rather than being dropped outright. This is the
-// minimal honest version — a real fit-weighted stage-1 score (rather than a
-// binary aligned/misaligned split) belongs to P.5's pool cutover, which
-// rewrites this function's only caller anyway.
+// aligned pool runs out, rather than being dropped outright. Called by P.5's
+// `admitSurvivors` to pick the TOP_N the scan admits + scores (the feed's
+// cross-page demotion is a separate SQL ORDER BY in repos/jobs.ts). This
+// scan-side rank is band-only: hiring_structure is unknown pre-score (set by
+// the scoring path's Layer-C refresh), so it can only demote in the feed.
 export function rankCandidatesForScoring<T extends { job: Pick<JobRow, "postedAt" | "dedupeKey" | "tzBand"> }>(
   pool: T[],
   allowedBands: TzBand[] | null,
@@ -554,14 +580,15 @@ export function rankCandidatesForScoring<T extends { job: Pick<JobRow, "postedAt
 }
 
 // Cost-capped scoring phase (system-architecture.md §6 decision 8): score the
-// top-N (~30) candidates surviving the role-fuzzy-match pre-filter, stopping
-// early (without crashing the run) once the daily LLM spend cap is hit. Emits
-// the `job` SSE event B5 deferred as each job is scored, plus `score` /
-// `legitimacy` progress stages.
+// TOP_N candidates `admitSurvivors` already selected (relocation drop + band-
+// demote rank + slice happened there, so the pool cutover admits exactly what
+// it scores), stopping early (without crashing the run) once the daily LLM
+// spend cap is hit. Emits the `job` SSE event as each job is scored, plus
+// `score` / `legitimacy` progress stages.
 async function scoreTopCandidates(
   userId: string,
   row: SearchRunRow,
-  candidates: { job: JobRow; source: SourceRow }[],
+  candidates: AdmittedCandidate[],
   resume: ResumeRow,
   persona: ScanPersona,
   profile: ProfileRow,
@@ -569,16 +596,7 @@ async function scoreTopCandidates(
   deps: StartSearchDeps,
   frame: ScanFrameBuilder,
 ): Promise<{ scored: number; worth: number; ghosts: number; unscored: number; capStopped: boolean; costUsd: number }> {
-  // relocation "stay": provably-abroad postings don't consume scoring slots
-  // (spec §5 scan hardening — persisted, just not scored). tz_band is NOT a
-  // gate (DECISION A, operator 2026-07-17 "full soft rank, hide nothing" —
-  // docs/superpowers/plans/2026-07-17-global-postings-pool-build.md): a
-  // stated-but-out-of-band candidate is no longer dropped pre-score, it is
-  // demoted by rankCandidatesForScoring below. NULL band (unstated) was
-  // always aligned either way.
-  const allowedBands = allowedBandsFor(profile.scheduleFlex); // null = all bands allowed
-  const pool = candidates.filter((c) => !(profile.relocation === "stay" && c.job.eligibility === "abroad"));
-  const topCandidates = rankCandidatesForScoring(pool, allowedBands).slice(0, TOP_N_CANDIDATES);
+  const topCandidates = candidates;
   let scored = 0;
   let worth = 0;
   let ghosts = 0;
@@ -617,7 +635,7 @@ async function scoreTopCandidates(
   const limit = pLimit(scoreConcurrency);
   let doneCount = 0;
   await Promise.all(
-    topCandidates.map(({ job, source }) =>
+    topCandidates.map(({ job, source, postingDescription }) =>
       limit(async () => {
         // Hard cap already fired: stop draining the queue — a candidate whose
         // slot opens after the abort must not run ensureDescription (detail
@@ -683,7 +701,10 @@ async function scoreTopCandidates(
             return;
           }
 
-          const jobToScore = await ensureDescription(job, source).catch((err) => {
+          // Posting-first (arch §3 step 6): the pool's crawl-time JD is passed
+          // straight in (no re-fetch); ensureDescription persists it to
+          // jobs.description before scoring, so downstream consumers are intact.
+          const jobToScore = await ensureDescription(job, source, postingDescription).catch((err) => {
             console.error(`search run ${row.id}: detail fetch for job ${job.id} failed:`, err);
             return job; // scoreJob will throw EmptyJobDescriptionError -> counted unscored
           });
