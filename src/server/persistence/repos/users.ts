@@ -110,6 +110,13 @@ export function createUserRepo(db: Db) {
       if (!row) throw new Error(`updatePlan: unknown user ${id}`);
       return row;
     },
+    // GLOBAL-BY-DECISION: `id` IS the users.id primary key (same dimension
+    // as findById). Shared by the operator reset script and the self-serve
+    // change-password route (Task 6).
+    async updatePasswordHash(id: string, passwordHash: string): Promise<void> {
+      const [row] = await db.update(users).set({ passwordHash }).where(eq(users.id, id)).returning({ id: users.id });
+      if (!row) throw new Error(`updatePasswordHash: unknown user ${id}`);
+    },
   };
 }
 
@@ -120,4 +127,5 @@ export const usersRepo: ReturnType<typeof createUserRepo> = {
   list: () => createUserRepo(getDb()).list(),
   listWithCounts: () => createUserRepo(getDb()).listWithCounts(),
   updatePlan: (id, plan) => createUserRepo(getDb()).updatePlan(id, plan),
+  updatePasswordHash: (id, hash) => createUserRepo(getDb()).updatePasswordHash(id, hash),
 };

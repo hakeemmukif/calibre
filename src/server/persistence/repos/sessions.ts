@@ -47,6 +47,12 @@ export function createSessionRepo(db: Db) {
     async deleteByTokenHash(tokenHash: string): Promise<void> {
       await db.delete(sessions).where(eq(sessions.tokenHash, tokenHash));
     },
+    // GLOBAL-BY-DECISION: password reset / change kills every session for
+    // the target user (Task 6) — the caller supplies the userId from an
+    // already-authorized context (operator CLI or a reverified session).
+    async deleteAllByUserId(userId: string): Promise<void> {
+      await db.delete(sessions).where(eq(sessions.userId, userId));
+    },
   };
 }
 
@@ -54,4 +60,5 @@ export const sessionsRepo: ReturnType<typeof createSessionRepo> = {
   create: (i) => createSessionRepo(getDb()).create(i),
   findUserByTokenHash: (t) => createSessionRepo(getDb()).findUserByTokenHash(t),
   deleteByTokenHash: (t) => createSessionRepo(getDb()).deleteByTokenHash(t),
+  deleteAllByUserId: (u) => createSessionRepo(getDb()).deleteAllByUserId(u),
 };
