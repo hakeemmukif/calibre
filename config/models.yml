@@ -36,7 +36,13 @@ tasks:
     temperature: 0.1
   match-score:
     model: openai/gpt-oss-120b
-    maxTokens: 2000
+    # EvalScoresSchema emits score/verdict/why plus four prose arrays
+    # (breakdown/fit/gaps/reasons) and a legitimacy object with signals[];
+    # that output plus gpt-oss-120b's reasoning-token overhead overflows 2000
+    # and truncates mid-JSON (finish_reason=length). Sized to the sibling
+    # reasoning-task tier (jd-extract/correlate). Effort left at default: this
+    # is inference (scoring fit), not transcription, so reasoning is load-bearing.
+    maxTokens: 4000
     temperature: 0.2
   question-extract:
     model: openai/gpt-oss-120b

@@ -108,7 +108,7 @@ describe("recomputeEligibility", () => {
 
     const jobB = await insertJob(state.testDb, source.id, { tzBand: "apac" });
     await insertJobScore(state.testDb, jobB.id, resume.id, {
-      jdFacts: { ...baseJdFacts, hiringCountries: ["Malaysia"] },
+      jdFacts: baseJdFacts, // no tz signal + location "Remote" -> derives null (write-back-to-null case)
     });
 
     const jobC = await insertJob(state.testDb, source.id);
@@ -174,10 +174,10 @@ describe("recomputeEligibility", () => {
     const result = await recomputeEligibility();
     warnSpy.mockRestore();
 
-    // Neither A's nor B's jdFacts carry a tz token ("Malaysia"/"United
-    // States" match no SAFE_TOKENS pattern) and both jobs' `location` is the
-    // fixture default "Remote" — tzChanged stays 0 here.
-    expect(result).toEqual({ total: 3, changed: 2, skipped: 1, tzChanged: 0 });
+    // A's "Malaysia" and B's "United States" hiringCountries now resolve via
+    // the place-name map (apac / americas respectively); C is skipped (no
+    // profile). Both tz_band writes land -> tzChanged: 2.
+    expect(result).toEqual({ total: 3, changed: 2, skipped: 1, tzChanged: 2 });
 
     const [refreshedA] = await state.testDb.select().from(jobs).where(eq(jobs.id, jobA.id));
     const [refreshedB] = await state.testDb.select().from(jobs).where(eq(jobs.id, jobB.id));
@@ -197,6 +197,10 @@ describe("recomputeEligibility", () => {
     // C's job: owner has no profile -> skipped, left exactly as seeded.
     expect(refreshedC.eligibility).toBe("unknown");
     expect(refreshedC.eligibilityEvidence).toBe("test fixture");
+
+    // tz_band derived from hiringCountries via the place-name map (recompute path).
+    expect(refreshedA.tzBand).toBe("apac"); // Malaysia
+    expect(refreshedB.tzBand).toBe("americas"); // United States
   });
 
   it("caches profiles per owner instead of refetching per job", async () => {
