@@ -492,3 +492,15 @@ export type AdminPlanPatch = z.infer<typeof AdminPlanPatch>;
 // grant, ±delta). Zero is meaningless as a grant, so it's rejected here.
 export const AdminGrantRequest = z.object({ delta: z.number().int().refine((n) => n !== 0) });
 export type AdminGrantRequest = z.infer<typeof AdminGrantRequest>;
+
+// ClientErrorReport — POST /api/client-error crash-beacon body (pre-launch
+// hardening Task 4). userId is NEVER part of this schema — the route attaches
+// it server-side from the session; a client-supplied id would be spoofable.
+export const ClientErrorReport = z.object({
+  message: z.string().min(1).max(2000),
+  stack: z.string().max(8000).optional(),
+  url: z.string().max(2000),
+  digest: z.string().max(200).optional(), // Next's server-component error digest when present
+  at: z.string().datetime(),
+});
+export type ClientErrorReport = z.infer<typeof ClientErrorReport>;

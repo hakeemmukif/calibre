@@ -340,6 +340,37 @@
         ],
         "type": "object"
       },
+      "ClientErrorReport": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "digest": {
+            "maxLength": 200,
+            "type": "string"
+          },
+          "message": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "stack": {
+            "maxLength": 8000,
+            "type": "string"
+          },
+          "url": {
+            "maxLength": 2000,
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "url",
+          "at"
+        ],
+        "type": "object"
+      },
       "CorrelationReport": {
         "properties": {
           "ats": {
@@ -3730,6 +3761,55 @@
           }
         },
         "summary": "Current session"
+      }
+    },
+    "/api/client-error": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientErrorReport"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Report accepted"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Report exceeds the size cap"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Invalid report shape"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Per-IP report limit exceeded"
+          }
+        },
+        "summary": "Crash beacon — client error report (fire-and-forget; userId attached server-side)"
       }
     },
     "/api/credits": {

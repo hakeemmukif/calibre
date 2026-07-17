@@ -63,6 +63,7 @@ import {
   AdminPlanPatch,
   AdminGrantRequest,
   CreditsResponse,
+  ClientErrorReport,
 } from "@/types";
 
 const entitySchemas: Record<string, z.ZodType> = {
@@ -105,6 +106,7 @@ const entitySchemas: Record<string, z.ZodType> = {
   AdminPlanPatch,
   AdminGrantRequest,
   CreditsResponse,
+  ClientErrorReport,
 };
 
 for (const [name, schema] of Object.entries(entitySchemas)) {
@@ -895,6 +897,19 @@ registry.registerPath({
   responses: {
     200: { description: "Active session", content: { "application/json": { schema: SessionResponse } } },
     401: { description: "No active session", content: { "application/json": { schema: ErrorEnvelope } } },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/client-error",
+  summary: "Crash beacon — client error report (fire-and-forget; userId attached server-side)",
+  request: { body: { content: { "application/json": { schema: ClientErrorReport } } } },
+  responses: {
+    204: { description: "Report accepted" },
+    413: { description: "Report exceeds the size cap", content: { "application/json": { schema: ErrorEnvelope } } },
+    422: { description: "Invalid report shape", content: { "application/json": { schema: ErrorEnvelope } } },
+    429: { description: "Per-IP report limit exceeded", content: { "application/json": { schema: ErrorEnvelope } } },
   },
 });
 
