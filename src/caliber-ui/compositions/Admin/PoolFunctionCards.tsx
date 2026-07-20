@@ -30,10 +30,13 @@ export interface PoolFunctionCardsProps {
 // (spec §1.1 static-v1: visually reserved, wired later without rework).
 export function PoolFunctionCards({ mix }: PoolFunctionCardsProps) {
   const maxCount = mix.reduce((m, b) => Math.max(m, b.count), 0);
+  // Exactly one winner on ties — the first bucket (lowest index, pinned
+  // FUNCTION_BUCKET_IDS order) with the max count gets the red numeral.
+  const winnerIndex = maxCount > 0 ? mix.findIndex((b) => b.count === maxCount) : -1;
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
-      {mix.map((b) => {
-        const isLargest = b.count === maxCount && maxCount > 0;
+      {mix.map((b, i) => {
+        const isLargest = i === winnerIndex;
         return (
           <Card key={b.bucket} padding="sm" style={isLargest ? { borderTop: "2px solid var(--border-strong)" } : undefined}>
             <div

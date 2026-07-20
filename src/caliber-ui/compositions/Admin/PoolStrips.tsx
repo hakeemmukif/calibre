@@ -57,7 +57,7 @@ function Strip({ title, segments }: { title: string; segments: StripSegment[] })
         {collapsed.map((s) => (
           <Chip key={s.key} style={{ cursor: "default" }}>
             <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 999, background: s.color, marginRight: 2 }} />
-            {s.label} {s.share}%
+            {s.label} <span style={{ fontVariantNumeric: "tabular-nums" }}>{s.share}%</span>
           </Chip>
         ))}
       </div>
