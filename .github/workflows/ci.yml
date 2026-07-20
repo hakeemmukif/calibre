@@ -51,7 +51,7 @@ jobs:
     env:
       DATABASE_URL: file:${{ github.workspace }}/e2e/.scratch/caliber-e2e.db
       CALIBER_TEST_DOUBLES: '1'
-      CALIBER_UPLOADS_DIR: ${{ runner.temp }}/caliber-uploads
+      CALIBER_UPLOADS_DIR: ${{ github.workspace }}/e2e/.scratch/caliber-uploads
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
