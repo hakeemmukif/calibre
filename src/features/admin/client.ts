@@ -2,7 +2,7 @@
 // /api/admin/users). Never imports server/*; mirrors features/profile/client.ts's
 // shape (requestJson, .parse the response at the boundary).
 import { z } from "zod";
-import { AdminCrawlStatus, AdminUser, AdminUsersResponse, SourcesHealthResponse } from "@/types";
+import { AdminCrawlStatus, AdminPoolStats, AdminUser, AdminUsersResponse, SourcesHealthResponse } from "@/types";
 import { requestJson } from "@/features/http";
 
 export async function getAdminUsers(): Promise<AdminUser[]> {
@@ -16,6 +16,10 @@ export async function getSourcesHealth(): Promise<SourcesHealthResponse> {
 
 export async function getCrawlStatus(): Promise<AdminCrawlStatus> {
   return requestJson("/api/admin/crawl", undefined, AdminCrawlStatus);
+}
+
+export async function getPoolStats(): Promise<AdminPoolStats> {
+  return requestJson("/api/admin/pool", undefined, AdminPoolStats);
 }
 
 export async function patchUserPlan(id: string, plan: "standard" | "unlimited"): Promise<AdminUser> {
