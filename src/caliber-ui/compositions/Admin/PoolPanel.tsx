@@ -74,9 +74,12 @@ export function PoolPanel({ stats, loading, error, onRetry }: PoolPanelProps) {
   }
 
   if (!stats || stats.totals.live === 0) {
+    const copy = stats && stats.totals.delisted > 0
+      ? `No live postings — ${stats.totals.delisted.toLocaleString()} delisted.`
+      : "Pool is empty — nothing crawled yet.";
     return (
       <div style={{ padding: "40px 20px", textAlign: "center", font: "var(--type-body)", color: "var(--text-muted)" }}>
-        Pool is empty — nothing crawled yet.
+        {copy}
       </div>
     );
   }

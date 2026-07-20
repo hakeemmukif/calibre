@@ -55,6 +55,10 @@ only for `role === 'admin'` (same defense-in-depth pattern as `/admin` —
   (c) **Company concentration** — top-10 companies vs rest, largest company segment
   called out by name.
   Segments ≥4% labeled inline; smaller segments collect into "other".
+  **Shipped deviation:** segments carry title-tooltips + a Chip legend row instead of
+  literal inline text labels; the ≥4% rule governs inline labels only, where rendered
+  — the concentration strip's Chip legend lists all top-10 companies uncollapsed
+  regardless of share (its top-10 selection already is the collapse).
 - **States** (Storybook minimum): loading / empty (pool empty) / error+retry /
   populated.
 
