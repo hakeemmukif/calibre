@@ -109,6 +109,165 @@
         ],
         "type": "object"
       },
+      "AdminPoolStats": {
+        "properties": {
+          "concentration": {
+            "properties": {
+              "restCount": {
+                "type": "integer"
+              },
+              "top10Count": {
+                "type": "integer"
+              },
+              "topCompanies": {
+                "items": {
+                  "properties": {
+                    "company": {
+                      "type": "string"
+                    },
+                    "count": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "company",
+                    "count"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "topCompanies",
+              "top10Count",
+              "restCount"
+            ],
+            "type": "object"
+          },
+          "freshness": {
+            "items": {
+              "properties": {
+                "bucket": {
+                  "enum": [
+                    "24h",
+                    "2-7d",
+                    "8-30d",
+                    "older"
+                  ],
+                  "type": "string"
+                },
+                "count": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "bucket",
+                "count"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "functionMix": {
+            "items": {
+              "properties": {
+                "bucket": {
+                  "type": "string"
+                },
+                "count": {
+                  "type": "integer"
+                },
+                "share": {
+                  "type": "number"
+                },
+                "source": {
+                  "enum": [
+                    "tag",
+                    "keyword"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "bucket",
+                "count",
+                "share",
+                "source"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "totals": {
+            "properties": {
+              "delisted": {
+                "type": "integer"
+              },
+              "live": {
+                "type": "integer"
+              },
+              "newLast24h": {
+                "type": "integer"
+              },
+              "sourcesEnabled": {
+                "type": "integer"
+              },
+              "sourcesTotal": {
+                "type": "integer"
+              },
+              "tagCoveragePct": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "live",
+              "delisted",
+              "newLast24h",
+              "sourcesEnabled",
+              "sourcesTotal",
+              "tagCoveragePct"
+            ],
+            "type": "object"
+          },
+          "tzBands": {
+            "items": {
+              "properties": {
+                "band": {
+                  "enum": [
+                    "americas",
+                    "emea",
+                    "apac",
+                    "unassigned"
+                  ],
+                  "type": "string"
+                },
+                "count": {
+                  "type": "integer"
+                },
+                "share": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "band",
+                "count",
+                "share"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "totals",
+          "functionMix",
+          "tzBands",
+          "freshness",
+          "concentration"
+        ],
+        "type": "object"
+      },
       "AdminUser": {
         "properties": {
           "applicationCount": {
@@ -2806,6 +2965,43 @@
           }
         },
         "summary": "Admin: crawl status panel — live pool fill, run health, and skipped-source detection"
+      }
+    },
+    "/api/admin/pool": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPoolStats"
+                }
+              }
+            },
+            "description": "Pool stats snapshot (static v1 — no history/sparkline series)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No session"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Caller is not an admin"
+          }
+        },
+        "summary": "Admin: Pool tab — postings-pool composition (function mix, tz bands, freshness, company concentration)"
       }
     },
     "/api/admin/sources": {
