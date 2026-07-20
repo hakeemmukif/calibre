@@ -18,6 +18,7 @@ import {
   EmploymentPref,
   Profile,
   Resume,
+  AdminPoolStats,
 } from "./index";
 
 function baseResume(overrides: Partial<z.infer<typeof Resume>> = {}) {
@@ -280,6 +281,35 @@ it("ErrorCode includes the auth codes", () => {
 it("AuthUser never carries a password hash", () => {
   const parsed = AuthUser.parse({ id: "u1", email: "a@b.co", role: "user", passwordHash: "leak" });
   expect(parsed).not.toHaveProperty("passwordHash"); // strip via .parse
+});
+
+describe("AdminPoolStats", () => {
+  const valid = {
+    totals: { live: 100, delisted: 5, newLast24h: 3, sourcesEnabled: 8, sourcesTotal: 10, tagCoveragePct: 0.4 },
+    functionMix: [{ bucket: "engineering", count: 40, share: 40, source: "keyword" as const }],
+    tzBands: [{ band: "americas" as const, count: 60, share: 60 }],
+    freshness: [{ bucket: "24h" as const, count: 3 }],
+    concentration: { topCompanies: [{ company: "Acme", count: 10 }], top10Count: 10, restCount: 90 },
+  };
+
+  it("parses a well-formed snapshot", () => {
+    expect(AdminPoolStats.parse(valid)).toEqual(valid);
+  });
+
+  it("throws when totals is missing (fail loud, no fallback defaults)", () => {
+    const { totals, ...withoutTotals } = valid;
+    expect(() => AdminPoolStats.parse(withoutTotals)).toThrow();
+  });
+
+  it("rejects an unknown tzBands.band value", () => {
+    expect(() => AdminPoolStats.parse({ ...valid, tzBands: [{ band: "mars", count: 1, share: 1 }] })).toThrow();
+  });
+
+  it("rejects an unknown functionMix.source value", () => {
+    expect(() =>
+      AdminPoolStats.parse({ ...valid, functionMix: [{ bucket: "engineering", count: 1, share: 1, source: "llm" }] }),
+    ).toThrow();
+  });
 });
 
 it("RegisterRequest enforces a minimum password length", () => {
