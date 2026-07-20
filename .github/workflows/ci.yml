@@ -15,6 +15,8 @@ jobs:
   eval-resume:
     needs: check
     runs-on: ubuntu-latest
+    env:
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 2 }
@@ -35,9 +37,8 @@ jobs:
       # activate this job. Without it, this step (and the job) no-ops
       # cleanly instead of failing CI — costs real tokens once activated.
       - name: Live résumé-extraction eval
-        if: steps.filter.outputs.resume == 'true' && secrets.OPENROUTER_API_KEY != ''
+        if: steps.filter.outputs.resume == 'true' && env.OPENROUTER_API_KEY != ''
         env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           # eval.live.test.ts never touches the DB, but it runs through
           # vitest.smoke.config.ts, whose setupFiles (src/smoke/setup.ts)
           # requires DATABASE_URL to be *set* (not connected-to) — placeholder
