@@ -7,8 +7,14 @@
 // mirrors postings.ts's listForMatching read-amplification discipline)
 // reduced in a single JS pass: spec §6 requires the hybrid function-source
 // rule to live in ONE TS helper, never duplicated as SQL.
+// A non-empty functionTag resolves through functionBucket.ts's
+// TAG_TO_BUCKET (P.4's classifier vocabulary diverges from the 12 admin-Pool
+// buckets on 6 values — a raw tag string is NOT a valid bucket id); an
+// unknown non-empty tag THROWS (fail-loud, project canon: never silently
+// re-bucketed or dropped) rather than vanishing from functionMix.
 import { isNull, sql } from "drizzle-orm";
-import { bucketFromTitle, FUNCTION_BUCKET_IDS } from "@/server/pool/functionBucket";
+import { bucketFromTitle, FUNCTION_BUCKET_IDS, TAG_TO_BUCKET } from "@/server/pool/functionBucket";
+import type { FunctionTag } from "@/server/sources/function";
 import type { AdminPoolStats } from "@/types";
 import { getDb } from "../db";
 import { postings, sources } from "../schema";
@@ -62,8 +68,21 @@ export function createPoolStatsRepo(db: Db) {
       const companyCounts = new Map<string, number>();
 
       for (const row of liveRows) {
-        const bucket = row.functionTag ?? bucketFromTitle(row.title);
-        const provenance: "tag" | "keyword" = row.functionTag ? "tag" : "keyword";
+        // MINOR-1 fix: ONE non-empty check (truthy — covers both null and
+        // "") drives both the bucket resolution and its provenance, so the
+        // two can never disagree about whether a tag was "present".
+        const tag = row.functionTag;
+        let bucket: string;
+        let provenance: "tag" | "keyword";
+        if (tag) {
+          const mapped = TAG_TO_BUCKET[tag as FunctionTag];
+          if (!mapped) throw new Error(`unknown function_tag "${tag}"`);
+          bucket = mapped;
+          provenance = "tag";
+        } else {
+          bucket = bucketFromTitle(row.title);
+          provenance = "keyword";
+        }
         const entry = bucketAgg.get(bucket) ?? { count: 0, tag: 0, keyword: 0 };
         entry.count += 1;
         entry[provenance] += 1;

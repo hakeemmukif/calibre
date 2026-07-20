@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { bucketFromTitle, FUNCTION_BUCKET_IDS } from "./functionBucket";
+import { FUNCTION_TAGS } from "@/server/sources/function";
+import { bucketFromTitle, FUNCTION_BUCKET_IDS, TAG_TO_BUCKET } from "./functionBucket";
 
 describe("bucketFromTitle", () => {
   it("has exactly the 12 pinned buckets in order (spec §6)", () => {
@@ -67,5 +68,29 @@ describe("bucketFromTitle", () => {
 
   it("is case-insensitive", () => {
     expect(bucketFromTitle("SENIOR DEVOPS ENGINEER")).toBe("engineering");
+  });
+});
+
+describe("TAG_TO_BUCKET", () => {
+  it("has exactly one entry per P.4 FUNCTION_TAGS value (exhaustive)", () => {
+    expect(Object.keys(TAG_TO_BUCKET).sort()).toEqual([...FUNCTION_TAGS].sort());
+  });
+
+  it("maps the 6 tags whose spelling diverges from a bucket id to their bucket", () => {
+    expect(TAG_TO_BUCKET["customer-success"]).toBe("cs_support");
+    expect(TAG_TO_BUCKET.people).toBe("people_hr");
+    expect(TAG_TO_BUCKET.finance).toBe("finance_legal");
+    expect(TAG_TO_BUCKET.legal).toBe("finance_legal");
+    expect(TAG_TO_BUCKET.operations).toBe("ops_admin");
+    expect(TAG_TO_BUCKET.executive).toBe("leadership");
+  });
+
+  it("maps the 6 tags that already spell a bucket id to themselves", () => {
+    expect(TAG_TO_BUCKET.engineering).toBe("engineering");
+    expect(TAG_TO_BUCKET.product).toBe("product");
+    expect(TAG_TO_BUCKET.design).toBe("design");
+    expect(TAG_TO_BUCKET.data).toBe("data");
+    expect(TAG_TO_BUCKET.sales).toBe("sales");
+    expect(TAG_TO_BUCKET.marketing).toBe("marketing");
   });
 });

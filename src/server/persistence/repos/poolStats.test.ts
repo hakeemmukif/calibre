@@ -112,5 +112,55 @@ describe("poolStatsRepo.getPoolStats", () => {
     ]);
     expect(stats.concentration.top10Count).toBe(3);
     expect(stats.concentration.restCount).toBe(0);
+
+    // Invariant: every live row lands in exactly one functionMix bucket —
+    // a raw/unmapped tag value must never silently vanish from the sum.
+    const totalMixCount = stats.functionMix.reduce((sum, m) => sum + m.count, 0);
+    expect(totalMixCount).toBe(stats.totals.live);
+  });
+
+  it("resolves the 6 P.4 tags whose spelling diverges from a bucket id via TAG_TO_BUCKET, source 'tag'", async () => {
+    const db = await createTestDb();
+    const repo = createPoolStatsRepo(db);
+    const source = await insertSource(db, { enabled: true });
+
+    await insertPosting(db, source.id, { title: "Support Rep", functionTag: "customer-success" });
+    await insertPosting(db, source.id, { title: "Recruiter", functionTag: "people" });
+    await insertPosting(db, source.id, { title: "Controller", functionTag: "finance" });
+    await insertPosting(db, source.id, { title: "Paralegal", functionTag: "legal" });
+    await insertPosting(db, source.id, { title: "Ops Coordinator", functionTag: "operations" });
+    await insertPosting(db, source.id, { title: "COO", functionTag: "executive" });
+
+    const stats = await repo.getPoolStats(NOW);
+
+    expect(stats.functionMix.find((m) => m.bucket === "cs_support")).toMatchObject({ count: 1, source: "tag" });
+    expect(stats.functionMix.find((m) => m.bucket === "people_hr")).toMatchObject({ count: 1, source: "tag" });
+    // `finance` and `legal` both fold into `finance_legal` — count 2.
+    expect(stats.functionMix.find((m) => m.bucket === "finance_legal")).toMatchObject({ count: 2, source: "tag" });
+    expect(stats.functionMix.find((m) => m.bucket === "ops_admin")).toMatchObject({ count: 1, source: "tag" });
+    expect(stats.functionMix.find((m) => m.bucket === "leadership")).toMatchObject({ count: 1, source: "tag" });
+
+    const totalMixCount = stats.functionMix.reduce((sum, m) => sum + m.count, 0);
+    expect(totalMixCount).toBe(stats.totals.live);
+  });
+
+  it("throws on an unknown non-empty function_tag (fail-loud, never silently dropped)", async () => {
+    const db = await createTestDb();
+    const repo = createPoolStatsRepo(db);
+    const source = await insertSource(db, { enabled: true });
+    await insertPosting(db, source.id, { title: "Whatever", functionTag: "gardening" });
+
+    await expect(repo.getPoolStats(NOW)).rejects.toThrow(/unknown function_tag "gardening"/);
+  });
+
+  it("treats an empty-string function_tag as absent — falls back to the keyword bucket on title", async () => {
+    const db = await createTestDb();
+    const repo = createPoolStatsRepo(db);
+    const source = await insertSource(db, { enabled: true });
+    await insertPosting(db, source.id, { title: "UX Designer", functionTag: "" });
+
+    const stats = await repo.getPoolStats(NOW);
+
+    expect(stats.functionMix.find((m) => m.bucket === "design")).toMatchObject({ count: 1, source: "keyword" });
   });
 });

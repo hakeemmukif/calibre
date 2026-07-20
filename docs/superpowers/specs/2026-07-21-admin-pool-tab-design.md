@@ -139,6 +139,38 @@ Implement in TS (single shared helper used by the repo aggregate), not duplicate
 explicit pinned test case, not an edge case to "fix": the order above is the operator-
 reviewed classification and must not be reordered without re-running §8's calibration.
 
+**Tag→bucket mapping (amended during build — Task 3 review):** the hybrid rule (§1.2)
+reads "`function_tag` when present" as `postings.functionTag`, a value from P.4's
+classifier vocabulary (`FUNCTION_TAGS`, `src/server/sources/function.ts`) — which is
+**not** the same 12-id set as the buckets above. 6 of its 12 values diverge in spelling:
+`customer-success`, `people`, `finance`, `legal`, `operations`, `executive` don't
+literally match a bucket id (`finance` and `legal` both fold into the single
+`finance_legal` bucket; there is no dedicated `legal` bucket). Using a raw tag string as
+the bucket key would silently drop those tagged rows out of `functionMix`, breaking the
+invariant `sum(functionMix[].count) === totals.live`. Fix: an explicit, exhaustive
+`TAG_TO_BUCKET: Record<FunctionTag, FunctionBucket>` map
+(`src/server/pool/functionBucket.ts`) resolves every non-empty `functionTag`:
+
+| P.4 tag | bucket |
+|---|---|
+| engineering | engineering |
+| product | product |
+| design | design |
+| data | data |
+| sales | sales |
+| marketing | marketing |
+| customer-success | cs_support |
+| people | people_hr |
+| finance | finance_legal |
+| legal | finance_legal |
+| operations | ops_admin |
+| executive | leadership |
+
+An unknown non-empty `functionTag` value (one outside `FUNCTION_TAGS`, e.g. hand-edited
+data) **throws** in the repo aggregate — fail-loud, never silently re-bucketed or
+dropped. An empty-string `functionTag` is treated as absent (same as `null`) and falls
+back to the keyword bucket on title, per the same non-empty check used for provenance.
+
 ---
 
 ## 7. Testing

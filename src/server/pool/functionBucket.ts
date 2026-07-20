@@ -7,6 +7,8 @@
 // "engineer") before it ever reaches `leadership` (bucket 11, via "head
 // of"). This order is the operator-reviewed classification (spec §8
 // calibration) — do not reorder without re-running that calibration.
+import type { FunctionTag } from "@/server/sources/function";
+
 export const FUNCTION_BUCKET_IDS = [
   "engineering",
   "data",
@@ -23,6 +25,31 @@ export const FUNCTION_BUCKET_IDS = [
 ] as const;
 
 export type FunctionBucket = (typeof FUNCTION_BUCKET_IDS)[number];
+
+// Tag→bucket mapping (amended during build — Task 3 review). The P.4
+// classifier's vocabulary (`FUNCTION_TAGS`, src/server/sources/function.ts)
+// diverges from the 12 admin-Pool buckets on 6 values (customer-success,
+// people, finance, legal, operations, executive don't literally match a
+// bucket id) — a raw `row.functionTag` used as the bucket key would silently
+// drop those tagged rows out of functionMix. `Record<FunctionTag,
+// FunctionBucket>` forces this map to stay exhaustive: adding a tag to
+// FUNCTION_TAGS without extending this map is a compile error, not a silent
+// gap. `legal` and `finance` both fold into `finance_legal` (no dedicated
+// legal bucket exists among the 12).
+export const TAG_TO_BUCKET: Record<FunctionTag, FunctionBucket> = {
+  engineering: "engineering",
+  product: "product",
+  design: "design",
+  data: "data",
+  sales: "sales",
+  marketing: "marketing",
+  "customer-success": "cs_support",
+  people: "people_hr",
+  finance: "finance_legal",
+  legal: "finance_legal",
+  operations: "ops_admin",
+  executive: "leadership",
+};
 
 // Quoted single-token patterns in the spec (e.g. `"ml "`, `" ai"`, `"ui "`,
 // `"hr "`, `"vp "`) are literal substrings INCLUDING the boundary space —
