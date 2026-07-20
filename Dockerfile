@@ -17,6 +17,10 @@ COPY . .
 # The build does not connect to the DB (getDb is lazy); a placeholder satisfies
 # any module that reads DATABASE_URL at import time.
 ENV DATABASE_URL=file:/tmp/build-placeholder.db
+# NEXT_PUBLIC_POSTHOG_KEY is inlined into the client bundle at build time —
+# it must arrive as a build ARG (compose `args:`), not just a runtime env_file.
+ARG NEXT_PUBLIC_POSTHOG_KEY
+ENV NEXT_PUBLIC_POSTHOG_KEY=$NEXT_PUBLIC_POSTHOG_KEY
 RUN npm run build
 
 # ---- runtime stage ----

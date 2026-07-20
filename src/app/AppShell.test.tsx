@@ -19,6 +19,9 @@ vi.mock("@/features/auth/client", () => ({ logout }));
 const { __resetChecksStore } = vi.hoisted(() => ({ __resetChecksStore: vi.fn() }));
 vi.mock("@/features/url-check/checksStore", () => ({ __resetChecksStore }));
 
+const { identify, resetAnalytics } = vi.hoisted(() => ({ identify: vi.fn(), resetAnalytics: vi.fn() }));
+vi.mock("@/features/analytics/client", () => ({ identify, resetAnalytics }));
+
 vi.mock("@/caliber-ui/compositions/Shell/CheckDock", () => ({ CheckDock: () => null }));
 
 import { AppShell } from "./AppShell";
@@ -31,6 +34,8 @@ beforeEach(() => {
   logout.mockReset();
   logout.mockResolvedValue(undefined);
   __resetChecksStore.mockReset();
+  identify.mockReset();
+  resetAnalytics.mockReset();
   pathname = "/feed";
 });
 
@@ -140,5 +145,28 @@ describe("AppShell", () => {
     const { rerender } = render(<AppShell user={user}>content</AppShell>);
     rerender(<AppShell user={{ ...user }}>content</AppShell>);
     expect(__resetChecksStore).not.toHaveBeenCalled();
+  });
+
+  it("identifies the signed-in user on mount, without resetting analytics", () => {
+    render(<AppShell user={user}>content</AppShell>);
+    expect(identify).toHaveBeenCalledWith("u1");
+    expect(resetAnalytics).not.toHaveBeenCalled();
+  });
+
+  it("resets analytics and re-identifies when the signed-in user id changes", () => {
+    const { rerender } = render(<AppShell user={user}>content</AppShell>);
+    identify.mockClear();
+
+    rerender(<AppShell user={admin}>content</AppShell>);
+    expect(resetAnalytics).toHaveBeenCalledTimes(1);
+    expect(identify).toHaveBeenCalledWith("u2");
+  });
+
+  it("resets analytics on logout", async () => {
+    render(<AppShell user={user}>content</AppShell>);
+    fireEvent.click(screen.getByRole("button", { name: "Log out" }));
+
+    await waitFor(() => expect(resetAnalytics).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/login"));
   });
 });

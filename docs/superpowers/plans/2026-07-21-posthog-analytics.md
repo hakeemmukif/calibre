@@ -568,7 +568,7 @@ Expected: typecheck, full vitest suite, contract check, and `next build` all gre
 1. Sign up at https://eu.posthog.com (EU region — spec §6), free plan, no card.
 2. Create one project ("Caliber").
 3. Project Settings → copy the Project API key (`phc_...`).
-4. Locally: add `NEXT_PUBLIC_POSTHOG_KEY=phc_...` to `.env`; on the box: add it to the prod env file and redeploy (env vars are build-time-inlined by Next — the box build must see it).
+4. Locally: add `NEXT_PUBLIC_POSTHOG_KEY=phc_...` to `.env`; on the box: put `NEXT_PUBLIC_POSTHOG_KEY=phc_...` in the compose-level `.env` (next to docker-compose.yml) so `docker compose build` inlines it — `.env.production`/`env_file` is runtime-only and does NOT reach the build. Then redeploy.
 5. In PostHog: Settings → toggle OFF "Discard client IP data"? — leave defaults; do NOT enable session replay.
 
 - [ ] **Step 3: Manual live verification (spec §7)**
@@ -577,6 +577,7 @@ Expected: typecheck, full vitest suite, contract check, and `next build` all gre
 2. Log in, upload a résumé (or paste text), start a scan.
 3. PostHog → Activity: confirm `$pageview` events, `resume_uploaded`, `scan_started`, and that the person's distinct id equals your internal user id (`usr_...`-style string, NOT an email).
 4. Open DevTools → Network: confirm events POST to `/ingest/...` (same origin), not `*.posthog.com`.
+5. Repeat the DevTools `/ingest` network check on prod after deploy.
 
 - [ ] **Step 4: First dashboards (operator, ~15 min, in PostHog UI)**
 

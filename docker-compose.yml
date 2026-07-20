@@ -7,7 +7,10 @@
 # .env.production.example). Never put secrets in `environment:` inline args.
 services:
   app:
-    build: .
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_POSTHOG_KEY: "${NEXT_PUBLIC_POSTHOG_KEY:-}"
     restart: unless-stopped
     # EXACTLY ONE app process — no `deploy.replicas`, no scaling. The in-memory
     # SSE run-registry + the single url-check worker (src/instrumentation.ts)
