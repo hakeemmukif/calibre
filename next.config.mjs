@@ -11,4 +11,15 @@
 export default {
   reactStrictMode: true,
   serverExternalPackages: ["@napi-rs/canvas"],
+  // PostHog reverse proxy (spec §3): first-party /ingest path so adblockers
+  // don't drop events. EU region is fixed by spec §2 — not env config.
+  // skipTrailingSlashRedirect is required for posthog API calls that end in
+  // a slash; app routes are unaffected (we never link with trailing slashes).
+  skipTrailingSlashRedirect: true,
+  async rewrites() {
+    return [
+      { source: "/ingest/static/:path*", destination: "https://eu-assets.i.posthog.com/static/:path*" },
+      { source: "/ingest/:path*", destination: "https://eu.i.posthog.com/:path*" },
+    ];
+  },
 };
