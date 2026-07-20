@@ -1,6 +1,8 @@
 "use client";
 import { useSyncExternalStore } from "react";
 import { getCredits } from "./client";
+import { track } from "@/features/analytics/client";
+import { EVENTS } from "@/features/analytics/events";
 
 export interface CreditDenial { feature: string; required: number; balance: number }
 
@@ -31,6 +33,7 @@ export function refreshCredits(): void {
 
 export function showDenial(d: CreditDenial): void {
   denial = d;
+  track(EVENTS.creditsDepleted, { feature: d.feature, required: d.required, balance: d.balance });
   emit();
 }
 export function dismissDenial(): void {

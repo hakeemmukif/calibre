@@ -5,6 +5,8 @@
 import { z } from "zod";
 import { Application } from "@/types";
 import { requestJson } from "@/features/http";
+import { track } from "@/features/analytics/client";
+import { EVENTS } from "@/features/analytics/events";
 
 export interface MarkAppliedInput {
   jobId: string;
@@ -14,11 +16,13 @@ export interface MarkAppliedInput {
 }
 
 export async function markApplied(input: MarkAppliedInput): Promise<Application> {
-  return requestJson(
+  const application = await requestJson(
     "/api/applications",
     { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) },
     Application,
   );
+  track(EVENTS.applicationCreated);
+  return application;
 }
 
 export interface ListApplicationsQuery {

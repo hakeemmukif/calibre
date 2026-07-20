@@ -5,6 +5,8 @@ import { z } from "zod";
 import { Persona, ScanDetail, SearchRun, SearchRunSummary, SseEvent } from "@/types";
 import { requestJson } from "@/features/http";
 import { refreshCredits } from "@/features/credits/creditsStore";
+import { track } from "@/features/analytics/client";
+import { EVENTS } from "@/features/analytics/events";
 
 export interface StartSearchInput {
   persona: Persona;
@@ -18,6 +20,7 @@ export async function startSearch(input: StartSearchInput): Promise<SearchRun> {
     SearchRun,
   );
   refreshCredits();
+  track(EVENTS.scanStarted);
   return run;
 }
 
