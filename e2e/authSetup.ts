@@ -1,6 +1,11 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { request } from "@playwright/test";
+import { createClient } from "@libsql/client";
+import { eq } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/libsql";
+import * as schema from "../src/server/persistence/schema";
+import { E2E_DB_URL } from "./globalSetup";
 
 // Wired as Playwright's native `globalSetup` config option (NOT the
 // "pretest:e2e" npm hook that e2e/globalSetup.ts/runGlobalSetup.ts use for
@@ -43,6 +48,21 @@ export default async function globalSetup() {
   if (!profileRes.ok()) {
     throw new Error(`authSetup: PUT /api/profile failed: ${profileRes.status()} ${await profileRes.text()}`);
   }
+
+  // This one E2E_USER's session is shared (via storageState) by every spec
+  // file except credits.spec.ts (which registers its own fresh users to
+  // observe the real 30-credit signup bundle and 402 gating deterministically
+  // — see that file's header comment). The rest of the suite collectively
+  // debits well past the 30-credit bundle. `plan: "unlimited"` is the same
+  // bypass server/credits' assertAndDebit already grants real
+  // unlimited-plan/admin accounts (src/server/credits/index.ts: `if
+  // (u.plan === "unlimited" || u.role === "admin") return;`), so flipping it
+  // here neutralizes debits for this one shared user via existing prod
+  // logic — no new conditionals, no ledger seeding.
+  const dbClient = createClient({ url: E2E_DB_URL });
+  const db = drizzle(dbClient, { schema });
+  await db.update(schema.users).set({ plan: "unlimited" }).where(eq(schema.users.email, E2E_USER.email));
+  dbClient.close();
 
   mkdirSync(dirname(STORAGE_STATE_PATH), { recursive: true });
   await context.storageState({ path: STORAGE_STATE_PATH });
