@@ -11,4 +11,18 @@
 export default {
   reactStrictMode: true,
   serverExternalPackages: ["@napi-rs/canvas"],
+  // PostHog reverse proxy (spec §3): first-party /ingest path so adblockers
+  // don't drop events. EU region is fixed by spec §2 — not env config.
+  // skipTrailingSlashRedirect is required for posthog API calls that end in
+  // a slash. Trade-off: this disables Next's 308 trailing-slash normalization
+  // app-wide, so an externally typed `/tracker/` now 404s instead of
+  // redirecting. Acceptable for an invite-gated app — keep monitoring probe
+  // URLs slash-free.
+  skipTrailingSlashRedirect: true,
+  async rewrites() {
+    return [
+      { source: "/ingest/static/:path*", destination: "https://eu-assets.i.posthog.com/static/:path*" },
+      { source: "/ingest/:path*", destination: "https://eu.i.posthog.com/:path*" },
+    ];
+  },
 };

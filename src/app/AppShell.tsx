@@ -9,6 +9,7 @@ import type { AuthUser } from "@/types";
 import { logout } from "@/features/auth/client";
 import { __resetChecksStore } from "@/features/url-check/checksStore";
 import { __resetCreditsStore, refreshCredits, useCredits } from "@/features/credits/creditsStore";
+import { identify, resetAnalytics } from "@/features/analytics/client";
 
 // CreditsChip — mounted once in the shell; refreshes on mount and hides
 // while the balance hasn't loaded yet or the user is on the unlimited plan
@@ -63,8 +64,11 @@ export function AppShell({ children, user }: { children: React.ReactNode; user?:
     if (prevUserId.current !== undefined && prevUserId.current !== user?.id) {
       __resetChecksStore();
       __resetCreditsStore();
+      resetAnalytics();
     }
     prevUserId.current = user?.id;
+    // Internal id only — never email/name (spec §4).
+    if (user?.id) identify(user.id);
   }, [user?.id]);
 
   async function handleLogout() {
@@ -75,6 +79,7 @@ export function AppShell({ children, user }: { children: React.ReactNode; user?:
     }
     __resetChecksStore();
     __resetCreditsStore();
+    resetAnalytics();
     router.push("/login");
   }
 

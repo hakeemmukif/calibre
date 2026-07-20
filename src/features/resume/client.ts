@@ -4,6 +4,8 @@
 import { Resume } from "@/types";
 import { requestJson, requestJsonOrNull } from "@/features/http";
 import { refreshCredits } from "@/features/credits/creditsStore";
+import { track } from "@/features/analytics/client";
+import { EVENTS } from "@/features/analytics/events";
 
 export type UploadResumeInput = { file: File } | { text: string };
 
@@ -21,6 +23,7 @@ export async function uploadResume(input: UploadResumeInput): Promise<Resume> {
     );
   }
   refreshCredits();
+  track(EVENTS.resumeUploaded);
   return resume;
 }
 

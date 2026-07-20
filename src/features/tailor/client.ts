@@ -5,6 +5,8 @@
 import { CorrelationReport, SseEvent, TailoredResume } from "@/types";
 import { requestJson } from "@/features/http";
 import { refreshCredits } from "@/features/credits/creditsStore";
+import { track } from "@/features/analytics/client";
+import { EVENTS } from "@/features/analytics/events";
 
 export async function startTailor(input: { jobId: string; reportId?: string }): Promise<TailoredResume> {
   const tailored = await requestJson(
@@ -13,6 +15,7 @@ export async function startTailor(input: { jobId: string; reportId?: string }): 
     TailoredResume,
   );
   refreshCredits();
+  track(EVENTS.tailorStarted);
   return tailored;
 }
 
