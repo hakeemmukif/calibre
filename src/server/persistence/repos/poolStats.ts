@@ -40,12 +40,15 @@ export function createPoolStatsRepo(db: Db) {
     // userId, same dimension as crawlRuns.ts's admin surfaces) — this is the
     // admin Pool tab's whole-pool aggregate, not a per-user resource.
     async getPoolStats(nowMs: number): Promise<AdminPoolStats> {
-      const [totalsRow] = await db
+      // IMPORTANT-2 fix: `live`/`newLast24h`/tagged MUST derive from the same
+      // liveRows array as functionMix/tzBands/freshness/concentration below —
+      // a separate COUNT query racing a concurrent crawl insert/delist would
+      // break sum(functionMix.count) === totals.live and could make
+      // restCount negative. Only `delisted` (a row-count with no downstream
+      // per-row aggregate to stay consistent with) still comes from SQL.
+      const [delistedRow] = await db
         .select({
-          live: sql<string>`count(case when ${postings.delistedAt} is null then 1 end)`,
           delisted: sql<string>`count(case when ${postings.delistedAt} is not null then 1 end)`,
-          newLast24h: sql<string>`count(case when ${postings.delistedAt} is null and ${postings.firstSeenAt} >= ${new Date(nowMs - DAY_MS)} then 1 end)`,
-          tagged: sql<string>`count(case when ${postings.delistedAt} is null and ${postings.functionTag} is not null then 1 end)`,
         })
         .from(postings);
 
@@ -60,12 +63,14 @@ export function createPoolStatsRepo(db: Db) {
         .from(sources);
 
       const liveRows = await db.select(LIVE_PROJECTION).from(postings).where(isNull(postings.delistedAt));
-      const live = Number(totalsRow.live);
+      const live = liveRows.length;
 
       const bucketAgg = new Map<string, { count: number; tag: number; keyword: number }>();
       const tzCounts = new Map<string, number>();
       const freshCounts = new Map<"24h" | "2-7d" | "8-30d" | "older", number>();
       const companyCounts = new Map<string, number>();
+      let newLast24h = 0;
+      let tagged = 0;
 
       for (const row of liveRows) {
         // MINOR-1 fix: ONE non-empty check (truthy — covers both null and
@@ -87,14 +92,22 @@ export function createPoolStatsRepo(db: Db) {
         entry.count += 1;
         entry[provenance] += 1;
         bucketAgg.set(bucket, entry);
+        // Same non-empty check as the tag/keyword split above — tagCoveragePct's
+        // numerator can never disagree with functionMix about "tagged".
+        if (tag) tagged += 1;
 
-        const tzBand = row.tzBand ?? "unassigned";
+        // MINOR-4 fix: any value outside the pinned bands (including junk —
+        // not just NULL) folds into 'unassigned' explicitly, so
+        // sum(tzBands.count) can never fall short of totals.live.
+        const rawTzBand = row.tzBand;
+        const tzBand = rawTzBand === "americas" || rawTzBand === "emea" || rawTzBand === "apac" ? rawTzBand : "unassigned";
         tzCounts.set(tzBand, (tzCounts.get(tzBand) ?? 0) + 1);
 
         const ageMs = nowMs - row.firstSeenAt.getTime();
         const freshBucket =
           ageMs <= DAY_MS ? "24h" : ageMs <= 7 * DAY_MS ? "2-7d" : ageMs <= 30 * DAY_MS ? "8-30d" : "older";
         freshCounts.set(freshBucket, (freshCounts.get(freshBucket) ?? 0) + 1);
+        if (freshBucket === "24h") newLast24h += 1;
 
         companyCounts.set(row.company, (companyCounts.get(row.company) ?? 0) + 1);
       }
@@ -131,11 +144,11 @@ export function createPoolStatsRepo(db: Db) {
       return {
         totals: {
           live,
-          delisted: Number(totalsRow.delisted),
-          newLast24h: Number(totalsRow.newLast24h),
+          delisted: Number(delistedRow.delisted),
+          newLast24h,
           sourcesEnabled: Number(sourcesRow.enabled),
           sourcesTotal: Number(sourcesRow.total),
-          tagCoveragePct: pct(Number(totalsRow.tagged), live),
+          tagCoveragePct: pct(tagged, live),
         },
         functionMix,
         tzBands,

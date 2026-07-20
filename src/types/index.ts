@@ -631,7 +631,10 @@ export const AdminPoolStats = z.object({
   concentration: z.object({
     topCompanies: z.array(z.object({ company: z.string(), count: z.number().int() })),
     top10Count: z.number().int(),
-    restCount: z.number().int(),
+    // IMPORTANT-2 fix: restCount is structurally live - top10Count now that
+    // both derive from the same liveRows pass — a negative value here would
+    // mean that invariant broke, so the schema rejects it at the boundary.
+    restCount: z.number().int().nonnegative(),
   }),
 });
 export type AdminPoolStats = z.infer<typeof AdminPoolStats>;

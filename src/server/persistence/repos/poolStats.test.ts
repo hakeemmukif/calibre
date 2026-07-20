@@ -119,6 +119,27 @@ describe("poolStatsRepo.getPoolStats", () => {
     expect(totalMixCount).toBe(stats.totals.live);
   });
 
+  it("folds a junk tz_band value into 'unassigned' instead of vanishing from tzBands (MINOR-4)", async () => {
+    const db = await createTestDb();
+    const repo = createPoolStatsRepo(db);
+    const source = await insertSource(db, { enabled: true });
+
+    // tzBand is TS-enum-constrained ("apac"|"emea"|"americas") but SQLite
+    // enforces no CHECK — a junk value can still land in the column (bad
+    // data drift, manual edit) and must not silently vanish from tzBands.
+    await insertPosting(db, source.id, { title: "Backend Engineer", tzBand: "moon-base" as "americas" });
+    await insertPosting(db, source.id, { title: "Sales Rep", tzBand: "americas" });
+    await insertPosting(db, source.id, { title: "Support Rep", tzBand: null });
+
+    const stats = await repo.getPoolStats(NOW);
+
+    expect(stats.tzBands.find((b) => b.band === "unassigned")).toMatchObject({ count: 2 });
+    expect(stats.tzBands.find((b) => b.band === "americas")).toMatchObject({ count: 1 });
+
+    const totalTzCount = stats.tzBands.reduce((sum, b) => sum + b.count, 0);
+    expect(totalTzCount).toBe(stats.totals.live);
+  });
+
   it("resolves the 6 P.4 tags whose spelling diverges from a bucket id via TAG_TO_BUCKET, source 'tag'", async () => {
     const db = await createTestDb();
     const repo = createPoolStatsRepo(db);

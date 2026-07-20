@@ -114,6 +114,7 @@
           "concentration": {
             "properties": {
               "restCount": {
+                "minimum": 0,
                 "type": "integer"
               },
               "top10Count": {

@@ -35,8 +35,8 @@ function collapseSmall(segments: StripSegment[]): StripSegment[] {
 // Strip — a 100%-stacked bar (FitBar's rounded-track geometry, not the FitBar
 // component itself — FitBar only expresses one value/tone pair) + a Chip
 // legend row underneath (spec §3: "Chip legends").
-function Strip({ title, segments }: { title: string; segments: StripSegment[] }) {
-  const collapsed = collapseSmall(segments);
+function Strip({ title, segments, collapse = true }: { title: string; segments: StripSegment[]; collapse?: boolean }) {
+  const collapsed = collapse ? collapseSmall(segments) : segments;
   return (
     <div style={{ marginBottom: 20 }}>
       <div style={{ font: "var(--type-h3)", color: "var(--text-strong)", marginBottom: 8 }}>{title}</div>
@@ -127,7 +127,12 @@ export function PoolStrips({ tzBands, freshness, concentration }: PoolStripsProp
     <div>
       <Strip title="Timezone band" segments={tzSegments} />
       <Strip title="Freshness" segments={freshSegments} />
-      <Strip title="Company concentration" segments={concentrationSegments} />
+      {/* No collapseSmall here — the top-10 selection already IS the collapse
+          (concentration.topCompanies caps at 10, "Rest of pool" is the tail).
+          At production scale the top company is ~1-2% share, well under the
+          4% collapse threshold — running collapseSmall would fold every
+          company into "Other" and render no company names at all. */}
+      <Strip title="Company concentration" segments={concentrationSegments} collapse={false} />
     </div>
   );
 }

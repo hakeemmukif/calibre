@@ -310,6 +310,12 @@ describe("AdminPoolStats", () => {
       AdminPoolStats.parse({ ...valid, functionMix: [{ bucket: "engineering", count: 1, share: 1, source: "llm" }] }),
     ).toThrow();
   });
+
+  it("rejects a negative concentration.restCount", () => {
+    expect(() =>
+      AdminPoolStats.parse({ ...valid, concentration: { ...valid.concentration, restCount: -1 } }),
+    ).toThrow();
+  });
 });
 
 it("RegisterRequest enforces a minimum password length", () => {
