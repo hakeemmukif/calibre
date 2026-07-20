@@ -3,9 +3,11 @@
 // where sendBeacon is missing or refuses the payload. Never throws: a failed
 // report must not cascade into the error UI itself.
 import type { ClientErrorReport } from "@/types";
+import { captureException } from "@/features/analytics/client";
 
 export function reportClientError(error: Error & { digest?: string }): void {
   try {
+    captureException(error);
     const report: ClientErrorReport = {
       message: (error.message || "Unknown client error").slice(0, 2000),
       stack: error.stack?.slice(0, 8000),
