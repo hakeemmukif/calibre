@@ -33,7 +33,7 @@ import { resolveIsNewCutoff } from "./jobsFeed";
 import { deriveRoleTargets, roleFuzzyMatch } from "./roleMatch";
 import { ensureFunctionTag } from "@/server/sources/function";
 
-export const TOP_N_CANDIDATES = 30; // system-architecture.md §6 decision 8 "per-run score cap (~30 jobs)"
+export const TOP_N_CANDIDATES = 40; // system-architecture.md §6 decision 8 per-run score cap — raised 30->40 post-pool-cutover
 const SCORE_CONCURRENCY = 3; // rolling scoring pool width — each match-score call is observed at 25-60s
 
 export class NoActiveResumeError extends Error {
@@ -72,12 +72,13 @@ const POOL_LANE_NAME = "Global postings pool";
 const STALE_CRAWL_MS = 48 * 60 * 60 * 1000;
 
 // Observed live (task-7b smoke): 25-60s per match-score call on the
-// configured model (gpt-oss-120b). TOP_N (30) scored through a SCORE_CONCURRENCY
-// (3)-wide rolling pool is up to ~10 pool-widths sequential, each bounded
-// by its slowest job (worst case ~60s) => up to ~10 min worst case. Spend is
-// already bounded by TOP_N + the optional CALIBER_DAILY_LLM_USD cap, so a
-// longer wall-clock cap doesn't unbound cost — only lets slow runs finish.
-const DEFAULT_HARD_RUN_TIMEOUT_MS = 10 * 60 * 1000;
+// configured model (gpt-oss-120b). TOP_N (40) scored through a SCORE_CONCURRENCY
+// (3)-wide rolling pool is up to ~13.3 pool-widths sequential, each bounded
+// by its slowest job (worst case ~60s) => up to ~13.3 min worst case, so the
+// 15 min cap keeps headroom above it. Spend is already bounded by TOP_N + the
+// optional CALIBER_DAILY_LLM_USD cap, so a longer wall-clock cap doesn't
+// unbound cost — only lets slow runs finish.
+const DEFAULT_HARD_RUN_TIMEOUT_MS = 15 * 60 * 1000;
 
 export interface StartSearchInput {
   persona: ScanPersona;

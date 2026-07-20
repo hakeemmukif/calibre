@@ -872,18 +872,23 @@ describe("sortCandidatesForRanking (Task 1.2 — deterministic top-N ranking)", 
     return out;
   }
 
-  it("top-30 slice is byte-identical (same postings, same order) across shuffled insertion orders", () => {
+  it("top-N slice is byte-identical (same postings, same order) across shuffled insertion orders", () => {
     const base = Date.now();
+    // distinct + tie groups fill exactly TOP_N_CANDIDATES; the null group is
+    // the margin that must be excluded from the top-N slice.
+    const distinctCount = TOP_N_CANDIDATES - 10;
     const candidates: MinimalCandidate[] = [
-      ...Array.from({ length: 20 }, (_, i) => candidate(`distinct-${String(i).padStart(2, "0")}`, new Date(base + (20 - i) * 1000))),
+      ...Array.from({ length: distinctCount }, (_, i) =>
+        candidate(`distinct-${String(i).padStart(2, "0")}`, new Date(base + (distinctCount - i) * 1000)),
+      ),
       ...Array.from({ length: 10 }, (_, i) => candidate(`tie-${String(i).padStart(2, "0")}`, new Date(base))),
       ...Array.from({ length: 10 }, (_, i) => candidate(`null-${String(i).padStart(2, "0")}`, null)),
     ];
     expect(candidates.length).toBeGreaterThan(TOP_N_CANDIDATES);
 
-    const expectedTop30 = sortCandidatesForRanking(candidates).slice(0, TOP_N_CANDIDATES);
-    expect(expectedTop30.some((c) => c.job.postedAt === null)).toBe(false);
-    expect(expectedTop30.map((c) => c.job.dedupeKey).slice(20, 30)).toEqual(
+    const expectedTopN = sortCandidatesForRanking(candidates).slice(0, TOP_N_CANDIDATES);
+    expect(expectedTopN.some((c) => c.job.postedAt === null)).toBe(false);
+    expect(expectedTopN.map((c) => c.job.dedupeKey).slice(distinctCount, TOP_N_CANDIDATES)).toEqual(
       Array.from({ length: 10 }, (_, i) => `tie-${String(i).padStart(2, "0")}`),
     );
 
@@ -891,8 +896,8 @@ describe("sortCandidatesForRanking (Task 1.2 — deterministic top-N ranking)", 
       const shuffled = seededShuffle(candidates, seed);
       expect(shuffled.map((c) => c.job.dedupeKey)).not.toEqual(candidates.map((c) => c.job.dedupeKey));
 
-      const top30 = sortCandidatesForRanking(shuffled).slice(0, TOP_N_CANDIDATES);
-      expect(top30).toEqual(expectedTop30);
+      const topN = sortCandidatesForRanking(shuffled).slice(0, TOP_N_CANDIDATES);
+      expect(topN).toEqual(expectedTopN);
     }
   });
 });
