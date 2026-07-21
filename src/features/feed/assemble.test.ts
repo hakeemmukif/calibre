@@ -160,6 +160,11 @@ describe("assembleJob", () => {
     expect(b.tags.find((t) => t.label === "APAC hours")).toBeUndefined();
   });
 
+  it("suppresses the schedule pill for tzBand=worldwide (no fixed schedule to show)", () => {
+    const a = assembleJob(baseJoined({ tzBand: "worldwide" }));
+    expect(a.tags).toHaveLength(1); // legitimacy tag only
+  });
+
   it("appends a structure pill only when stated", () => {
     const a = assembleJob(baseJoined({ hiringStructure: "contractor" }));
     expect(a.tags.find((t) => t.label === "Contractor")?.tone).toBe("neutral");

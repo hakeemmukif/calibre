@@ -9,7 +9,10 @@ import type { TzBand, ScheduleFlex, EmploymentPref, HiringStructure } from "@/ty
 // (spec §14.2 trust-killer guard: "Lisbon, PT" must not map to Americas).
 const SAFE_TOKENS: [RegExp, TzBand][] = [
   [/\b(PST|PDT|MST|MDT|EST|EDT|US ?hours|US working hours|north america|latam|americas)\b/i, "americas"],
-  [/\b(CET|CEST|GMT|BST|UTC|EU ?hours|EU working hours|emea|europe|middle east)\b/i, "emea"],
+  // "europe(?:an)?" (not a bare "europe" \b-token) so "European Time Zones"
+  // matches too — plain \beurope\b stops short of "European" (no boundary
+  // between "europe" and the following "an").
+  [/\b(CET|CEST|GMT|BST|UTC|EU ?hours|EU working hours|emea|europe(?:an)?|middle east)\b/i, "emea"],
   [/\b(SGT|MYT|AEST|AEDT|JST|APAC ?hours|APAC|asia)\b/i, "apac"],
   // Bare ISO country code, anchored to the job-board idiom "Remote[-/in] <CODE>"
   // only — never a standalone bare token (same trust-killer posture as PT/ET
@@ -43,7 +46,11 @@ const AMBIGUOUS = /\b(CST|IST)\b/i;
 // this map; "Lisbon" now correctly resolves emea from the CITY, not the code.
 // Countries carry most of the weight (near-zero homonym risk); cities are
 // curated to globally-unique hubs plus the MY market's own towns.
-const PLACE_NAMES: Record<TzBand, string[]> = {
+// `worldwide` carries no geography of its own (it means "no single place"),
+// so it is deliberately excluded from this Record's key set rather than given
+// an empty (and regex-poisonous — an empty alternation matches everywhere)
+// entry.
+const PLACE_NAMES: Record<Exclude<TzBand, "worldwide">, string[]> = {
   apac: [
     "Malaysia", "Singapore", "Indonesia", "Thailand", "Philippines", "Vietnam",
     "Cambodia", "Laos", "Myanmar", "Brunei", "India", "China", "Japan",
@@ -97,16 +104,26 @@ const PLACE_NAMES: Record<TzBand, string[]> = {
 // Built once at module load. Internal spaces -> [\s-]+ (tolerate "Ho  Chi  Minh"
 // AND the job-board idiom "Remote-United-States"); \b anchors both ends so
 // "India" never matches "Indiana" and "China" never matches "Chinatown".
-const PLACE_TOKENS: [RegExp, TzBand][] = (Object.keys(PLACE_NAMES) as TzBand[]).map((band) => [
+const PLACE_TOKENS: [RegExp, TzBand][] = (Object.keys(PLACE_NAMES) as Exclude<TzBand, "worldwide">[]).map((band) => [
   new RegExp(`\\b(?:${PLACE_NAMES[band].map((n) => n.replace(/ /g, "[\\s-]+")).join("|")})\\b`, "i"),
   band,
 ]);
 
+// Location-agnostic hiring, stated explicitly by the employer (spec §2).
+// Same style as SAFE_TOKENS (checked under either "stated" or "location"
+// source); probed LAST in probeTzToken so a specific regional token in the
+// same string always wins ("Global Anywhere - Eastern or European Time
+// Zones" resolves emea via the "european" SAFE_TOKEN, never worldwide).
+const WORLDWIDE_TOKEN = /\b(anywhere|worldwide|global|globally)\b/i;
+
 const SCHEDULE_ORDER: ScheduleFlex[] = ["base-hours", "flex-evenings", "any-hours"];
+// worldwide sits at the lowest flex tier: a location-agnostic job is workable
+// at any schedule flex, so it must be admitted (never demoted) at every tier.
 const BAND_MIN_FLEX: Record<TzBand, ScheduleFlex> = {
   apac: "base-hours",
   emea: "flex-evenings",
   americas: "any-hours",
+  worldwide: "base-hours",
 };
 
 // Pure, NON-logging lookup. The recompute scavenge (Task 5) calls this over every
@@ -118,11 +135,48 @@ export function probeTzToken(text: string, source: "stated" | "location"): TzBan
   // stated-vs-location distinction the way bare 2-letter codes are.
   for (const [re, band] of PLACE_TOKENS) if (re.test(text)) return band;
   if (source === "stated") for (const [re, band] of STATED_ONLY_TOKENS) if (re.test(text)) return band;
+  // Worldwide is the last resort: a regional token anywhere in the same
+  // string already returned above, so reaching here means none matched.
+  if (WORLDWIDE_TOKEN.test(text)) return "worldwide";
   return null;
 }
 
-export function resolveTzBand(args: { statedTz?: string | null; location?: string | null }): { band: TzBand; evidence: string } | null {
-  // Precedence: JD-stated requirement (authority) -> location-string token.
+// Curated, high-precision JD phrase lists (spec §2 description probe) — zero
+// LLM, deterministic. Conservative by the same philosophy as SAFE_TOKENS:
+// extend only with clearly unambiguous phrasings.
+const WORLDWIDE_PHRASES: RegExp[] = [
+  /work from anywhere/i,
+  /anywhere in the world/i,
+  /fully remote,? anywhere/i,
+  /location doesn'?t matter/i,
+];
+const REGION_RESTRICTIVE_PHRASES: [RegExp, TzBand][] = [
+  [/must be based in the us\b/i, "americas"],
+  [/eligible to work in the united states/i, "americas"],
+  [/based in europe\b/i, "emea"],
+  [/apac hours\b/i, "apac"],
+  [/apac time ?zone\b/i, "apac"],
+];
+
+// Last-resort JD-text probe, only reached when statedTz and location both
+// gave nothing (resolveTzBand). Any conflict (worldwide-positive alongside a
+// region-restrictive hit, or two different regions) is deliberately
+// unresolved -> null, same "never guess" posture as AMBIGUOUS tokens above.
+function probeDescriptionTzBand(description: string): TzBand | null {
+  const worldwideHit = WORLDWIDE_PHRASES.some((re) => re.test(description));
+  const regionHits = new Set(REGION_RESTRICTIVE_PHRASES.filter(([re]) => re.test(description)).map(([, band]) => band));
+  if (worldwideHit && regionHits.size === 0) return "worldwide";
+  if (!worldwideHit && regionHits.size === 1) return [...regionHits][0]!;
+  return null;
+}
+
+export function resolveTzBand(args: {
+  statedTz?: string | null;
+  location?: string | null;
+  description?: string | null;
+}): { band: TzBand; evidence: string } | null {
+  // Precedence: JD-stated requirement (authority) -> location-string token ->
+  // JD-description phrase probe (last resort, spec §2).
   const sources: [string, "stated" | "location", string | null | undefined][] = [
     ["JD", "stated", args.statedTz],
     ["location", "location", args.location],
@@ -141,6 +195,10 @@ export function resolveTzBand(args: { statedTz?: string | null; location?: strin
       console.warn(`tzBand: unmapped timezone requirement: "${text}"`);
       return null;
     }
+  }
+  if (args.description) {
+    const band = probeDescriptionTzBand(args.description);
+    if (band) return { band, evidence: "description" };
   }
   return null; // nothing mapped -> no band
 }
@@ -167,6 +225,9 @@ export function allowedStructuresFor(pref: EmploymentPref): HiringStructure[] | 
 // null allowed-set ("no gate": any-hours / any) or a NULL stated value counts
 // as aligned — the "stated facts only" rule, no fabricated default.
 export function isBandAligned(band: TzBand | null, allowedBands: TzBand[] | null): boolean {
+  // Worldwide boosts every band's user-facing supply (spec §5): the one
+  // shared rule, never duplicated at another call site.
+  if (band === "worldwide") return true;
   return allowedBands === null || band === null || allowedBands.includes(band);
 }
 

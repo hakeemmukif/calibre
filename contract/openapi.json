@@ -239,6 +239,7 @@
                     "americas",
                     "emea",
                     "apac",
+                    "worldwide",
                     "unassigned"
                   ],
                   "type": "string"

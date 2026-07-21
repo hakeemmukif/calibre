@@ -65,7 +65,13 @@ function Strip({ title, segments, collapse = true }: { title: string; segments: 
   );
 }
 
-const TZ_LABELS: Record<string, string> = { americas: "Americas", emea: "EMEA", apac: "APAC", unassigned: "Unassigned" };
+const TZ_LABELS: Record<string, string> = {
+  americas: "Americas",
+  emea: "EMEA",
+  apac: "APAC",
+  worldwide: "Worldwide",
+  unassigned: "Unassigned",
+};
 const FRESHNESS_LABELS: Record<string, string> = {
   "24h": "Last 24h",
   "2-7d": "2–7 days",

@@ -1234,7 +1234,11 @@ describe("jobsRepo.listScored — P.5 soft-rank ordering + cursor (DECISION A, o
     const source = await insertSource(db);
     const resume = await insertResume(db);
 
-    const bands: (TzBand | null)[] = [null, "apac", "emea", "americas"];
+    // "worldwide" included (2026-07-21-worldwide-tzband-design.md §5): it must
+    // stay aligned (0) even though rankBands below is a hand-built list that
+    // does NOT itself contain "worldwide" — the alignment rule is a hardcoded
+    // special case, not reliance on rankBands always including it.
+    const bands: (TzBand | null)[] = [null, "apac", "emea", "americas", "worldwide"];
     const structures: (HiringStructure | null)[] = [null, "local-entity", "eor", "contractor"];
     const rankBands: TzBand[] = ["apac"];
     const rankStructures: HiringStructure[] = ["local-entity"];

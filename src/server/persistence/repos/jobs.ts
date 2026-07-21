@@ -133,9 +133,12 @@ function misalignedCountSql(
   rankBands: TzBand[] | null | undefined,
   rankStructures: HiringStructure[] | null | undefined,
 ): SQL<number> {
+  // tz_band='worldwide' is always aligned (isBandAligned's shared rule),
+  // regardless of rankBands — mirrored here rather than relying on rankBands
+  // to already include "worldwide" (callers may pass a hand-built list).
   const band =
     rankBands && rankBands.length > 0
-      ? sql`(CASE WHEN ${jobs.tzBand} IS NOT NULL AND ${notInArray(jobs.tzBand, rankBands)} THEN 1 ELSE 0 END)`
+      ? sql`(CASE WHEN ${jobs.tzBand} IS NOT NULL AND ${jobs.tzBand} <> 'worldwide' AND ${notInArray(jobs.tzBand, rankBands)} THEN 1 ELSE 0 END)`
       : sql`0`;
   const structure =
     rankStructures && rankStructures.length > 0

@@ -187,7 +187,7 @@ export const jobs = sqliteTable(
     // Spec 2026-07-14 §6: stated remote-fit facts. NULL = nothing stated (never
     // hidden by the schedule/structure gate). tz_band is normalized from a
     // stated TZ requirement (resolveTzBand); hiring_structure is stated-only.
-    tzBand: text("tz_band", { enum: ["apac", "emea", "americas"] }),
+    tzBand: text("tz_band", { enum: ["apac", "emea", "americas", "worldwide"] }),
     hiringStructure: text("hiring_structure", { enum: ["local-entity", "eor", "contractor"] }),
     // Global postings pool (2026-07-17 arch §1.3): provenance link to the
     // shared `postings` row this per-user job was admitted from. Nullable —
@@ -421,7 +421,7 @@ export const postings = sqliteTable(
     lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()), // bumped every crawl that re-sees it
     delistedAt: integer("delisted_at", { mode: "timestamp_ms" }), // arch §2.5; null = live
     persona: text("persona", { enum: ["remote", "local", "both"] }).notNull(), // copied from the source row at crawl
-    tzBand: text("tz_band", { enum: ["apac", "emea", "americas"] }), // resolveTzBand(location): profile-independent, stamped at crawl (P.3)
+    tzBand: text("tz_band", { enum: ["apac", "emea", "americas", "worldwide"] }), // resolveTzBand(location): profile-independent, stamped at crawl (P.3)
     // Coarse function classification (arch §3.3). Null = not yet classified; the
     // first scan to surface a posting classifies it and writes back via
     // setFunctionTag. functionTagVersion carries the classifier version so a

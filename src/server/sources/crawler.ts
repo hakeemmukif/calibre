@@ -234,9 +234,11 @@ async function upsertPosting(db: Db, source: SourceRow, winner: Winner, nowMs: n
     .where(eq(postings.canonicalKey, ck))
     .limit(1);
   const aliases = mergeAliases(existing?.aliases ?? [], winner.aliasUrls);
-  // tzBand is profile-INdependent (resolveTzBand reads only the location), so
-  // it is stamped at crawl, not at admission (arch §1.1).
-  const tz = resolveTzBand({ location: p.location ?? null });
+  // tzBand is profile-INdependent (resolveTzBand reads only location/JD text),
+  // so it is stamped at crawl, not at admission (arch §1.1). description feeds
+  // the worldwide-band JD-phrase probe (spec 2026-07-21 §2/§3), last resort
+  // when location yields nothing.
+  const tz = resolveTzBand({ location: p.location ?? null, description: p.description ?? null });
   const nowDate = new Date(nowMs);
   const values: NewPosting = {
     canonicalKey: ck,
