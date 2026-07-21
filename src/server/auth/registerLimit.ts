@@ -1,6 +1,8 @@
 // Per-IP registration limit (membership spec §4.5.3): 3/hour fixed window,
 // in-memory. Correct because the app is one process by design (same
 // assumption as the SSE run registry, src/server/runs/registry.ts).
+import { testDoublesEnabled } from "@/lib/llm/client";
+
 const WINDOW_MS = 60 * 60_000;
 const MAX_PER_WINDOW = 3;
 
@@ -10,6 +12,9 @@ g.__caliberRegisterLimiter ??= new Map();
 const buckets = g.__caliberRegisterLimiter;
 
 export function checkRegisterLimit(ip: string, now = Date.now()): boolean {
+  // e2e's single webServer process registers well past 3/hr across specs;
+  // the limit only protects the real endpoint, so skip it under test doubles.
+  if (testDoublesEnabled()) return true;
   const b = buckets.get(ip);
   if (!b || now - b.windowStart >= WINDOW_MS) {
     buckets.set(ip, { windowStart: now, count: 1 });

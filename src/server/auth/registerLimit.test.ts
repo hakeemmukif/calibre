@@ -34,4 +34,17 @@ describe("checkRegisterLimit", () => {
     const afterWindow = start + 60 * 60_000;
     expect(checkRegisterLimit(ip, afterWindow)).toBe(true);
   });
+
+  it("bypasses the limit under CALIBER_TEST_DOUBLES", () => {
+    process.env.CALIBER_TEST_DOUBLES = "1";
+    try {
+      const ip = "203.0.113.9";
+      expect(checkRegisterLimit(ip)).toBe(true);
+      expect(checkRegisterLimit(ip)).toBe(true);
+      expect(checkRegisterLimit(ip)).toBe(true);
+      expect(checkRegisterLimit(ip)).toBe(true);
+    } finally {
+      delete process.env.CALIBER_TEST_DOUBLES;
+    }
+  });
 });
