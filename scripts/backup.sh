@@ -51,13 +51,36 @@ find "$LOCAL_RETENTION_DIR" -type f -name "caliber-*.db" -mtime +30 -delete
 docker compose cp app:/var/lib/caliber/uploads "$WORK/uploads"
 tar -czf "$WORK/uploads-$STAMP.tar.gz" -C "$WORK" uploads
 
+# 3b. Raw crawl archive (2026-07-21-raw-crawl-archive-design.md §6) — the
+# newest date-dir under the archive volume (at this 03:17 run, that's the
+# previous evening's 21:00-Berlin crawl). Contents are already gzipped, so
+# `tar -cf` with NO `-z`. Archiving may be disabled (CALIBER_ARCHIVE_DIR
+# unset) or the crawl may not have produced a night's dir yet — either way,
+# log and skip; alert-check already pages on crawl failure itself, this is
+# not a second failure surface. Local date-dirs are never pruned here
+# (retention decision A) — the box itself is the copy of record, this is a
+# nightly off-box mirror.
+ARCHIVE_DATE_DIR="$(docker compose exec -T app sh -c 'ls -1 /var/lib/caliber/archive 2>/dev/null | sort | tail -1' | tr -d '\r')"
+if [ -n "$ARCHIVE_DATE_DIR" ]; then
+  docker compose cp "app:/var/lib/caliber/archive/$ARCHIVE_DATE_DIR" "$WORK/archive-$ARCHIVE_DATE_DIR"
+  tar -cf "$WORK/archive-$ARCHIVE_DATE_DIR.tar" -C "$WORK" "archive-$ARCHIVE_DATE_DIR"
+else
+  echo "backup: no archive date-dir found — skipping (archiving disabled or crawl produced none yet)"
+fi
+
 # 4. Encrypt to the operator's age public key.
 age -r "$AGE_RECIPIENT" -o "$WORK/caliber-$STAMP.db.age" "$WORK/caliber-$STAMP.db"
 age -r "$AGE_RECIPIENT" -o "$WORK/uploads-$STAMP.tar.gz.age" "$WORK/uploads-$STAMP.tar.gz"
+if [ -n "$ARCHIVE_DATE_DIR" ]; then
+  age -r "$AGE_RECIPIENT" -o "$WORK/archive-$ARCHIVE_DATE_DIR.tar.age" "$WORK/archive-$ARCHIVE_DATE_DIR.tar"
+fi
 
 # 5. Off-box.
 rclone copyto "$WORK/caliber-$STAMP.db.age" "$RCLONE_REMOTE/db/caliber-$STAMP.db.age"
 rclone copyto "$WORK/uploads-$STAMP.tar.gz.age" "$RCLONE_REMOTE/uploads/uploads-$STAMP.tar.gz.age"
+if [ -n "$ARCHIVE_DATE_DIR" ]; then
+  rclone copyto "$WORK/archive-$ARCHIVE_DATE_DIR.tar.age" "$RCLONE_REMOTE/archive/archive-$ARCHIVE_DATE_DIR.tar.age"
+fi
 
 # 6. Success marker — alert-check.sh pages when this is older than ~26h.
 mkdir -p "$STATE_DIR"
