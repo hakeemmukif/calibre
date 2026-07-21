@@ -69,7 +69,7 @@ test("profile: relocation flip persists, reveals abroad jobs, and re-scopes the 
 
     await page.getByRole("navigation").getByRole("button", { name: "Matches" }).click();
     await expect(page).toHaveURL(/\/feed$/);
-    await expect(page.getByText("Excluded · outside your remote preferences")).toBeVisible();
+    await expect(page.getByText("Excluded · requires relocation abroad")).toBeVisible();
     await expect(page.getByText("Acme US", { exact: false })).not.toBeVisible();
 
     const feed = await (await request.get("/api/jobs?persona=remote")).json();

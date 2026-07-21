@@ -19,8 +19,8 @@ function CreditsChip() {
   const { balance, plan } = useCredits();
   if (balance === null || plan === "unlimited") return null;
   return (
-    <div style={{ position: "fixed", top: 16, right: 24, zIndex: 39 }}>
-      <Chip>⬡ {balance} credits</Chip>
+    <div style={{ position: "fixed", top: 16, right: 24, zIndex: 39, pointerEvents: "none" }}>
+      <Chip style={{ pointerEvents: "auto" }}>⬡ {balance} credits</Chip>
     </div>
   );
 }

@@ -41,6 +41,7 @@ export default function TailorPage() {
   // from a detached component.
   const aliveRef = React.useRef(true);
   React.useEffect(() => {
+    aliveRef.current = true;
     return () => {
       aliveRef.current = false;
     };
