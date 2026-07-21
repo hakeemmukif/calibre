@@ -52,20 +52,49 @@ describe("resolveTzBand token table", () => {
     ["Buenos Aires", "americas"],
     ["United States", "americas"],
     ["London, United Kingdom", "emea"],
+    // Hyphen-joined multi-word place names (job-board idiom "Remote-<Country>") —
+    // the join separator between words must tolerate "-" as well as whitespace.
+    ["Remote-United-States", "americas"],
+    ["Remote-United-Kingdom", "emea"],
+    // Bare country code, anchored to the "Remote[-/in] <CODE>" idiom only —
+    // never a bare 2-letter code on its own (§14.2 trust-killer stays intact).
+    ["Remote-US", "americas"],
+    ["Remote - US", "americas"],
+    ["Remote in UK", "emea"],
+    ["Korea", "apac"],
+    ["Riyadh", "emea"],
+    ["Middle East", "emea"],
+    ["Paris", "emea"],
+    // US state abbreviation, comma-anchored ("City, ST") — never a bare token.
+    ["Philadelphia, PA", "americas"],
+    ["Dallas, TX", "americas"],
+    ["Broomfield, CO", "americas"],
+    ["Detroit, MI", "americas"],
+    ["Irving, TX", "americas"],
   ] as [string, "apac" | "emea" | "americas"][])("location %s -> %s", (location, band) => {
     expect(resolveTzBand({ location })!.band).toBe(band);
   });
-  // Homonyms are deliberately excluded, and \b anchors prevent substring leaks.
-  it.each(["Georgia", "Perth", "Athens, GA", "Indiana", "Chinatown, San Francisco County"])(
-    "ambiguous / substring-trap location %s does NOT mis-map",
+  // Worldwide/anywhere-band policy is out of scope here (decided separately) —
+  // these must stay unclassified, not silently fold into a band.
+  it.each(["Remote", "Remote - Anywhere", "Anywhere", "Global", "Globally", "Global Anywhere", "Remote Role", "Tier 2"])(
+    "worldwide/vague location %s stays unclassified (null)",
     (location) => {
-      // Chinatown case still resolves via "San Francisco" -> americas, never
-      // apac via a "China" substring; the others map to null.
-      const res = resolveTzBand({ location });
-      if (location.includes("San Francisco")) expect(res!.band).toBe("americas");
-      else expect(res).toBeNull();
+      expect(resolveTzBand({ location })).toBeNull();
     },
   );
+  // Homonyms are deliberately excluded, and \b anchors prevent substring leaks.
+  it.each(["Georgia", "Perth", "Indiana"])("ambiguous / substring-trap location %s does NOT mis-map", (location) => {
+    expect(resolveTzBand({ location })).toBeNull();
+  });
+  it.each([
+    // Resolves via "San Francisco" -> americas, never apac via a "China" substring.
+    ["Chinatown, San Francisco County", "americas"],
+    // The comma-anchored state code disambiguates what the bare city name
+    // (deliberately excluded — Athens GR/US) alone could not.
+    ["Athens, GA", "americas"],
+  ] as [string, "apac" | "emea" | "americas"][])("substring/comma-disambiguated location %s -> %s", (location, band) => {
+    expect(resolveTzBand({ location })!.band).toBe(band);
+  });
   it("nothing stated -> null (no guess, no log)", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     expect(resolveTzBand({})).toBeNull();
