@@ -37,6 +37,7 @@ const STATS = {
   perHostBackoffs: {},
   emptyFetches: [] as string[],
   failedSources: [] as { id: string; error: string }[],
+  archiveErrors: 0,
 };
 
 describe("GET /api/admin/crawl", () => {

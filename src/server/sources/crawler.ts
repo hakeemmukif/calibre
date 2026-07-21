@@ -36,6 +36,7 @@ import type { NewPosting } from "../persistence/repos/postings";
 import { resolveTzBand } from "../score/tzBand";
 import type { RawPosting, SourceConnector } from "../search/connector";
 import { ConnectorHttpError } from "../search/connectors/_http";
+import { archiveContext, startArchiveRun } from "./archive";
 import {
   canonicalKey,
   crossBoardKey,
@@ -62,6 +63,9 @@ export interface CrawlStats {
   // 2026-07 postmortem: a bare failed-count forced re-deriving the cause from
   // raw log scraping).
   failedSources: { id: string; error: string }[];
+  // Archive I/O failure count (2026-07-21-raw-crawl-archive-design.md §5) —
+  // mirrors CrawlRunStats.archiveErrors; archive failures never abort the crawl.
+  archiveErrors: number;
 }
 
 export interface CrawlRunResult {
@@ -187,9 +191,12 @@ function createWriterQueue() {
   };
 }
 
-async function drain(iter: AsyncIterable<RawPosting>): Promise<RawPosting[]> {
+async function drain(iter: AsyncIterable<RawPosting>, onEach?: (posting: RawPosting) => void): Promise<RawPosting[]> {
   const out: RawPosting[] = [];
-  for await (const posting of iter) out.push(posting);
+  for await (const posting of iter) {
+    onEach?.(posting);
+    out.push(posting);
+  }
   return out;
 }
 
@@ -359,6 +366,7 @@ export async function runCrawl(deps: CrawlDeps): Promise<CrawlRunResult> {
     durationMs: 0,
     emptyFetches: [],
     failedSources: [],
+    archiveErrors: 0,
   };
   let sourcesSkipped = 0;
   let purged = 0;
@@ -369,6 +377,19 @@ export async function runCrawl(deps: CrawlDeps): Promise<CrawlRunResult> {
     // created, no writes) — F6.
     return { runId: null, status: "skipped", stats, purged: 0, sourcesSkipped: deps.sources.length };
   }
+
+  // Raw crawl archive (2026-07-21-raw-crawl-archive-design.md §4): enabled
+  // iff CALIBER_ARCHIVE_DIR is set — no invented default path. Disabled logs
+  // one explicit line; startArchiveRun returns an inert no-op writer either
+  // way, so the rest of this function never branches on enabled/disabled.
+  const archiveDir = process.env.CALIBER_ARCHIVE_DIR;
+  if (!archiveDir) console.log("archive disabled: CALIBER_ARCHIVE_DIR unset");
+  const runDate = new Date(runStartedAt).toISOString().slice(0, 10);
+  const writer = startArchiveRun(archiveDir, runDate);
+  // sourceId -> this run's fetch outcome, fed to writer.writeManifest at the
+  // end (§3 manifest per-source ok|error) — the writer itself only knows
+  // pages/postings counts, not fetch success/failure.
+  const perSourceStatus: Record<string, "ok" | "error"> = {};
 
   const stoppedHosts = new Set<string>();
   const limiter = createHostLimiter(concurrency);
@@ -384,13 +405,21 @@ export async function runCrawl(deps: CrawlDeps): Promise<CrawlRunResult> {
     }
     let boardPostings: RawPosting[];
     try {
-      boardPostings = await drain(
-        connectorFor(source).discover({
-          targets: [],
-          since: new Date(0),
-          signal: signal ?? new AbortController().signal,
-          onProgress: () => {},
-        }),
+      // Archive capture point (a): _http.ts tees every raw response while
+      // this source's discover() drain runs inside this context (§2a).
+      boardPostings = await archiveContext.run({ sourceId: source.id, runDate, writer }, () =>
+        drain(
+          connectorFor(source).discover({
+            targets: [],
+            since: new Date(0),
+            signal: signal ?? new AbortController().signal,
+            onProgress: () => {},
+          }),
+          // Archive capture point (b): every drained RawPosting, pre-collapse,
+          // appended to postings.jsonl.gz (§2b) — before groupBoardPostings
+          // ever collapses same-opening duplicates.
+          (p) => writer.appendPosting({ runDate, sourceId: source.id, canonicalKey: canonicalKey(p), posting: p }),
+        ),
       );
     } catch (err) {
       if (isBackoffStatus(err)) {
@@ -398,6 +427,7 @@ export async function runCrawl(deps: CrawlDeps): Promise<CrawlRunResult> {
         stats.perHostBackoffs[host] = (stats.perHostBackoffs[host] ?? 0) + 1;
       }
       stats.sourcesFailed += 1;
+      perSourceStatus[source.id] = "error";
       const errorMessage = err instanceof Error ? err.message : String(err);
       stats.failedSources.push({ id: source.id, error: errorMessage.slice(0, FAILED_SOURCE_ERROR_CAP) });
       // Recorded, not thrown — a failing source must not abort the crawl (F1),
@@ -426,26 +456,45 @@ export async function runCrawl(deps: CrawlDeps): Promise<CrawlRunResult> {
         stats.delists += await delistSweep(db, source.id, runStartedAt, now());
       }
     });
+    perSourceStatus[source.id] = "ok";
     stats.sourcesOk += 1;
   }
 
   try {
     await Promise.all(deps.sources.map((source) => limiter(hostFor(source), () => crawlOneSource(source))));
     purged = await write(() => purge(db, now() - purgeMs));
-    stats.durationMs = now() - runStartedAt;
+    const finishedAt = now();
+    stats.durationMs = finishedAt - runStartedAt;
+    await writer.close();
+    writer.writeManifest({
+      runId: leaseId,
+      startedAt: new Date(runStartedAt).toISOString(),
+      finishedAt: new Date(finishedAt).toISOString(),
+      perSourceStatus,
+    });
+    stats.archiveErrors = writer.errorCount();
     await db
       .update(crawlRuns)
-      .set({ status: "completed", finishedAt: new Date(now()), stats })
+      .set({ status: "completed", finishedAt: new Date(finishedAt), stats })
       .where(eq(crawlRuns.id, leaseId));
     return { runId: leaseId, status: "completed", stats, purged, sourcesSkipped };
   } catch (err) {
     // An infrastructure failure (e.g. a DB write error) — distinct from a
     // per-source fetch failure, which crawlOneSource already absorbed. Record
     // the run as failed (fail loud) and re-throw.
-    stats.durationMs = now() - runStartedAt;
+    const finishedAt = now();
+    stats.durationMs = finishedAt - runStartedAt;
+    await writer.close();
+    writer.writeManifest({
+      runId: leaseId,
+      startedAt: new Date(runStartedAt).toISOString(),
+      finishedAt: new Date(finishedAt).toISOString(),
+      perSourceStatus,
+    });
+    stats.archiveErrors = writer.errorCount();
     await db
       .update(crawlRuns)
-      .set({ status: "failed", finishedAt: new Date(now()), stats })
+      .set({ status: "failed", finishedAt: new Date(finishedAt), stats })
       .where(eq(crawlRuns.id, leaseId));
     throw err;
   }

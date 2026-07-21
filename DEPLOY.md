@@ -9,6 +9,7 @@
 - **Chromium in the image.** `src/lib/pdf.ts` renders résumé PDFs in-process via playwright-chromium, so the runtime image is the Playwright base (`mcr.microsoft.com/playwright`). Keep its tag matched to the `playwright` version in `package.json`.
 - **SSE-clean proxy.** `Caddyfile` sets `flush_interval -1` (no buffering) and 300s read/write timeouts — a single `scoreMatch` can leave an SSE stream silent ~36s. Don't lower these.
 - **Uploads root** = `CALIBER_UPLOADS_DIR` (`/var/lib/caliber/uploads`), a persistent volume/bind-mount. Résumé files are stored under per-user relative keys (Step 5), so a host move is a pure `rsync` with zero DB rewriting.
+- **Archive root** = `CALIBER_ARCHIVE_DIR` (`/var/lib/caliber/archive`), a persistent volume holding the nightly raw-crawl archive (see `docs/superpowers/specs/2026-07-21-raw-crawl-archive-design.md`). Unset in dev/tests — archiving disables cleanly with one log line (`archive disabled: CALIBER_ARCHIVE_DIR unset`), never a fabricated default path.
 
 ## First deploy
 App secrets load from the app service's `env_file: [.env.production]`. There is no
