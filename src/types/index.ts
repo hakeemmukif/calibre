@@ -588,6 +588,57 @@ export const AdminCrawlStatus = z.object({
 });
 export type AdminCrawlStatus = z.infer<typeof AdminCrawlStatus>;
 
+// AdminPoolStats — GET /api/admin/pool (Admin Pool tab, spec
+// 2026-07-21-admin-pool-tab-design.md §4). Static v1: a single read-only
+// snapshot, no history/sparkline series, no cross-filter re-query. Hybrid
+// function source (§1.2): postings.function_tag when present (P.4
+// classifier), else the deterministic title-keyword bucket
+// (src/server/pool/functionBucket.ts) — functionMix[].source reports which
+// provenance is the MAJORITY for that bucket's rows (an honesty signal,
+// since only ~70/18,518 postings carry a tag as of 2026-07-21). Nested
+// objects are kept inline (not named siblings like AdminCrawlStatus's
+// pieces) — nothing here is reused by another schema.
+export const AdminPoolStats = z.object({
+  totals: z.object({
+    live: z.number().int(),
+    delisted: z.number().int(),
+    newLast24h: z.number().int(),
+    sourcesEnabled: z.number().int(),
+    sourcesTotal: z.number().int(),
+    tagCoveragePct: z.number(),
+  }),
+  functionMix: z.array(
+    z.object({
+      bucket: z.string(),
+      count: z.number().int(),
+      share: z.number(),
+      source: z.enum(["tag", "keyword"]),
+    }),
+  ),
+  tzBands: z.array(
+    z.object({
+      band: z.enum(["americas", "emea", "apac", "unassigned"]),
+      count: z.number().int(),
+      share: z.number(),
+    }),
+  ),
+  freshness: z.array(
+    z.object({
+      bucket: z.enum(["24h", "2-7d", "8-30d", "older"]),
+      count: z.number().int(),
+    }),
+  ),
+  concentration: z.object({
+    topCompanies: z.array(z.object({ company: z.string(), count: z.number().int() })),
+    top10Count: z.number().int(),
+    // IMPORTANT-2 fix: restCount is structurally live - top10Count now that
+    // both derive from the same liveRows pass — a negative value here would
+    // mean that invariant broke, so the schema rejects it at the boundary.
+    restCount: z.number().int().nonnegative(),
+  }),
+});
+export type AdminPoolStats = z.infer<typeof AdminPoolStats>;
+
 // ClientErrorReport — POST /api/client-error crash-beacon body (pre-launch
 // hardening Task 4). userId is NEVER part of this schema — the route attaches
 // it server-side from the session; a client-supplied id would be spoofable.

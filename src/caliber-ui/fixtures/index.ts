@@ -12,6 +12,7 @@ import {
   TailoredResume,
   CorrelationReport,
   Source,
+  AdminPoolStats,
 } from "../../types";
 import { eligibilityTone } from "../lib/eligibility";
 import { legitimacyTone } from "../lib/legitimacy";
@@ -503,3 +504,55 @@ export const sources: Source[] = Source.array().parse([
   { id: "ashby-supabase", name: "Supabase", kind: "ats", persona: "remote", enabled: true },
   { id: "jobstreet", name: "JobStreet Malaysia", kind: "board", persona: "local", enabled: true },
 ]);
+
+// ---------------------------------------------------------------------------
+// Admin Pool tab — a snapshot loosely proportioned from spec §8's real
+// 2026-07-21 numbers, scaled down. NOT the live data (spec §8: "calibration
+// only, not fixture data") — just realistic company names and proportions.
+// ---------------------------------------------------------------------------
+
+export const adminPoolStats: AdminPoolStats = AdminPoolStats.parse({
+  totals: { live: 5000, delisted: 300, newLast24h: 120, sourcesEnabled: 620, sourcesTotal: 816, tagCoveragePct: 0.4 },
+  functionMix: [
+    { bucket: "engineering", count: 1715, share: 34.3, source: "tag" },
+    { bucket: "data", count: 218, share: 4.4, source: "keyword" },
+    { bucket: "product", count: 218, share: 4.4, source: "keyword" },
+    { bucket: "design", count: 133, share: 2.7, source: "keyword" },
+    { bucket: "sales", count: 735, share: 14.7, source: "keyword" },
+    { bucket: "marketing", count: 242, share: 4.8, source: "keyword" },
+    { bucket: "cs_support", count: 157, share: 3.1, source: "keyword" },
+    { bucket: "people_hr", count: 112, share: 2.2, source: "keyword" },
+    { bucket: "finance_legal", count: 148, share: 3.0, source: "keyword" },
+    { bucket: "ops_admin", count: 183, share: 3.7, source: "keyword" },
+    { bucket: "leadership", count: 117, share: 2.3, source: "keyword" },
+    { bucket: "other", count: 1022, share: 20.4, source: "keyword" },
+  ],
+  tzBands: [
+    { band: "americas", count: 2460, share: 49.2 },
+    { band: "emea", count: 745, share: 14.9 },
+    { band: "apac", count: 565, share: 11.3 },
+    { band: "unassigned", count: 1230, share: 24.6 },
+  ],
+  freshness: [
+    { bucket: "24h", count: 120 },
+    { bucket: "2-7d", count: 680 },
+    { bucket: "8-30d", count: 1600 },
+    { bucket: "older", count: 2600 },
+  ],
+  concentration: {
+    topCompanies: [
+      { company: "Stripe", count: 277 },
+      { company: "GitLab", count: 140 },
+      { company: "Automattic", count: 120 },
+      { company: "Doist", count: 98 },
+      { company: "Grab", count: 85 },
+      { company: "Canva", count: 74 },
+      { company: "Zapier", count: 66 },
+      { company: "Toptal", count: 58 },
+      { company: "Remote.com", count: 52 },
+      { company: "Deel", count: 47 },
+    ],
+    top10Count: 1017,
+    restCount: 3983,
+  },
+});

@@ -35,6 +35,7 @@ const routeFor: Record<string, string> = {
   profile: "/profile",
   "admin-users": "/admin",
   "admin-crawl": "/admin/crawl",
+  "admin-pool": "/admin/pool",
 };
 
 // Route -> active nav id. /jobs/* are drill-downs from Matches, so keep Matches lit.
@@ -46,6 +47,7 @@ function activeIdFor(pathname: string): string | undefined {
   if (pathname.startsWith("/sources")) return "sources";
   if (pathname.startsWith("/profile")) return "profile";
   if (pathname.startsWith("/admin/crawl")) return "admin-crawl";
+  if (pathname.startsWith("/admin/pool")) return "admin-pool";
   if (pathname.startsWith("/admin")) return "admin-users";
   return undefined;
 }
