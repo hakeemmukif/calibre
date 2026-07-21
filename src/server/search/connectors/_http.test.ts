@@ -79,6 +79,43 @@ describe("_http archive tee", () => {
     );
   });
 
+  it("fetchJson propagates a body-read failure on a 2xx response with its original identity", async () => {
+    const readError = new Error("premature close");
+    const res = new Response(JSON.stringify({ a: 1 }), { status: 200, headers: { "content-type": "application/json" } });
+    vi.spyOn(res, "text").mockRejectedValue(readError);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(res));
+    const writer = fakeWriter();
+
+    await expect(
+      archiveContext.run({ sourceId: "src1", runDate: "2026-07-21", writer }, () => fetchJson("https://example.com/x")),
+    ).rejects.toBe(readError);
+    expect(writer.archiveResponse).not.toHaveBeenCalled();
+  });
+
+  it("fetchJson still throws ConnectorHttpError when the body read fails on a non-2xx response", async () => {
+    const readError = new Error("premature close");
+    const res = new Response("", { status: 500 });
+    vi.spyOn(res, "text").mockRejectedValue(readError);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(res));
+
+    await expect(fetchJson("https://example.com/x")).rejects.toThrow(ConnectorHttpError);
+  });
+
+  it("postJson propagates a body-read failure on a 2xx response with its original identity", async () => {
+    const readError = new Error("premature close");
+    const res = new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } });
+    vi.spyOn(res, "text").mockRejectedValue(readError);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(res));
+    const writer = fakeWriter();
+
+    await expect(
+      archiveContext.run({ sourceId: "src1", runDate: "2026-07-21", writer }, () =>
+        postJson("https://example.com/search", { q: "engineer" }),
+      ),
+    ).rejects.toBe(readError);
+    expect(writer.archiveResponse).not.toHaveBeenCalled();
+  });
+
   it("fetchText tees the raw body on success", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("<html>plain</html>", { status: 200, headers: { "content-type": "text/html" } })));
     const writer = fakeWriter();

@@ -54,7 +54,16 @@ export async function fetchJson(url: string, opts: FetchJsonOptions = {}): Promi
       redirect,
       signal: combined,
     });
-    const bodyText = await res.text().catch(() => "");
+    let bodyText: string;
+    try {
+      bodyText = await res.text();
+    } catch (err) {
+      // Body-read failure (abort mid-read, connection drop). Non-2xx keeps
+      // the old best-effort message; 2xx preserves the error's original
+      // identity instead of masking it as a JSON SyntaxError downstream.
+      if (!res.ok) throw new ConnectorHttpError(`HTTP ${res.status}`, res.status);
+      throw err;
+    }
     if (!res.ok) {
       throw new ConnectorHttpError(`HTTP ${res.status}${bodyText ? `: ${bodyText.slice(0, 300)}` : ""}`, res.status);
     }
@@ -77,7 +86,16 @@ export async function postJson(url: string, body: unknown, opts: FetchJsonOption
       body: JSON.stringify(body),
       signal: combined,
     });
-    const bodyText = await res.text().catch(() => "");
+    let bodyText: string;
+    try {
+      bodyText = await res.text();
+    } catch (err) {
+      // Body-read failure (abort mid-read, connection drop). Non-2xx keeps
+      // the old best-effort message; 2xx preserves the error's original
+      // identity instead of masking it as a JSON SyntaxError downstream.
+      if (!res.ok) throw new ConnectorHttpError(`HTTP ${res.status}`, res.status);
+      throw err;
+    }
     if (!res.ok) {
       throw new ConnectorHttpError(`HTTP ${res.status}${bodyText ? `: ${bodyText.slice(0, 300)}` : ""}`, res.status);
     }
