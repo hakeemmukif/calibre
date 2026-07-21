@@ -9,6 +9,17 @@ import type { FormField, RawPosting, SourceConnector } from "../connector";
 import { htmlToText, unescapeEntities } from "./_html";
 import { fetchJson } from "./_http";
 
+// The board-list fetch is a single unpaginated `?content=true` call whose
+// body scales with the board's job count (live-confirmed: gh-coupang is 630
+// jobs / 13.9MB). _http.ts's default 10s timeout is sized for small JSON
+// calls; under real crawl concurrency, sibling connectors' synchronous
+// JSON.parse of their own large bodies shares the single event loop and can
+// push a big board's fetch past 10s even though the network leg alone
+// completes in ~2s (live-reproduced: DOMException [AbortError] at the
+// default timeout). Mirrors ashby.ts's ASHBY_TIMEOUT_MS per-connector
+// override for the same board-list call.
+const GREENHOUSE_TIMEOUT_MS = 60_000;
+
 interface GreenhouseJob {
   id?: number | string;
   title?: string;
@@ -76,6 +87,7 @@ export function createGreenhouseConnector(source: SourceRow): SourceConnector {
       const json = (await fetchJson(`https://boards-api.greenhouse.io/v1/boards/${slug}/jobs?content=true`, {
         signal: ctx.signal,
         redirect: "error",
+        timeoutMs: GREENHOUSE_TIMEOUT_MS,
       })) as { jobs?: GreenhouseJob[] };
 
       const jobs = Array.isArray(json?.jobs) ? json.jobs : [];

@@ -73,6 +73,34 @@ describe("greenhouse connector", () => {
     expect(onProgress).toHaveBeenCalled();
   });
 
+  it("uses a 60s timeout on the board-list fetch (large boards under crawl concurrency — gh-coupang was 13.9MB/630 jobs and timed out at the 10s default)", async () => {
+    vi.useFakeTimers();
+    let capturedSignal: AbortSignal | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((_url: string, init: RequestInit) => {
+        capturedSignal = init.signal as AbortSignal;
+        return new Promise(() => {}); // never resolves — only the abort timing matters
+      }),
+    );
+
+    const connector = createGreenhouseConnector(source());
+    const discoverPromise = collect(
+      connector.discover({ targets: [], since: new Date(0), signal: new AbortController().signal, onProgress: () => {} }),
+    );
+    // swallow the eventual rejection from the process's real unhandled-rejection
+    // listeners once the test ends and the fake timers are torn down.
+    discoverPromise.catch(() => {});
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(capturedSignal?.aborted).toBe(false); // would have fired at the old 10s default
+
+    await vi.advanceTimersByTimeAsync(50_000);
+    expect(capturedSignal?.aborted).toBe(true); // fires at the new 60s timeout
+
+    vi.useRealTimers();
+  });
+
   it("carries departments[0].name into RawPosting.department (P.4 tag input)", async () => {
     const fixture = {
       jobs: [
