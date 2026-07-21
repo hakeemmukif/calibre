@@ -97,7 +97,7 @@ type CrawlRunStats = {
   emptyFetches: string[];
   // Source ids whose fetch failed, with the thrown error's message (truncated
   // ~200 chars) — sourcesFailed's count alone doesn't say which board or why.
-  failedSources: { id: string; error: string }[];
+  failedSources?: { id: string; error: string }[];
   // Archive I/O failure count for this run (2026-07-21-raw-crawl-archive-
   // design.md §5) — never aborts the crawl; every archive failure is caught,
   // warn-logged (`[archive]` prefix), and counted here instead.

@@ -569,8 +569,9 @@ export const CrawlRunSummary = z.object({
   emptyFetches: z.array(z.string()),
   // Source ids whose fetch FAILED this run, with the thrown error's message
   // (truncated ~200 chars) — sourcesFailed's count alone doesn't say which
-  // board or why.
-  failedSources: z.array(z.object({ id: z.string(), error: z.string() })),
+  // board or why. Null means the run predates failedSources tracking
+  // (recorded before c9e6d17), distinct from [] = no failures.
+  failedSources: z.array(z.object({ id: z.string(), error: z.string() })).nullable(),
 });
 export type CrawlRunSummary = z.infer<typeof CrawlRunSummary>;
 

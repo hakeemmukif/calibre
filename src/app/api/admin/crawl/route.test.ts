@@ -125,6 +125,23 @@ describe("GET /api/admin/crawl", () => {
     expect(body.lastRuns[0].skipped).toBe(0);
   });
 
+  it("treats a pre-c9e6d17 row (stats JSON with no failedSources key) as failedSources: null, not a 500", async () => {
+    await insertSource(state.testDb, { name: "A" });
+    const { failedSources: _omitted, ...legacyStats } = STATS;
+    await state.testDb.insert(crawlRuns).values({
+      status: "completed",
+      startedAt: new Date("2026-07-10T03:00:00Z"),
+      finishedAt: new Date("2026-07-10T03:10:00Z"),
+      stats: { ...legacyStats, sourcesOk: 1, sourcesFailed: 0, upserts: 0, delists: 0, durationMs: 1000 } as any,
+    });
+
+    const res = await GET();
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.lastRuns).toHaveLength(1);
+    expect(body.lastRuns[0].failedSources).toBeNull();
+  });
+
   it("degrades: a failing `pool` sub-query nulls only that section, others still return, and errors records it", async () => {
     await insertSource(state.testDb, { name: "A" });
     await state.testDb.insert(crawlRuns).values({
