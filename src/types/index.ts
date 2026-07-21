@@ -567,6 +567,10 @@ export const CrawlRunSummary = z.object({
   delists: z.number().int(),
   perHostBackoffs: z.record(z.string(), z.number().int()),
   emptyFetches: z.array(z.string()),
+  // Source ids whose fetch FAILED this run, with the thrown error's message
+  // (truncated ~200 chars) — sourcesFailed's count alone doesn't say which
+  // board or why.
+  failedSources: z.array(z.object({ id: z.string(), error: z.string() })),
 });
 export type CrawlRunSummary = z.infer<typeof CrawlRunSummary>;
 

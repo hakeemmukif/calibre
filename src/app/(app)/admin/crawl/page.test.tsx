@@ -48,6 +48,7 @@ describe("AdminCrawlPage crawl status", () => {
           delists: 2,
           perHostBackoffs: {},
           emptyFetches: ["gh:stale-slug"],
+          failedSources: [{ id: "gh:coupang", error: "DOMException [AbortError]: This operation was aborted" }],
         },
       ],
       perSource: { items: [{ sourceId: "gh:quiet", name: "Quiet Co", liveCount: 0, lastSeenAt: null }], totalSources: 5 },

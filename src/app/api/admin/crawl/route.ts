@@ -84,6 +84,7 @@ export async function GET() {
           delists: run.stats.delists,
           perHostBackoffs: run.stats.perHostBackoffs,
           emptyFetches: run.stats.emptyFetches,
+          failedSources: run.stats.failedSources,
         };
       });
     });

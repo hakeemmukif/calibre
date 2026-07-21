@@ -832,6 +832,24 @@
             },
             "type": "array"
           },
+          "failedSources": {
+            "items": {
+              "properties": {
+                "error": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "error"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "finishedAt": {
             "format": "date-time",
             "type": "string"
@@ -877,7 +895,8 @@
           "upserts",
           "delists",
           "perHostBackoffs",
-          "emptyFetches"
+          "emptyFetches",
+          "failedSources"
         ],
         "type": "object"
       },

@@ -36,6 +36,7 @@ const { GET } = await import("./route");
 const STATS = {
   perHostBackoffs: {},
   emptyFetches: [] as string[],
+  failedSources: [] as { id: string; error: string }[],
 };
 
 describe("GET /api/admin/crawl", () => {
