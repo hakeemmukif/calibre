@@ -48,10 +48,6 @@ jobs:
   e2e:
     needs: check
     runs-on: [self-hosted, caliber-box]
-    # Non-blocking since 2026-07-21: 4 specs (credits, detail-evaluate-applied,
-    # profile, tailor) fail only on the box runner — untriaged env difference.
-    # Remove once triaged; unit/typecheck/contract/build still gate the run.
-    continue-on-error: true
     env:
       DATABASE_URL: file:${{ github.workspace }}/e2e/.scratch/caliber-e2e.db
       CALIBER_TEST_DOUBLES: '1'
