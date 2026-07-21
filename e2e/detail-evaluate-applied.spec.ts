@@ -43,7 +43,9 @@ test("job detail: re-evaluate keeps a score, mark-applied lands in the tracker",
   }).toPass({ timeout: 15_000 });
 
   const reevaluate = page.getByRole("button", { name: "Re-evaluate" });
-  await expect(reevaluate).toBeVisible();
+  // First visit compiles /jobs/[id] on-demand under next dev — slow on the
+  // CI box, so give it the same budget as the post-eval wait below.
+  await expect(reevaluate).toBeVisible({ timeout: 15_000 });
   await reevaluate.click();
   await expect(page.getByRole("button", { name: "Re-evaluating…" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Re-evaluate" })).toBeVisible({ timeout: 15_000 });
