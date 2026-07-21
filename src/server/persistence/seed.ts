@@ -31,6 +31,14 @@ export const sourceSeeds: (typeof sources.$inferInsert)[] = [
   { id: "ashby-perplexity", name: "Perplexity", kind: "ats", persona: "remote", enabled: true, config: { connector: "ashby", slug: "perplexity", geo: { scope: "restricted" } } },
   { id: "ashby-zapier", name: "Zapier", kind: "ats", persona: "remote", enabled: true, config: { connector: "ashby", slug: "zapier", geo: { scope: "anywhere" } } },
   { id: "ashby-supabase", name: "Supabase", kind: "ats", persona: "remote", enabled: true, config: { connector: "ashby", slug: "supabase", geo: { scope: "anywhere" } } },
+  // APAC additions (2026-07-21, live-verified via public boards-api.greenhouse.io
+  // endpoints, non-zero postings). Elastic has no precedent row for "global
+  // remote company with APAC presence" — scope "anywhere", no regions, mirrors
+  // ashby-deel/ashby-zapier/ashby-supabase rather than inventing a new shape.
+  { id: "gh-coupang", name: "Coupang", kind: "ats", persona: "remote", enabled: true, config: { connector: "greenhouse", slug: "coupang", geo: { scope: "restricted", regions: ["APAC"] } } },
+  { id: "gh-elastic", name: "Elastic", kind: "ats", persona: "remote", enabled: true, config: { connector: "greenhouse", slug: "elastic", geo: { scope: "anywhere" } } },
+  { id: "gh-cultureamp", name: "Culture Amp", kind: "ats", persona: "remote", enabled: true, config: { connector: "greenhouse", slug: "cultureamp", geo: { scope: "restricted", regions: ["ANZ"] } } },
+  { id: "lever-safetyculture", name: "SafetyCulture", kind: "ats", persona: "remote", enabled: true, config: { connector: "lever", slug: "safetyculture-2", geo: { scope: "restricted", regions: ["ANZ"] } } },
   // SEA seeds (design 2026-07-16-remote-startup-niche-source-expansion-design.md
   // §4.2/§7 "Verified SEA seeds") — slugs live-verified against their real ATS
   // endpoints (task-2-brief.md Step 8); persona 'local' is the legal growth
@@ -39,6 +47,8 @@ export const sourceSeeds: (typeof sources.$inferInsert)[] = [
   { id: "lever-gotogroup", name: "GoTo Group", kind: "ats", persona: "local", enabled: true, config: { connector: "lever", slug: "GoToGroup", geo: { scope: "restricted", regions: ["SEA"] } } },
   { id: "lever-shopback", name: "ShopBack", kind: "ats", persona: "local", enabled: true, config: { connector: "lever", slug: "shopback-2", geo: { scope: "restricted", regions: ["SEA"] } } },
   { id: "ashby-bjak", name: "Bjak", kind: "ats", persona: "local", enabled: true, config: { connector: "ashby", slug: "bjakcareer", geo: { scope: "restricted", regions: ["SEA"] } } },
+  { id: "gh-xendit", name: "Xendit", kind: "ats", persona: "local", enabled: true, config: { connector: "greenhouse", slug: "xendit", geo: { scope: "restricted", regions: ["SEA"] } } },
+  { id: "lever-ninjavan", name: "Ninja Van", kind: "ats", persona: "local", enabled: true, config: { connector: "lever", slug: "ninjavan", geo: { scope: "restricted", regions: ["SEA"] } } },
   {
     id: "jobstreet", name: "JobStreet Malaysia", kind: "board", persona: "local", enabled: true,
     config: {

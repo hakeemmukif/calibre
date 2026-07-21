@@ -9,8 +9,20 @@ import type { TzBand, ScheduleFlex, EmploymentPref, HiringStructure } from "@/ty
 // (spec §14.2 trust-killer guard: "Lisbon, PT" must not map to Americas).
 const SAFE_TOKENS: [RegExp, TzBand][] = [
   [/\b(PST|PDT|MST|MDT|EST|EDT|US ?hours|US working hours|north america|latam|americas)\b/i, "americas"],
-  [/\b(CET|CEST|GMT|BST|UTC|EU ?hours|EU working hours|emea|europe)\b/i, "emea"],
+  [/\b(CET|CEST|GMT|BST|UTC|EU ?hours|EU working hours|emea|europe|middle east)\b/i, "emea"],
   [/\b(SGT|MYT|AEST|AEDT|JST|APAC ?hours|APAC|asia)\b/i, "apac"],
+  // Bare ISO country code, anchored to the job-board idiom "Remote[-/in] <CODE>"
+  // only — never a standalone bare token (same trust-killer posture as PT/ET
+  // below: a code is only trusted where the surrounding words make it unambiguous).
+  [/\bRemote[\s-]+(?:in[\s-]+)?US\b/, "americas"],
+  [/\bRemote[\s-]+(?:in[\s-]+)?UK\b/, "emea"],
+  // US state abbreviation, comma-anchored ("City, ST") — the comma is what makes
+  // a bare 2-letter code safe (CO/IN/PA read as states here, never company/
+  // preposition/Portugal, because they never stand alone).
+  [
+    /,\s*(?:AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC)\b/,
+    "americas",
+  ],
 ];
 const STATED_ONLY_TOKENS: [RegExp, TzBand][] = [
   [/\b(ET|PT)\b/, "americas"], // case-sensitive uppercase; stated source only
@@ -35,7 +47,7 @@ const PLACE_NAMES: Record<TzBand, string[]> = {
   apac: [
     "Malaysia", "Singapore", "Indonesia", "Thailand", "Philippines", "Vietnam",
     "Cambodia", "Laos", "Myanmar", "Brunei", "India", "China", "Japan",
-    "South Korea", "Taiwan", "Hong Kong", "Sri Lanka", "Nepal", "Bangladesh",
+    "South Korea", "Korea", "Taiwan", "Hong Kong", "Sri Lanka", "Nepal", "Bangladesh",
     "Pakistan", "Mongolia", "Australia", "New Zealand",
     // Malaysia — the local persona's home market: all 13 states + FT + major
     // towns, so "Ipoh, Perak" / "Kuching, Sarawak" resolve off the state token.
@@ -65,7 +77,11 @@ const PLACE_NAMES: Record<TzBand, string[]> = {
     "Brussels", "Warsaw", "Krakow", "Stockholm", "Gothenburg", "Oslo",
     "Copenhagen", "Helsinki", "Zurich", "Prague", "Bucharest", "Budapest",
     "Istanbul", "Dubai", "Abu Dhabi", "Tel Aviv", "Cairo", "Cape Town",
-    "Johannesburg", "Nairobi", "Lagos", "Belgrade",
+    "Johannesburg", "Nairobi", "Lagos", "Belgrade", "Riyadh",
+    // "Paris" has a US homonym (Paris, TX/TN) the same way the excluded
+    // Georgia/Perth/Dublin/Athens/Santiago/San Jose names do; added anyway on
+    // explicit instruction — flagging the same class of risk, not silently.
+    "Paris",
   ],
   americas: [
     "United States", "USA", "Canada", "Mexico", "Brazil", "Argentina", "Chile",
@@ -78,11 +94,11 @@ const PLACE_NAMES: Record<TzBand, string[]> = {
     "Lima", "Guadalajara", "Monterrey",
   ],
 };
-// Built once at module load. Internal spaces -> \s+ (tolerate "Ho  Chi  Minh");
-// \b anchors both ends so "India" never matches "Indiana" and "China" never
-// matches "Chinatown".
+// Built once at module load. Internal spaces -> [\s-]+ (tolerate "Ho  Chi  Minh"
+// AND the job-board idiom "Remote-United-States"); \b anchors both ends so
+// "India" never matches "Indiana" and "China" never matches "Chinatown".
 const PLACE_TOKENS: [RegExp, TzBand][] = (Object.keys(PLACE_NAMES) as TzBand[]).map((band) => [
-  new RegExp(`\\b(?:${PLACE_NAMES[band].map((n) => n.replace(/ /g, "\\s+")).join("|")})\\b`, "i"),
+  new RegExp(`\\b(?:${PLACE_NAMES[band].map((n) => n.replace(/ /g, "[\\s-]+")).join("|")})\\b`, "i"),
   band,
 ]);
 
