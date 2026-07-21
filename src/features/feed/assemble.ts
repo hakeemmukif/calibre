@@ -30,8 +30,11 @@ const TIER_LABEL: Record<LegitimacyTier, string> = {
 
 // Schedule/structure pills — stated-only, neutral-toned (remote-fit spec §11,
 // D2). `apac` is suppressed: business-as-usual from the MY operator base,
-// mirrors the eligibility "local" suppression (spec §8).
-const SCHEDULE_LABEL: Record<Exclude<TzBand, "apac">, string> = { emea: "EU hours", americas: "US hours" };
+// mirrors the eligibility "local" suppression (spec §8). `worldwide` is also
+// suppressed (2026-07-21-worldwide-tzband-design.md): a location-agnostic
+// posting has no fixed "EU hours"/"US hours"-style schedule to show — there
+// is nothing this pill could honestly say.
+const SCHEDULE_LABEL: Record<Exclude<TzBand, "apac" | "worldwide">, string> = { emea: "EU hours", americas: "US hours" };
 const STRUCTURE_LABEL: Record<HiringStructure, string> = { "local-entity": "Local entity", eor: "EOR", contractor: "Contractor" };
 
 export function assembleJob(joined: JobJoinScore, opts: AssembleJobOptions = {}): Job {
@@ -59,7 +62,7 @@ export function assembleJob(joined: JobJoinScore, opts: AssembleJobOptions = {})
 
   // Legitimacy tag stays at tags[0]; schedule/structure pills append after it.
   const tags: { tone: Tone; label: string; title?: string }[] = [{ tone, label: TIER_LABEL[tier] }];
-  if (job.tzBand && job.tzBand !== "apac") {
+  if (job.tzBand && job.tzBand !== "apac" && job.tzBand !== "worldwide") {
     tags.push({ tone: "neutral", label: SCHEDULE_LABEL[job.tzBand], title: jdFacts?.tzRequirement });
   }
   if (job.hiringStructure) tags.push({ tone: "neutral", label: STRUCTURE_LABEL[job.hiringStructure] });

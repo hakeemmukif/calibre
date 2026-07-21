@@ -100,7 +100,10 @@ export function createPoolStatsRepo(db: Db) {
         // not just NULL) folds into 'unassigned' explicitly, so
         // sum(tzBands.count) can never fall short of totals.live.
         const rawTzBand = row.tzBand;
-        const tzBand = rawTzBand === "americas" || rawTzBand === "emea" || rawTzBand === "apac" ? rawTzBand : "unassigned";
+        const tzBand =
+          rawTzBand === "americas" || rawTzBand === "emea" || rawTzBand === "apac" || rawTzBand === "worldwide"
+            ? rawTzBand
+            : "unassigned";
         tzCounts.set(tzBand, (tzCounts.get(tzBand) ?? 0) + 1);
 
         const ageMs = nowMs - row.firstSeenAt.getTime();
@@ -124,7 +127,7 @@ export function createPoolStatsRepo(db: Db) {
         };
       });
 
-      const tzBands = (["americas", "emea", "apac", "unassigned"] as const).map((band) => ({
+      const tzBands = (["americas", "emea", "apac", "worldwide", "unassigned"] as const).map((band) => ({
         band,
         count: tzCounts.get(band) ?? 0,
         share: pct(tzCounts.get(band) ?? 0, live),

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { resolveTzBand, probeTzToken, allowedBandsFor, allowedStructuresFor } from "./tzBand";
+import { resolveTzBand, probeTzToken, allowedBandsFor, allowedStructuresFor, isBandAligned } from "./tzBand";
 
 describe("resolveTzBand token table", () => {
   const cases: [string, "apac" | "emea" | "americas"][] = [
@@ -74,14 +74,26 @@ describe("resolveTzBand token table", () => {
   ] as [string, "apac" | "emea" | "americas"][])("location %s -> %s", (location, band) => {
     expect(resolveTzBand({ location })!.band).toBe(band);
   });
-  // Worldwide/anywhere-band policy is out of scope here (decided separately) —
-  // these must stay unclassified, not silently fold into a band.
-  it.each(["Remote", "Remote - Anywhere", "Anywhere", "Global", "Globally", "Global Anywhere", "Remote Role", "Tier 2"])(
-    "worldwide/vague location %s stays unclassified (null)",
+  // Worldwide band (2026-07-21-worldwide-tzband-design.md §2): a bare
+  // anywhere/worldwide/global(ly) token, with no regional token in the same
+  // string, now resolves worldwide instead of staying unclassified. This
+  // SUPERSEDES the feat/apac-sources regression asserting these same
+  // strings -> null (deliberate, sanctioned test-expectation change).
+  it.each(["Remote - Anywhere", "Anywhere", "Global", "Globally", "Global Anywhere"])(
+    "worldwide location %s -> worldwide",
     (location) => {
-      expect(resolveTzBand({ location })).toBeNull();
+      expect(resolveTzBand({ location })!.band).toBe("worldwide");
     },
   );
+  // A regional token in the SAME string still wins over a worldwide token
+  // (spec §2 precedence: probe regional first).
+  it("a regional token beats a worldwide token in the same string (Global Anywhere - Eastern or European Time Zones -> emea)", () => {
+    expect(resolveTzBand({ location: "Global Anywhere - Eastern or European Time Zones" })!.band).toBe("emea");
+  });
+  // Bare/vague locations carrying NO worldwide token still stay unclassified.
+  it.each(["Remote", "Remote Role", "Tier 2"])("vague location %s stays unclassified (null)", (location) => {
+    expect(resolveTzBand({ location })).toBeNull();
+  });
   // Homonyms are deliberately excluded, and \b anchors prevent substring leaks.
   it.each(["Georgia", "Perth", "Indiana"])("ambiguous / substring-trap location %s does NOT mis-map", (location) => {
     expect(resolveTzBand({ location })).toBeNull();
@@ -103,6 +115,42 @@ describe("resolveTzBand token table", () => {
   });
 });
 
+describe("resolveTzBand description probe (spec §2, last resort)", () => {
+  it("runs only when statedTz and location both yielded nothing, and resolves a worldwide-positive phrase", () => {
+    expect(resolveTzBand({ description: "We are fully remote and hire from anywhere in the world." })!.band).toBe(
+      "worldwide",
+    );
+  });
+  it.each([
+    ["Applicants must be based in the US.", "americas"],
+    ["You must be eligible to work in the United States.", "americas"],
+    ["This role requires being based in Europe.", "emea"],
+    ["We work APAC hours only.", "apac"],
+  ] as [string, "americas" | "emea" | "apac"][])("region-restrictive phrase %s -> %s", (description, band) => {
+    expect(resolveTzBand({ description })!.band).toBe(band);
+  });
+  it("conflicting worldwide + region-restrictive phrases -> null", () => {
+    expect(resolveTzBand({ description: "Work from anywhere, but you must be based in the US." })).toBeNull();
+  });
+  it("conflicting region-restrictive phrases for two different regions -> null", () => {
+    expect(resolveTzBand({ description: "Must be based in the US, or based in Europe." })).toBeNull();
+  });
+  it("no phrase hits -> null", () => {
+    expect(resolveTzBand({ description: "We build great software and love our customers." })).toBeNull();
+  });
+  it("a mapped location wins over the description probe (location precedence)", () => {
+    expect(
+      resolveTzBand({ location: "Remote — EST hours", description: "This role requires being based in Europe." })!
+        .band,
+    ).toBe("americas");
+  });
+  it("a mapped statedTz wins over the description probe (statedTz precedence)", () => {
+    expect(
+      resolveTzBand({ statedTz: "PST", description: "This role requires being based in Europe." })!.band,
+    ).toBe("americas");
+  });
+});
+
 describe("probeTzToken (non-logging, for recompute scavenge)", () => {
   it("returns a band without logging, and maps unambiguous country names silently", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -118,14 +166,35 @@ describe("probeTzToken (non-logging, for recompute scavenge)", () => {
 });
 
 describe("gate mappings", () => {
-  it("allowedBandsFor: base-hours admits only apac; flex-evenings apac+emea; any-hours all (null)", () => {
-    expect(allowedBandsFor("base-hours")).toEqual(["apac"]);
-    expect(allowedBandsFor("flex-evenings")).toEqual(["apac", "emea"]);
+  // worldwide's min-flex is base-hours (spec §2: the lowest tier), so it is
+  // admitted at every flex level alongside apac.
+  it("allowedBandsFor: base-hours admits apac+worldwide; flex-evenings apac+emea+worldwide; any-hours all (null)", () => {
+    expect(allowedBandsFor("base-hours")).toEqual(["apac", "worldwide"]);
+    expect(allowedBandsFor("flex-evenings")).toEqual(["apac", "emea", "worldwide"]);
     expect(allowedBandsFor("any-hours")).toBeNull();
   });
   it("allowedStructuresFor: employee admits local-entity+eor; local-entity admits only itself; any -> null", () => {
     expect(allowedStructuresFor("employee")).toEqual(["local-entity", "eor"]);
     expect(allowedStructuresFor("local-entity")).toEqual(["local-entity"]);
     expect(allowedStructuresFor("any")).toBeNull();
+  });
+});
+
+describe("isBandAligned: worldwide is aligned with ANY allowed-band set", () => {
+  it.each([
+    [null],
+    [[]],
+    [["apac"]],
+    [["emea"]],
+    [["americas"]],
+    [["apac", "emea"]],
+  ] as [("apac" | "emea" | "americas" | "worldwide")[] | null][])(
+    "worldwide is aligned against allowedBands=%j",
+    (allowedBands) => {
+      expect(isBandAligned("worldwide", allowedBands)).toBe(true);
+    },
+  );
+  it("a non-worldwide band out of the allowed set is still misaligned", () => {
+    expect(isBandAligned("americas", ["apac"])).toBe(false);
   });
 });

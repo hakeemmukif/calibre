@@ -531,7 +531,8 @@ export const adminPoolStats: AdminPoolStats = AdminPoolStats.parse({
     { band: "americas", count: 2460, share: 49.2 },
     { band: "emea", count: 745, share: 14.9 },
     { band: "apac", count: 565, share: 11.3 },
-    { band: "unassigned", count: 1230, share: 24.6 },
+    { band: "worldwide", count: 400, share: 8.0 },
+    { band: "unassigned", count: 830, share: 16.6 },
   ],
   freshness: [
     { bucket: "24h", count: 120 },

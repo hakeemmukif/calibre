@@ -96,6 +96,7 @@ describe("poolStatsRepo.getPoolStats", () => {
       { band: "americas", count: 1, share: pctExpect(1, 3) },
       { band: "emea", count: 1, share: pctExpect(1, 3) },
       { band: "apac", count: 0, share: 0 },
+      { band: "worldwide", count: 0, share: 0 },
       { band: "unassigned", count: 1, share: pctExpect(1, 3) },
     ]);
 
@@ -124,17 +125,21 @@ describe("poolStatsRepo.getPoolStats", () => {
     const repo = createPoolStatsRepo(db);
     const source = await insertSource(db, { enabled: true });
 
-    // tzBand is TS-enum-constrained ("apac"|"emea"|"americas") but SQLite
-    // enforces no CHECK — a junk value can still land in the column (bad
-    // data drift, manual edit) and must not silently vanish from tzBands.
+    // tzBand is TS-enum-constrained ("apac"|"emea"|"americas"|"worldwide") but
+    // SQLite enforces no CHECK — a junk value can still land in the column
+    // (bad data drift, manual edit) and must not silently vanish from tzBands.
     await insertPosting(db, source.id, { title: "Backend Engineer", tzBand: "moon-base" as "americas" });
     await insertPosting(db, source.id, { title: "Sales Rep", tzBand: "americas" });
     await insertPosting(db, source.id, { title: "Support Rep", tzBand: null });
+    // A real "worldwide" value must count as its OWN band, never fold into
+    // 'unassigned' alongside the junk value above.
+    await insertPosting(db, source.id, { title: "Remote Anywhere Engineer", tzBand: "worldwide" });
 
     const stats = await repo.getPoolStats(NOW);
 
     expect(stats.tzBands.find((b) => b.band === "unassigned")).toMatchObject({ count: 2 });
     expect(stats.tzBands.find((b) => b.band === "americas")).toMatchObject({ count: 1 });
+    expect(stats.tzBands.find((b) => b.band === "worldwide")).toMatchObject({ count: 1 });
 
     const totalTzCount = stats.tzBands.reduce((sum, b) => sum + b.count, 0);
     expect(totalTzCount).toBe(stats.totals.live);

@@ -90,7 +90,7 @@ export type EmploymentPref = z.infer<typeof EmploymentPref>;
 // structure gates, NOT wire fields (spec §3: zero new Job fields; the jobs.tz_band/
 // hiring_structure columns are DB-only). Bare TS types, no Zod — never add to a
 // wire schema.
-export type TzBand = "apac" | "emea" | "americas";
+export type TzBand = "apac" | "emea" | "americas" | "worldwide";
 export type HiringStructure = "local-entity" | "eor" | "contractor";
 
 // Operator profile — singleton (single-operator MVP). `baseCountry` is
@@ -617,7 +617,7 @@ export const AdminPoolStats = z.object({
   ),
   tzBands: z.array(
     z.object({
-      band: z.enum(["americas", "emea", "apac", "unassigned"]),
+      band: z.enum(["americas", "emea", "apac", "worldwide", "unassigned"]),
       count: z.number().int(),
       share: z.number(),
     }),

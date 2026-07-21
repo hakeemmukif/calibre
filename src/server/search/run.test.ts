@@ -955,4 +955,17 @@ describe("rankCandidatesForScoring (DECISION A — tz_band demotes, never drops)
       expect.arrayContaining(["americas", "emea"]),
     );
   });
+
+  // worldwide-tzband-design.md §5: worldwide is aligned with ANY allowedBands
+  // set — including one (hand-built, like a real caller's) that doesn't
+  // itself list "worldwide".
+  it("a worldwide candidate ranks with the aligned group even when allowedBands doesn't list it", () => {
+    const worldwide = { job: { postedAt: new Date("2026-01-01"), dedupeKey: "worldwide", tzBand: "worldwide" as const } };
+    const misaligned = { job: { postedAt: new Date("2026-01-02"), dedupeKey: "misaligned-americas", tzBand: "americas" as const } };
+    const allowedBands: ("apac" | "emea" | "americas")[] = ["apac"];
+
+    const ranked = rankCandidatesForScoring([misaligned, worldwide], allowedBands);
+
+    expect(ranked.map((c) => c.job.dedupeKey)).toEqual(["worldwide", "misaligned-americas"]);
+  });
 });

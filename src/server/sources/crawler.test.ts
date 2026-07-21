@@ -71,6 +71,25 @@ describe("runCrawl", () => {
     expect(result.stats.upserts).toBe(1);
   });
 
+  it("stamps tzBand=worldwide from the description when location gives nothing (spec 2026-07-21 §3)", async () => {
+    const db = await createTestDb();
+    const source = await insertSource(db, { config: { connector: "ashby", geo: { scope: "restricted" } } });
+    const posting = rawPosting(source.id, {
+      location: "Remote",
+      description: "We are fully remote and hire from anywhere in the world.",
+    });
+
+    const result = await runCrawl({
+      db,
+      sources: [source],
+      connectorFor: connectorFactory({ [source.id]: { postings: [posting] } }),
+    });
+
+    expect(result.status).toBe("completed");
+    const [row] = await db.select().from(postings);
+    expect(row.tzBand).toBe("worldwide");
+  });
+
   it("a failing source does NOT abort the crawl", async () => {
     const db = await createTestDb();
     const bad = await insertSource(db, { config: { connector: "ashby", geo: { scope: "restricted" } } });

@@ -27,7 +27,7 @@ import type { RawPosting } from "./connector";
 import { dedupeKeyFor } from "./dedupe";
 import { parseSourceGeo } from "./geo";
 import { resolveEligibility } from "@/server/score/eligibility";
-import { allowedBandsFor } from "@/server/score/tzBand";
+import { allowedBandsFor, isBandAligned } from "@/server/score/tzBand";
 import { ensureDescription } from "./describe";
 import { resolveIsNewCutoff } from "./jobsFeed";
 import { deriveRoleTargets, roleFuzzyMatch } from "./roleMatch";
@@ -575,8 +575,10 @@ export function rankCandidatesForScoring<T extends { job: Pick<JobRow, "postedAt
   pool: T[],
   allowedBands: TzBand[] | null,
 ): T[] {
-  const aligned = pool.filter((c) => !allowedBands || !c.job.tzBand || allowedBands.includes(c.job.tzBand));
-  const misaligned = pool.filter((c) => allowedBands && c.job.tzBand && !allowedBands.includes(c.job.tzBand));
+  // isBandAligned is the single shared alignment predicate (worldwide boosts
+  // every allowed-band set) — do not re-derive it inline here.
+  const aligned = pool.filter((c) => isBandAligned(c.job.tzBand, allowedBands));
+  const misaligned = pool.filter((c) => !isBandAligned(c.job.tzBand, allowedBands));
   return [...sortCandidatesForRanking(aligned), ...sortCandidatesForRanking(misaligned)];
 }
 
