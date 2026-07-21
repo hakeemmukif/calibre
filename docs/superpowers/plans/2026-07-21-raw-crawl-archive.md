@@ -29,7 +29,7 @@
 ## Deviations from the suggested decomposition
 
 1. **`archiveContext`'s ALS store carries `{sourceId, runDate, writer}`, not just `{sourceId, runDate}`.** `_http.ts` needs to reach the active `ArchiveWriter` with no connector signature changes and no module-level mutable singleton (this codebase's existing style is closures — `createWriterQueue`, `createHostLimiter` — not module globals). Riding the writer along in the ALS context is the only clean seam.
-2. **`ArchiveWriter.close(): Promise<void>`, not sync.** The `postings.jsonl.gz` sink is a real streaming `zlib.createGzip()` piped to an `fs.createWriteStream`, kept open across the whole run (spec §2b: "gzip append stream, closed at run end") for a good compression ratio matching the spec's ~15–40 MB/night estimate — per-line independent gzip members would balloon that size. Ending a stream and waiting for `finish` is inherently async, so `runCrawl` must `await writer.close()` before reading `errorCount()`.
+2. **`ArchiveWriter.close(): Promise<void>`, not sync.** The `postings.jsonl.gz` sink is a real streaming `zlib.createGzip()` piped to an `fs.createWriteStream`, kept open across the whole run (spec §2b: "gzip append stream, closed at run end") for a good compression ratio matching the spec's ~15–40 MB/night estimate — per-line independent gzip members would balloon that size. Ending a stream is inherently async, so `runCrawl` must `await writer.close()` before reading `errorCount()`. `close()` settles via `node:stream`'s `finished(out, ...)`, not a bare `out.on("finish", ...)` — `finished()` also settles on `error`/premature `close`, including a sink that already errored before `close()` was called; a plain `"finish"` listener would hang forever on an errored sink, which would itself violate spec §5 ("archive I/O failures never abort the crawl" — a hang is worse than an abort).
 3. **Task 3's integration test does not use `src/server/search/connectors/fixture.ts`'s `createFixtureConnector`.** That connector yields postings from an in-memory map and never calls `_http.ts` — it cannot exercise capture point (a), the response tee. The integration test defines a small inline connector that calls the real `fetchJson` against a mocked global `fetch`, exercising both capture points end-to-end.
 4. **`scripts/backup.sh` gets a new, self-contained step 3b** (rather than folding into the existing shared encrypt/off-box steps) with its own `if`-guard, since `set -euo pipefail` requires the "archiving disabled or no date-dir" skip path to be explicit, not implicit.
 
@@ -173,6 +173,19 @@ describe("startArchiveRun — enabled mode", () => {
       archiveErrors: 0,
     });
   });
+
+  // rmSync is synchronous and createWriteStream defers its fs.open to a
+  // later tick, so this always wins the race — a deterministic ENOENT on the
+  // stream's 'error' event, verified (not flaky) via a tsx standalone drive
+  // on darwin before being written into this plan.
+  it("close() resolves even when the postings sink stream has errored", async () => {
+    mkdirSync(join(root, "2026-07-21"), { recursive: true });
+    const writer = startArchiveRun(root, "2026-07-21");
+    writer.appendPosting({ runDate: "2026-07-21", sourceId: "src1", canonicalKey: "ck-1", posting: {} });
+    // Destroy the sink out from under the writer to simulate a mid-run I/O error.
+    rmSync(join(root, "2026-07-21"), { recursive: true, force: true });
+    await expect(writer.close()).resolves.toBeUndefined();
+  });
 });
 ```
 
@@ -197,6 +210,7 @@ Expected: FAIL — `Cannot find module './archive'`.
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createWriteStream, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { finished } from "node:stream";
 import { createGzip, gzipSync } from "node:zlib";
 
 export interface ArchiveResponseEnvelope {
@@ -355,7 +369,11 @@ function createEnabledWriter(root: string, runDate: string): ArchiveWriter {
           resolve();
           return;
         }
-        out.on("finish", () => resolve());
+        // finished() fires on finish OR error OR premature close — including
+        // streams that already errored before close() was called. A plain
+        // out.on("finish") would hang runCrawl forever on an errored sink,
+        // and archive failure must never stall the crawl (§5).
+        finished(out, () => resolve());
         gzip.end();
       });
     },
@@ -371,7 +389,7 @@ export function startArchiveRun(dir: string | undefined, runDate: string): Archi
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/server/sources/archive.test.ts`
-Expected: PASS (6 tests).
+Expected: PASS (7 tests).
 
 - [ ] **Step 5: Commit**
 
