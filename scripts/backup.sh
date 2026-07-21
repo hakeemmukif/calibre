@@ -20,6 +20,7 @@ set -euo pipefail
 CONF="${CALIBER_BACKUP_CONF:-/root/.config/caliber-backup.env}"
 STATE_DIR="${CALIBER_BACKUP_STATE_DIR:-/root/.local/state/caliber}"
 COMPOSE_DIR="${CALIBER_COMPOSE_DIR:-/opt/caliber}"
+LOCAL_RETENTION_DIR="${CALIBER_BACKUP_LOCAL_DIR:-/root/backups/local}"
 
 [ -f "$CONF" ] || { echo "backup: missing config $CONF" >&2; exit 1; }
 # shellcheck disable=SC1090
@@ -38,20 +39,27 @@ docker compose exec -T app rm -f /var/lib/caliber/data/snapshot.db
 docker compose exec -T app npx tsx -e "const{createClient}=require('@libsql/client');const c=createClient({url:process.env.DATABASE_URL});c.execute(\"VACUUM INTO '/var/lib/caliber/data/snapshot.db'\").then(()=>console.log('vacuum ok'))"
 docker compose cp app:/var/lib/caliber/data/snapshot.db "$WORK/caliber-$STAMP.db"
 
-# 2. Uploads (the volume is already in the nightly cron per the consolidation
+# 2. Local on-disk retention (unencrypted, plain DB — fast restores without
+#    the age private key). Separate directory from the legacy
+#    /etc/cron.daily/caliber-backup 14-day rotation so the two never collide.
+mkdir -p "$LOCAL_RETENTION_DIR"
+cp "$WORK/caliber-$STAMP.db" "$LOCAL_RETENTION_DIR/caliber-$STAMP.db"
+find "$LOCAL_RETENTION_DIR" -type f -name "caliber-*.db" -mtime +30 -delete
+
+# 3. Uploads (the volume is already in the nightly cron per the consolidation
 #    doc — this adds the off-box + encrypted leg).
 docker compose cp app:/var/lib/caliber/uploads "$WORK/uploads"
 tar -czf "$WORK/uploads-$STAMP.tar.gz" -C "$WORK" uploads
 
-# 3. Encrypt to the operator's age public key.
+# 4. Encrypt to the operator's age public key.
 age -r "$AGE_RECIPIENT" -o "$WORK/caliber-$STAMP.db.age" "$WORK/caliber-$STAMP.db"
 age -r "$AGE_RECIPIENT" -o "$WORK/uploads-$STAMP.tar.gz.age" "$WORK/uploads-$STAMP.tar.gz"
 
-# 4. Off-box.
+# 5. Off-box.
 rclone copyto "$WORK/caliber-$STAMP.db.age" "$RCLONE_REMOTE/db/caliber-$STAMP.db.age"
 rclone copyto "$WORK/uploads-$STAMP.tar.gz.age" "$RCLONE_REMOTE/uploads/uploads-$STAMP.tar.gz.age"
 
-# 5. Success marker — alert-check.sh pages when this is older than ~26h.
+# 6. Success marker — alert-check.sh pages when this is older than ~26h.
 mkdir -p "$STATE_DIR"
 date +%s > "$STATE_DIR/backup-last-success"
 echo "backup ok: caliber-$STAMP.db.age + uploads-$STAMP.tar.gz.age -> $RCLONE_REMOTE"
