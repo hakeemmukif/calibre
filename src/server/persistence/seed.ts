@@ -50,6 +50,10 @@ export const sourceSeeds: (typeof sources.$inferInsert)[] = [
       country: "MY",
     },
   },
+  // smartrecruiters connector's first target (2026-07-21 SmartRecruiters
+  // connector task) — Grab's public postings board, slug live-verified
+  // against `api.smartrecruiters.com/v1/companies/Grab/postings`.
+  { id: "sr-grab", name: "Grab", kind: "ats", persona: "local", enabled: true, config: { connector: "smartrecruiters", slug: "Grab", geo: { scope: "restricted", regions: ["SEA"] } } },
   // Spec 2026-07-12-pasted-job-ingestion-design.md §10: the pasted-URL
   // pipeline's source row — disabled (never fan-out scanned), persona
   // 'both' (visible regardless of active toggle), kind 'manual' (no
