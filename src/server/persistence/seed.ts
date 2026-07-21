@@ -64,6 +64,17 @@ export const sourceSeeds: (typeof sources.$inferInsert)[] = [
   // connector task) — Grab's public postings board, slug live-verified
   // against `api.smartrecruiters.com/v1/companies/Grab/postings`.
   { id: "sr-grab", name: "Grab", kind: "ats", persona: "local", enabled: true, config: { connector: "smartrecruiters", slug: "Grab", geo: { scope: "restricted", regions: ["SEA"] } } },
+  // Second APAC pass (2026-07-21, live-verified via public ATS APIs:
+  // boards-api.greenhouse.io, api.lever.co, api.ashbyhq.com — non-zero
+  // postings for each).
+  { id: "gh-agoda", name: "Agoda", kind: "ats", persona: "local", enabled: true, config: { connector: "greenhouse", slug: "agoda", geo: { scope: "restricted", regions: ["SEA", "APAC"] } } },
+  { id: "gh-okta", name: "Okta", kind: "ats", persona: "remote", enabled: true, config: { connector: "greenhouse", slug: "okta", geo: { scope: "restricted", regions: ["APAC"] } } },
+  { id: "lever-meesho", name: "Meesho", kind: "ats", persona: "local", enabled: true, config: { connector: "lever", slug: "meesho", geo: { scope: "restricted", regions: ["APAC"] } } },
+  { id: "gh-razorpay", name: "Razorpay", kind: "ats", persona: "local", enabled: true, config: { connector: "greenhouse", slug: "razorpaysoftwareprivatelimited", geo: { scope: "restricted", regions: ["APAC"] } } },
+  { id: "ashby-xero", name: "Xero", kind: "ats", persona: "local", enabled: true, config: { connector: "ashby", slug: "xero", geo: { scope: "restricted", regions: ["ANZ"] } } },
+  { id: "gh-moloco", name: "Moloco", kind: "ats", persona: "remote", enabled: true, config: { connector: "greenhouse", slug: "moloco", geo: { scope: "restricted", regions: ["APAC"] } } },
+  { id: "gh-postman", name: "Postman", kind: "ats", persona: "remote", enabled: true, config: { connector: "greenhouse", slug: "postman", geo: { scope: "restricted", regions: ["APAC"] } } },
+  { id: "gh-groww", name: "Groww", kind: "ats", persona: "local", enabled: true, config: { connector: "greenhouse", slug: "groww", geo: { scope: "restricted", regions: ["APAC"] } } },
   // Spec 2026-07-12-pasted-job-ingestion-design.md §10: the pasted-URL
   // pipeline's source row — disabled (never fan-out scanned), persona
   // 'both' (visible regardless of active toggle), kind 'manual' (no
