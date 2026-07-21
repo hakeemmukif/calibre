@@ -21,10 +21,12 @@ services:
       # Non-secret runtime config (secrets live in .env.production):
       DATABASE_URL: file:/var/lib/caliber/data/caliber.db
       CALIBER_UPLOADS_DIR: /var/lib/caliber/uploads
+      CALIBER_ARCHIVE_DIR: /var/lib/caliber/archive
       SESSION_COOKIE_SECURE: "true"   # served over HTTPS via caddy
       NODE_ENV: production
     volumes:
       - uploads:/var/lib/caliber/uploads   # persist résumé files across deploys
+      - archive:/var/lib/caliber/archive   # nightly raw-crawl archive (2026-07-21-raw-crawl-archive-design.md)
       - dbdata:/var/lib/caliber/data       # persist caliber.db (+ -wal/-shm) across deploys
     # No published ports — only caddy talks to the app.
     expose: ["3000"]
@@ -42,5 +44,6 @@ services:
 volumes:
   dbdata:
   uploads:
+  archive:
   caddy_data:
   caddy_config:
