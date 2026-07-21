@@ -105,8 +105,31 @@ describe("runCrawl", () => {
     expect(result.status).toBe("completed");
     expect(result.stats.sourcesFailed).toBe(1);
     expect(result.stats.sourcesOk).toBe(1);
+    expect(result.stats.failedSources).toEqual([{ id: bad.id, error: "boom" }]);
     const rows = await db.select().from(postings);
     expect(rows.map((r) => r.sourceId)).toEqual([good.id]);
+  });
+
+  it("truncates a failed source's error message to 200 chars in failedSources", async () => {
+    const db = await createTestDb();
+    const bad = await insertSource(db, { config: { connector: "ashby", geo: { scope: "restricted" } } });
+    const longMessage = "x".repeat(300);
+
+    const result = await runCrawl({
+      db,
+      sources: [bad],
+      connectorFor: (source) => ({
+        id: source.id,
+        kind: source.kind,
+        persona: source.persona,
+        async *discover() {
+          throw new Error(longMessage);
+        },
+      }),
+    });
+
+    expect(result.stats.failedSources).toEqual([{ id: bad.id, error: longMessage.slice(0, 200) }]);
+    expect(result.stats.failedSources[0].error).toHaveLength(200);
   });
 
   it("delists ONLY after the source's own fetch succeeds", async () => {
@@ -227,6 +250,7 @@ describe("runCrawl", () => {
     expect(result.status).toBe("completed");
     expect(result.stats.perHostBackoffs["api.ashbyhq.com"]).toBe(1);
     expect(result.stats.sourcesFailed).toBe(1); // a1
+    expect(result.stats.failedSources).toEqual([{ id: a1.id, error: "HTTP 429" }]);
     expect(result.sourcesSkipped).toBe(1); // a2, skipped because its host stopped
     expect(result.stats.sourcesOk).toBe(1); // b1, other host continued
     const rows = await db.select().from(postings);

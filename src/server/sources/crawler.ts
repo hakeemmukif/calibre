@@ -56,6 +56,12 @@ export interface CrawlStats {
   // Source ids whose fetch SUCCEEDED but returned zero postings this run — a
   // visible anomaly (bad slug, empty vendor payload), never a delist signal.
   emptyFetches: string[];
+  // Source ids whose fetch FAILED this run, with the thrown error's message
+  // (truncated) — sourcesFailed's count alone doesn't say which board or why;
+  // this is what a nightly-crawl diagnosis actually needs (see gh-coupang
+  // 2026-07 postmortem: a bare failed-count forced re-deriving the cause from
+  // raw log scraping).
+  failedSources: { id: string; error: string }[];
 }
 
 export interface CrawlRunResult {
@@ -94,6 +100,7 @@ const DEFAULT_CONCURRENCY_PER_HOST = 3;
 const PURGE_MS = 60 * 24 * 60 * 60 * 1000; // 60 days
 const LEASE_MS = 2 * 60 * 60 * 1000; // 2 hours
 const DESCRIPTION_CAP = 40_000; // arch §1.1 (D2): full JD, ≤40k cap enforced by the crawler
+const FAILED_SOURCE_ERROR_CAP = 200; // stats.failedSources[].error — enough to identify the cause, not a full stack
 
 const HOST_BY_CONNECTOR: Record<string, string> = {
   greenhouse: "boards-api.greenhouse.io",
@@ -351,6 +358,7 @@ export async function runCrawl(deps: CrawlDeps): Promise<CrawlRunResult> {
     delists: 0,
     durationMs: 0,
     emptyFetches: [],
+    failedSources: [],
   };
   let sourcesSkipped = 0;
   let purged = 0;
@@ -390,6 +398,8 @@ export async function runCrawl(deps: CrawlDeps): Promise<CrawlRunResult> {
         stats.perHostBackoffs[host] = (stats.perHostBackoffs[host] ?? 0) + 1;
       }
       stats.sourcesFailed += 1;
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      stats.failedSources.push({ id: source.id, error: errorMessage.slice(0, FAILED_SOURCE_ERROR_CAP) });
       // Recorded, not thrown — a failing source must not abort the crawl (F1),
       // and a failed fetch NEVER triggers the delist sweep below.
       console.error(`crawl ${leaseId}: source "${source.id}" fetch failed:`, err);

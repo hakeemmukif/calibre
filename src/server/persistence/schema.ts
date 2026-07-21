@@ -95,6 +95,9 @@ type CrawlRunStats = {
   // flag, never a delist signal (a bad slug or empty vendor payload must not
   // read as "the whole board vanished").
   emptyFetches: string[];
+  // Source ids whose fetch failed, with the thrown error's message (truncated
+  // ~200 chars) — sourcesFailed's count alone doesn't say which board or why.
+  failedSources: { id: string; error: string }[];
 };
 
 // ---- tables ----
