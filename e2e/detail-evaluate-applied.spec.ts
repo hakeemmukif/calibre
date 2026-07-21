@@ -34,8 +34,13 @@ test("job detail: re-evaluate keeps a score, mark-applied lands in the tracker",
   const job = await bootstrapRemoteJob(request);
 
   await page.goto("/feed");
-  await page.getByText("Senior Backend Engineer, Payments").first().click();
-  await expect(page).toHaveURL(new RegExp(`/jobs/${job.id}$`));
+  // The card navigates via router.push() in an onClick handler (not a real
+  // <a href>), so on a slow runner the click can land before React attaches
+  // it — retry the click until navigation actually happens.
+  await expect(async () => {
+    await page.getByText("Senior Backend Engineer, Payments").first().click();
+    await expect(page).toHaveURL(new RegExp(`/jobs/${job.id}$`), { timeout: 2000 });
+  }).toPass({ timeout: 15_000 });
 
   const reevaluate = page.getByRole("button", { name: "Re-evaluate" });
   await expect(reevaluate).toBeVisible();
