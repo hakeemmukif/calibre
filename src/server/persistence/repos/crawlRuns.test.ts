@@ -57,13 +57,13 @@ describe("crawlRunsRepo.latestSuccessfulFinishedAt", () => {
       status: "completed",
       startedAt: new Date("2026-07-10T03:00:00Z"),
       finishedAt: new Date("2026-07-10T03:10:00Z"),
-      stats: { sourcesOk: 1, sourcesFailed: 0, perHostBackoffs: {}, upserts: 1, delists: 0, durationMs: 600_000, emptyFetches: [], failedSources: [] },
+      stats: { sourcesOk: 1, sourcesFailed: 0, perHostBackoffs: {}, upserts: 1, delists: 0, durationMs: 600_000, emptyFetches: [], failedSources: [], archiveErrors: 0 },
     });
     await db.insert(crawlRuns).values({
       status: "completed",
       startedAt: new Date("2026-07-16T03:00:00Z"),
       finishedAt: new Date("2026-07-16T03:10:00Z"),
-      stats: { sourcesOk: 1, sourcesFailed: 0, perHostBackoffs: {}, upserts: 1, delists: 0, durationMs: 600_000, emptyFetches: [], failedSources: [] },
+      stats: { sourcesOk: 1, sourcesFailed: 0, perHostBackoffs: {}, upserts: 1, delists: 0, durationMs: 600_000, emptyFetches: [], failedSources: [], archiveErrors: 0 },
     });
     await db.insert(crawlRuns).values({ status: "running", startedAt: new Date("2026-07-17T03:00:00Z") });
 
@@ -118,7 +118,7 @@ describe("crawlRunsRepo.listFinishedRuns", () => {
   it("returns only non-running rows, newest first, limited", async () => {
     const db = await createTestDb();
     const repo = createCrawlRunsRepo(db);
-    const stats = { sourcesOk: 1, sourcesFailed: 0, perHostBackoffs: {}, upserts: 1, delists: 0, durationMs: 1000, emptyFetches: [], failedSources: [] };
+    const stats = { sourcesOk: 1, sourcesFailed: 0, perHostBackoffs: {}, upserts: 1, delists: 0, durationMs: 1000, emptyFetches: [], failedSources: [], archiveErrors: 0 };
 
     await db.insert(crawlRuns).values({ status: "completed", startedAt: new Date("2026-07-14T03:00:00Z"), finishedAt: new Date("2026-07-14T03:10:00Z"), stats });
     await db.insert(crawlRuns).values({ status: "failed", startedAt: new Date("2026-07-15T03:00:00Z"), finishedAt: new Date("2026-07-15T03:05:00Z"), stats });
