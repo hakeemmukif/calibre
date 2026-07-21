@@ -13,13 +13,15 @@ import { identify, resetAnalytics } from "@/features/analytics/client";
 
 // CreditsChip — mounted once in the shell; refreshes on mount and hides
 // while the balance hasn't loaded yet or the user is on the unlimited plan
-// (spec §4.4). Sits one z-index below CheckDock's fixed corner tray (40).
+// (spec §4.4). Sits below the feed header row so it doesn't overlap the
+// header's right-aligned actions (e.g. Scan now). One z-index below
+// CheckDock's fixed corner tray (40).
 function CreditsChip() {
   React.useEffect(() => { refreshCredits(); }, []);
   const { balance, plan } = useCredits();
   if (balance === null || plan === "unlimited") return null;
   return (
-    <div style={{ position: "fixed", top: 16, right: 24, zIndex: 39, pointerEvents: "none" }}>
+    <div style={{ position: "fixed", top: 72, right: 24, zIndex: 39, pointerEvents: "none" }}>
       <Chip style={{ pointerEvents: "auto" }}>⬡ {balance} credits</Chip>
     </div>
   );
