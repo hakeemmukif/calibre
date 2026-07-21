@@ -28,11 +28,20 @@ export default defineConfig({
   // request to /login or /onboarding instead of rendering.
   globalSetup: "./e2e/authSetup.ts",
   use: { baseURL: "http://localhost:3005", trace: "on-first-retry", storageState: "./e2e/.auth/user.json" },
+  // CI runs the suite on a shared, slow self-hosted box where `next dev`'s
+  // on-demand per-route compilation starves RSC/API responses under
+  // Playwright's concurrent requests, causing rotating spec failures (card
+  // navigations never committing, a sources PATCH hanging). A production
+  // build removes on-demand compilation entirely. Local dev stays on
+  // `next dev` for fast iteration. webServer.env below is shared by the
+  // whole command, so `next build` sees the same DATABASE_URL etc. as
+  // `next start`.
+  retries: process.env.CI ? 1 : 0,
   webServer: {
-    command: "npx next dev -p 3005",
+    command: process.env.CI ? "npm run build && npm run start -- -p 3005" : "npx next dev -p 3005",
     url: "http://localhost:3005/api/health",
     reuseExistingServer: false,
-    timeout: 120_000,
+    timeout: process.env.CI ? 600_000 : 120_000,
     env: {
       DATABASE_URL: E2E_DB_URL,
       CALIBER_TEST_DOUBLES: "1",
