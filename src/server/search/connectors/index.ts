@@ -11,12 +11,14 @@ import { createFixtureConnector } from "./fixture";
 import { createGreenhouseConnector } from "./greenhouse";
 import { createJobstreetConnector } from "./jobstreet";
 import { createLeverConnector } from "./lever";
+import { createSmartRecruitersConnector } from "./smartrecruiters";
 
 const FACTORIES: Record<string, (source: SourceRow) => SourceConnector> = {
   greenhouse: createGreenhouseConnector,
   lever: createLeverConnector,
   ashby: createAshbyConnector,
   jobstreet: createJobstreetConnector,
+  smartrecruiters: createSmartRecruitersConnector,
 };
 
 export function connectorForSource(source: SourceRow): SourceConnector {

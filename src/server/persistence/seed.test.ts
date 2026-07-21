@@ -8,10 +8,10 @@ import { verifyPassword } from "@/server/auth/password";
 import { connectorForSource } from "@/server/search/connectors";
 
 describe("seedSources", () => {
-  it("inserts the 23 sources rows against libsql", async () => {
+  it("inserts the 24 sources rows against libsql", async () => {
     const db = await createTestDb();
     const inserted = await seedSources(db);
-    expect(inserted).toHaveLength(23);
+    expect(inserted).toHaveLength(24);
 
     const rows = await db.select().from(sources);
     expect(rows.map((r) => r.id).sort()).toEqual([
@@ -38,8 +38,9 @@ describe("seedSources", () => {
       "lever-shopback",
       "lever-toptal",
       "manual",
+      "sr-grab",
     ]);
-    expect(sourceSeeds).toHaveLength(23);
+    expect(sourceSeeds).toHaveLength(24);
   });
 });
 

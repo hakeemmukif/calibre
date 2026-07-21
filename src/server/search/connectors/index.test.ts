@@ -16,7 +16,7 @@ function source(id: string, overrides: Partial<SourceRow> = {}): SourceRow {
 }
 
 describe("connectorForSource", () => {
-  it.each(["greenhouse", "lever", "ashby", "jobstreet"])("resolves a connector for %s keyed by source.id", (id) => {
+  it.each(["greenhouse", "lever", "ashby", "jobstreet", "smartrecruiters"])("resolves a connector for %s keyed by source.id", (id) => {
     const connector = connectorForSource(source(id));
     expect(connector.id).toBe(id);
   });
