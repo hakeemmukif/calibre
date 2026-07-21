@@ -75,6 +75,17 @@ export const sourceSeeds: (typeof sources.$inferInsert)[] = [
   { id: "gh-moloco", name: "Moloco", kind: "ats", persona: "remote", enabled: true, config: { connector: "greenhouse", slug: "moloco", geo: { scope: "restricted", regions: ["APAC"] } } },
   { id: "gh-postman", name: "Postman", kind: "ats", persona: "remote", enabled: true, config: { connector: "greenhouse", slug: "postman", geo: { scope: "restricted", regions: ["APAC"] } } },
   { id: "gh-groww", name: "Groww", kind: "ats", persona: "local", enabled: true, config: { connector: "greenhouse", slug: "groww", geo: { scope: "restricted", regions: ["APAC"] } } },
+  // Third APAC pass (2026-07-21, live-verified via public ATS APIs).
+  { id: "gh-okx", name: "OKX", kind: "ats", persona: "local", enabled: true, config: { connector: "greenhouse", slug: "okx", geo: { scope: "restricted", regions: ["APAC", "SEA"] } } },
+  { id: "lever-binance", name: "Binance", kind: "ats", persona: "remote", enabled: true, config: { connector: "lever", slug: "binance", geo: { scope: "restricted", regions: ["APAC"] } } },
+  { id: "lever-lalamove", name: "Lalamove", kind: "ats", persona: "local", enabled: true, config: { connector: "lever", slug: "lalamove", geo: { scope: "restricted", regions: ["SEA", "APAC"] } } },
+  { id: "gh-bybit", name: "Bybit", kind: "ats", persona: "local", enabled: true, config: { connector: "greenhouse", slug: "bybit", geo: { scope: "restricted", regions: ["SEA"] } } },
+  { id: "gh-phonepe", name: "PhonePe", kind: "ats", persona: "local", enabled: true, config: { connector: "greenhouse", slug: "phonepe", geo: { scope: "restricted", regions: ["APAC"] } } },
+  { id: "gh-inmobi", name: "InMobi", kind: "ats", persona: "local", enabled: true, config: { connector: "greenhouse", slug: "inmobi", geo: { scope: "restricted", regions: ["APAC", "SEA"] } } },
+  { id: "lever-xsolla", name: "Xsolla", kind: "ats", persona: "local", enabled: true, config: { connector: "lever", slug: "xsolla", geo: { scope: "restricted", regions: ["SEA", "APAC"] } } },
+  { id: "gh-anchanto", name: "Anchanto", kind: "ats", persona: "local", enabled: true, config: { connector: "greenhouse", slug: "anchanto", geo: { scope: "restricted", regions: ["APAC", "SEA"] } } },
+  { id: "gh-workato", name: "Workato", kind: "ats", persona: "remote", enabled: true, config: { connector: "greenhouse", slug: "workato", geo: { scope: "restricted", regions: ["APAC", "SEA", "ANZ"] } } },
+  { id: "gh-monsterenergyapac", name: "Monster Energy APAC", kind: "ats", persona: "local", enabled: true, config: { connector: "greenhouse", slug: "monsterenergyapac", geo: { scope: "restricted", regions: ["APAC", "SEA"] } } },
   // Spec 2026-07-12-pasted-job-ingestion-design.md §10: the pasted-URL
   // pipeline's source row — disabled (never fan-out scanned), persona
   // 'both' (visible regardless of active toggle), kind 'manual' (no

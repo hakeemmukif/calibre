@@ -8,10 +8,10 @@ import { verifyPassword } from "@/server/auth/password";
 import { connectorForSource } from "@/server/search/connectors";
 
 describe("seedSources", () => {
-  it("inserts the 32 sources rows against libsql", async () => {
+  it("inserts the 42 sources rows against libsql", async () => {
     const db = await createTestDb();
     const inserted = await seedSources(db);
-    expect(inserted).toHaveLength(32);
+    expect(inserted).toHaveLength(42);
 
     const rows = await db.select().from(sources);
     expect(rows.map((r) => r.id).sort()).toEqual([
@@ -26,29 +26,39 @@ describe("seedSources", () => {
       "ashby-xero",
       "ashby-zapier",
       "gh-agoda",
+      "gh-anchanto",
+      "gh-bybit",
       "gh-coupang",
       "gh-cultureamp",
       "gh-elastic",
       "gh-gitlab",
       "gh-groww",
+      "gh-inmobi",
       "gh-moloco",
+      "gh-monsterenergyapac",
       "gh-okta",
+      "gh-okx",
+      "gh-phonepe",
       "gh-postman",
       "gh-razorpay",
       "gh-remote",
       "gh-stripe",
+      "gh-workato",
       "gh-xendit",
       "jobstreet",
+      "lever-binance",
       "lever-gotogroup",
+      "lever-lalamove",
       "lever-meesho",
       "lever-ninjavan",
       "lever-safetyculture",
       "lever-shopback",
       "lever-toptal",
+      "lever-xsolla",
       "manual",
       "sr-grab",
     ]);
-    expect(sourceSeeds).toHaveLength(32);
+    expect(sourceSeeds).toHaveLength(42);
   });
 });
 
