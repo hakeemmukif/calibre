@@ -144,7 +144,7 @@ describe("GET /api/search/:id", () => {
   });
 
   it("returns a 200 JSON snapshot by default (no Accept header)", async () => {
-    await insertResume(state.testDb, { isActive: true });
+    await insertResume(state.testDb, { ...resumeWithRoleSignal, isActive: true });
     await insertSource(state.testDb, { id: "greenhouse", kind: "ats", persona: "remote" });
 
     const created = await POST(
@@ -202,7 +202,7 @@ describe("GET /api/search/:id", () => {
   });
 
   it("SSE: emits a snapshot before live deltas for a late subscriber", async () => {
-    await insertResume(state.testDb, { isActive: true });
+    await insertResume(state.testDb, { ...resumeWithRoleSignal, isActive: true });
     await insertSource(state.testDb, { id: "greenhouse", kind: "ats", persona: "remote" });
     state.hang = true; // keep the run live so the handle survives the late subscribe
 
