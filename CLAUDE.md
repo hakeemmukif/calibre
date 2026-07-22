@@ -21,7 +21,7 @@ Caliber is a standalone AI job-search + application-tracking web app (Next.js 15
 - **LaTeX is DROPPED** — tailoring emits résumé JSON + a changes list; PDF via Playwright.
 
 ## Canon
-- **Design system:** the 13 primitives in `src/caliber-ui/components` + kit tokens in `src/caliber-ui/styles/tokens.css` (the approved "what you saw" values: cool ground `--bg-app #f6f7fb`, soft radii, red accent `#e8482b`). Compose them; never reinvent. Legitimacy is *semantic* colour, kept separate from the red brand accent.
+- **Design system:** the 14 primitives in `src/caliber-ui/components` + kit tokens in `src/caliber-ui/styles/tokens.css` (the approved "what you saw" values: cool ground `--bg-app #f6f7fb`, soft radii, red accent `#e8482b`). Compose them; never reinvent. Legitimacy is *semantic* colour, kept separate from the red brand accent.
 - **Contract:** **Zod schemas in `src/types` are the single source of truth** → OpenAPI → docs. Key entities: `Job` (has `applyUrl`, `legitimacy` 5-tier, `source`, `persona`, `firstSeen`, `isNew`), `Resume`, `Application` (tracker record; the kit's `applied[]`), `ApplicationQuestion` / `ApplicationAnswer(s)`, `TailoredResume`, `SearchRun`, `SourceRef`. Do not add fields absent from the contract without updating it.
 - **Legitimacy tiers:** `verified | clear | suspicious | ghost | scam`. Tracker status folding to the 4-stage pipeline lives in `features/applied/status-map.ts`.
 
@@ -30,6 +30,16 @@ Caliber is a standalone AI job-search + application-tracking web app (Next.js 15
 - **LLM:** OpenRouter only (OpenAI-compatible), cheapest viable model per task, template-guided (`config/models.yml`). No `claude -p` subprocesses.
 - **Persistence:** Drizzle + SQLite via libsql (embedded file locally; Turso-ready). **Fail loud** — validate at boundaries (`Schema.parse`); no fallback defaults, no silent `0`/`""`/`unknown`.
 - **Storybook is the component/page gallery** (`npm run storybook`). Figma is deferred; code is canon.
+
+## Commands
+- `npm run check` — the canonical gate (typecheck + vitest + `contract:check` + build). Run before claiming any work done.
+- `npm run dev` — local dev server.
+- `npm test` — vitest unit/integration.
+- `npm run test:e2e` — Playwright e2e.
+- `npm run db:migrate` — apply Drizzle migrations. Caveat: `db:migrate` reads `.env.local`, which usually doesn't exist locally, while `next dev` reads `.env` — so migrating without exporting `DATABASE_URL` inline silently migrates nothing (or the wrong DB) and the dev DB lags. Pass it inline: `DATABASE_URL=file:./caliber.db npm run db:migrate`.
+- `/box` skill — SSH/deploy to the production VPS.
+- `/verify` skill — drive the app end-to-end at runtime.
+- `docs/superpowers/README.md` — dated spec/plan index.
 
 ## Product
 Niche: Malaysian/SEA professionals seeking remote/global roles **+** Malaysia-local, launched together. Wedge: fit + **legitimacy** (ghost/scam detection) foregrounded — no incumbent tracker leads with it. Lifelong tracker = retention. Template optimisation = an internal quality engine, not a user-facing headline.

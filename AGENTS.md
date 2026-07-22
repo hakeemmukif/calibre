@@ -11,11 +11,18 @@ If a fact isn't in the docs or code, it is UNKNOWN — say so; never fabricate e
 **Donor:** `/Users/hakeem/Projects/career-ops/careerops-web` is a CODE DONOR ONLY — extract its logic, rebuild clean; not a runtime dep, not the design. Do NOT hallucinate donor facts: it has no `scan_jobs` table (was a TSV), no separate `verdict/verdict.ts` (legitimacy is inside eval scoring), it rejects `.docx` (add `mammoth`), and LaTeX is dropped.
 
 **Canon:**
-- Design system = 13 primitives in `src/caliber-ui/components` + kit tokens in `src/caliber-ui/styles/tokens.css` ("what you saw": cool ground, soft radii, red accent). Compose, don't reinvent. Legitimacy colour is semantic, separate from the red accent.
+- Design system = 14 primitives in `src/caliber-ui/components` + kit tokens in `src/caliber-ui/styles/tokens.css` ("what you saw": cool ground, soft radii, red accent). Compose, don't reinvent. Legitimacy colour is semantic, separate from the red accent.
 - Contract = Zod schemas in `src/types` (single source of truth → OpenAPI). Entities: `Job` (incl. `applyUrl`, 5-tier `legitimacy`), `Resume`, `Application`, `ApplicationQuestion/Answer`, `TailoredResume`, `SearchRun`.
 - Legitimacy tiers: `verified | clear | suspicious | ghost | scam`.
 
-**Rules:** UI → `features/*` → `server/*` (only `server/*` touches DB/LLM). LLM via OpenRouter only, template-guided, cheapest viable. Drizzle+Postgres (SQLite dev). Fail loud; validate at boundaries; no fallback defaults. Storybook is the gallery; Figma deferred.
+**Rules:** UI → `features/*` → `server/*` (only `server/*` touches DB/LLM). LLM via OpenRouter only, template-guided, cheapest viable. Drizzle + SQLite via libsql (embedded file; Turso-ready). No Postgres. Fail loud; validate at boundaries; no fallback defaults. Storybook is the gallery; Figma deferred.
+
+**Commands:**
+- `npm run check` — canonical gate (typecheck + vitest + contract:check + build)
+- `npm run dev` — local dev server
+- `npm test` — vitest unit/integration
+- `npm run db:migrate` — apply Drizzle migrations
+- `npm run test:e2e` — Playwright
 
 **Product wedge:** fit + legitimacy (ghost/scam) scoring, foregrounded; remote-global + Malaysia-local at launch.
 
