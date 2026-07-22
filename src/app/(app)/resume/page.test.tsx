@@ -15,13 +15,33 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push }),
 }));
 
-const { getResume, uploadResume, startSearch } = vi.hoisted(() => ({
+const { getResume, uploadResume, startSearch, getProfile, updateProfile } = vi.hoisted(() => ({
   getResume: vi.fn(),
   uploadResume: vi.fn(),
   startSearch: vi.fn(),
+  getProfile: vi.fn(),
+  updateProfile: vi.fn(),
 }));
 vi.mock("@/features/resume/client", () => ({ getResume, uploadResume }));
 vi.mock("@/features/search/client", () => ({ startSearch }));
+vi.mock("@/features/profile/client", () => ({ getProfile, updateProfile }));
+
+// Complete profile with targetRole set — the finish-setup card is out of
+// scope for the existing review-then-scan flow tests below.
+const PROFILE = {
+  baseCountry: "MY",
+  relocation: "stay",
+  scheduleFlex: "base-hours",
+  employmentPref: "any",
+  displayLocation: "Kuala Lumpur, Malaysia",
+  targetRole: "Backend Engineer",
+  salaryMin: null,
+  salaryMax: null,
+  salaryCurrency: null,
+  salaryCadence: null,
+  attrProvenance: {},
+  updatedAt: "2026-07-14T00:00:00.000Z",
+};
 
 import ResumePage from "./page";
 
@@ -56,6 +76,9 @@ beforeEach(() => {
   uploadResume.mockReset();
   uploadResume.mockResolvedValue(resume);
   startSearch.mockReset();
+  getProfile.mockReset();
+  getProfile.mockResolvedValue(PROFILE);
+  updateProfile.mockReset();
 });
 
 describe("ResumePage review-then-scan flow", () => {

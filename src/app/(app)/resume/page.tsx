@@ -8,14 +8,16 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { ResumeUpload, type ResumeUploadStatus } from "@/caliber-ui/compositions/Resume/ResumeUpload";
 import { ResumeView } from "@/caliber-ui/compositions/Resume/ResumeView";
+import { FinishSetupCard, type FinishSetupValues } from "@/caliber-ui/compositions/Resume/FinishSetupCard";
 import { Card } from "@/caliber-ui/components/Card";
 import { Button } from "@/caliber-ui/components/Button";
 import { Icon } from "@/caliber-ui/components/Icon";
 import { getResume, uploadResume } from "@/features/resume/client";
 import { startSearch } from "@/features/search/client";
+import { getProfile, updateProfile } from "@/features/profile/client";
 import { ApiError } from "@/features/http";
 import { showDenial } from "@/features/credits/creditsStore";
-import type { Resume } from "@/types";
+import type { Resume, Profile } from "@/types";
 
 export default function ResumePage() {
   const router = useRouter();
@@ -27,6 +29,10 @@ export default function ResumePage() {
   const [justUploaded, setJustUploaded] = React.useState(false);
   const [scanLaunching, setScanLaunching] = React.useState<"remote" | "local" | null>(null);
   const lastPersonaRef = React.useRef<"remote" | "local">("remote");
+  const [profile, setProfile] = React.useState<Profile | null>(null);
+  const [profileMissing, setProfileMissing] = React.useState(false);
+  const [setupBusy, setSetupBusy] = React.useState(false);
+  const [setupError, setSetupError] = React.useState<string | undefined>();
 
   async function handleScan(persona: "remote" | "local") {
     lastPersonaRef.current = persona;
@@ -45,12 +51,23 @@ export default function ResumePage() {
     }
   }
 
+  const loadProfile = React.useCallback(async () => {
+    try {
+      setProfile(await getProfile());
+      setProfileMissing(false);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) setProfileMissing(true);
+      else setSetupError(err instanceof Error ? err.message : "Couldn't load the profile.");
+    }
+  }, []);
+
   React.useEffect(() => {
     void getResume().then((r) => {
       setResume(r);
       setLoaded(true);
     });
-  }, []);
+    void loadProfile();
+  }, [loadProfile]);
 
   async function handleFile(file: File) {
     setStatus("uploading");
@@ -65,9 +82,36 @@ export default function ResumePage() {
       setStatus("done");
       setResume(uploaded);
       setJustUploaded(true);
+      void loadProfile();
     } catch (err) {
       setStatus("error");
       setError(err instanceof Error ? err.message : "Couldn't parse that file.");
+    }
+  }
+
+  async function handleFinishSetup(values: FinishSetupValues) {
+    if (!profile) return;
+    setSetupBusy(true);
+    setSetupError(undefined);
+    try {
+      setProfile(
+        await updateProfile({
+          baseCountry: profile.baseCountry,
+          relocation: profile.relocation,
+          scheduleFlex: profile.scheduleFlex,
+          employmentPref: profile.employmentPref,
+          displayLocation: values.displayLocation ?? profile.displayLocation,
+          targetRole: values.targetRole ?? profile.targetRole,
+          salaryMin: profile.salaryMin,
+          salaryMax: profile.salaryMax,
+          salaryCurrency: profile.salaryCurrency,
+          salaryCadence: profile.salaryCadence,
+        }),
+      );
+    } catch (err) {
+      setSetupError(err instanceof Error ? err.message : "Couldn't save.");
+    } finally {
+      setSetupBusy(false);
     }
   }
 
@@ -119,6 +163,27 @@ export default function ResumePage() {
                     </Button>
                     <Button variant="ghost" onClick={() => setJustUploaded(false)}>Not now</Button>
                   </div>
+                </div>
+              </Card>
+            )}
+            {profile && profile.targetRole === null && (
+              <FinishSetupCard
+                needsTargetRole
+                needsLocation={profile.displayLocation === null}
+                busy={setupBusy}
+                error={setupError}
+                onSubmit={(v) => void handleFinishSetup(v)}
+              />
+            )}
+            {profileMissing && (
+              <Card style={{ marginBottom: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                  <div style={{ font: "var(--type-body)", color: "var(--text-strong)" }}>
+                    Complete your profile to enable scanning.
+                  </div>
+                  <Button variant="secondary" onClick={() => router.push("/profile")}>
+                    Open Profile &amp; targets
+                  </Button>
                 </div>
               </Card>
             )}
