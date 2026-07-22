@@ -1,16 +1,16 @@
 # Caliber MVP — Component Inventory & Storybook Blueprint
 
-Grounded in spec §4/§5/§11.4/§11.8/§12. Everything composes the 13 primitives; nothing reinvents them.
+Grounded in spec §4/§5/§11.4/§11.8/§12. Everything composes the 14 primitives; nothing reinvents them.
 
 ## 0. Contract notes (read first)
 
 All compositions take **whole contract objects** (`Job`, `Resume`, `Application`), never exploded scalars — props stay aligned with `src/types` by construction. Notes:
 
 - The tracker record is the entity **`Application`** (Drizzle `applications`); it is what the kit surfaced as `applied[]`.
-- **`applyUrl: string` is required by F3 but absent from §5** — added to `Job` at contract-freeze. Same for the F4/F6 types (`ApplicationQuestion`, `DraftedAnswer`, `TailorChange`), which are net-new contract additions.
+- **`applyUrl: string` is required by F3 but absent from §5** — added to `Job` at contract-freeze. Same for the F4/F6 types (`ApplicationQuestion`, `ApplicationAnswer`, `TailorDiffEntry`), which are net-new contract additions.
 
 ```ts
-type Persona = 'remote' | 'local';
+type Persona = 'remote' | 'local' | 'pasted';
 type LegitTier = 'verified'|'clear'|'suspicious'|'ghost'|'scam';
 interface Legitimacy { tier: LegitTier; tone: 'verified'|'good'|'warn'|'ghost'|'danger'; summary: string; confidence?: number }
 // Job (§5) extended per §11.8 + F3:
@@ -78,16 +78,14 @@ Added by the auth-core + multi-tenant migration; not covered by the original spi
 
 **Extraction review:** parsed `ApplicationQuestion[]` render as an editable list — delete a mis-parse, edit prompt/`kind`/char-limit, or add manually. Then "Draft all answers" (or per-card).
 
-**Answer cards:** one `AnswerCard` per question. Editable textarea seeded with the LLM draft; live char counter vs `constraints.maxChars`; **grounding chips** — each cites a résumé region (`Summary`, `Acme 2022–24 · bullet 3`), clicking scrolls a collapsible résumé side-rail to the source; sentences the model couldn't ground get a `warn` Tag "not found in résumé". Per-card: **Regenerate** (dropdown: shorter · more formal · more specific) and **Copy**. Footer: **Copy all** and save-to-Application.
+**Answer cards:** one `AnswerCard` per question. Editable textarea seeded with the LLM draft; live char counter vs `maxLength`; **grounding chips** — each cites a résumé region (`Summary`, `Acme 2022–24 · bullet 3`), clicking scrolls a collapsible résumé side-rail to the source; sentences the model couldn't ground get a `warn` Tag "not found in résumé". Per-card: **Regenerate** (dropdown: shorter · more formal · more specific) and **Copy**. Footer: **Copy all** and save-to-Application.
 
 ```ts
-interface ApplicationQuestion { id: string; jobId: string; prompt: string;
-  kind: 'short'|'long'|'select'|'boolean';
-  constraints?: { maxChars?: number; options?: string[] };
-  source: 'ats-detected'|'pasted-form'|'jd-inferred' }
-interface DraftedAnswer { questionId: string; text: string;
-  citations: { section: string; ref: string; excerpt: string }[];
-  ungrounded: string[]; status: 'drafting'|'ready'|'edited'|'error' }
+interface ApplicationQuestion { id: string; prompt: string;
+  kind: 'text'|'textarea'|'select'|'multiselect'|'boolean'|'file';
+  options?: string[]; required: boolean; maxLength?: number }
+interface ApplicationAnswer { questionId: string; prompt: string; answer: string;
+  grounding: { source: 'experience'|'skills'|'summary'|'headline'; quote: string }[] }
 ```
 
 ```
@@ -110,13 +108,19 @@ interface DraftedAnswer { questionId: string; text: string;
 
 **Recommendation: diff-review.** (1) the MVP interaction is *approve LLM changes*, not free-form authoring; (2) the kit already owns a split editor (Resume Builder) — duplicating it violates "one canon"; (3) diff-review makes grounding auditable — the product's trust posture (same muscle as F4). The split editor remains the Phase-C Resume Builder; TailorResume outputs into it.
 
-**Breakdown:** `TailorControls` (emphasis chips from `job.gaps`/`fit`, "Generate") → `TailorReport` (the "measure" step — a `CorrelationReport` readout: two separate signals, semantic coverage + ATS keyword presence, never fused into one score; requirement rows grouped Buried→Met→Gap; a single "Rewrite to close these" CTA; segment bars via the local `SignalBar` helper) → `ChangeList` grouped by section → **`ChangeCard`** `{ change: TailorChange; onToggle(accept) }` (before/after text, one-line rationale, accept/reject) → `TailorPreview` (paper preview of accepted-only state) → `ExportBar` (accepted count · Save copy · Export PDF).
+**Breakdown:** `TailorControls` (emphasis chips from `job.gaps`/`fit`, "Generate") → `TailorReport` (the "measure" step — a `CorrelationReport` readout: two separate signals, semantic coverage + ATS keyword presence, never fused into one score; requirement rows grouped Buried→Met→Gap; a single "Rewrite to close these" CTA; segment bars via the local `SignalBar` helper) → `ChangeList` grouped by section → **`ChangeCard`** `{ change: TailorDiffEntry; onToggle(accept) }` (before/after text, one-line rationale, accept/reject) → `TailorPreview` (paper preview of accepted-only state) → `ExportBar` (accepted count · Save copy · Export PDF).
 
 ```ts
-interface TailorChange { id: string; section: string; op: 'rewrite'|'add'|'remove'|'reorder';
-  before?: string; after?: string; rationale: string; accepted: boolean }
-interface TailoredResume { jobId: string; baseResumeId: string; changes: TailorChange[];
-  status: 'generating'|'review'|'saved'|'exported' }
+interface TailorDiffEntry { section: string; op: 'add'|'remove'|'modify';
+  before?: string; after?: string; reason: string; requirement: string;
+  target: { index: number | null; bulletIndex: number | null } }
+interface TailoredResume { id: string; jobId: string; resumeId: string;
+  status: 'queued'|'running'|'completed'|'failed';
+  progress: { stage: string; current: number; total: number; label: string } | null;
+  reportId: string | null;
+  atsDelta: { before: number; after: number; total: number } | null;
+  resume: Omit<Resume, 'id'|'rawText'> | null;
+  diff: TailorDiffEntry[]; model: string; createdAt: string; completedAt: string | null }
 ```
 
 **States:** configuring · generating (streaming skeleton) · review (n changes, m accepted) · all-rejected · generation-error · saved · exporting-PDF / PDF-error.
@@ -127,7 +131,7 @@ Fixtures: one `src/caliber-ui/fixtures/` module exporting **Zod-parsed** `jobs: 
 
 ```
 Tokens/            Colors · Typography · Radius&Space · Legitimacy tones (tier→tone→Tag matrix)
-Primitives/        13 stories, one per primitive; every variant as Controls args
+Primitives/        14 stories, one per primitive; every variant as Controls args
 Compositions/
   Shell/           PersonaToggle · UrlEvalBar · NotificationBell · AppShellHeader
   Feed/            NewBadge · SummaryStrip · FilterChips · JobRow · JobFeed · ScanProgress
@@ -154,5 +158,5 @@ Per-story variants = the "states to story" columns above; every composition gets
 - `JobRow`/`JobFeed`/`EvalResultCard`/`JobDetail` consume `Job` verbatim (§5 + §11.8 + `applyUrl`).
 - `Tracker` consumes `Application` (`stage 0–3`, `statusTone`, `tailored`) — status folding stays in `features/applied/status-map.ts`.
 - `ResumeView`/`ResumeUpload` consume `Resume` (`hasResume` drives empty state; `atsScore` → ScoreBadge).
-- New contract types to freeze: `ApplicationQuestion`, `DraftedAnswer`, `TailorChange`, `TailoredResume` — Zod-first, OpenAPI-generated.
+- New contract types to freeze: `ApplicationQuestion`, `ApplicationAnswer`, `TailorDiffEntry`, `TailoredResume` — Zod-first, OpenAPI-generated.
 - Missing required fields throw at the Zod boundary; components assume valid data.

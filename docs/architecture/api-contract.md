@@ -1,5 +1,7 @@
 # Caliber API Contract v1 (MVP)
 
+> The Zod snapshots embedded below are convenience copies, kept close to the prose they explain. `src/types/index.ts` and the generated `contract/openapi.json` are canonical — when this document and the code disagree, the code wins.
+
 Schema-first: Zod schemas in `src/types` are the single source of truth; OpenAPI, TS types, and runtime validation all derive from them (§12). Entities align with the frozen §5 contract plus §11.8 hero extensions. Auth: email+password sessions. Registration/login mint an opaque token stored as a SHA-256 hash; it rides in an httpOnly SameSite=Lax cookie (`caliber_session`). Route handlers enforce via `requireUser()`/`requireAdmin()` (never Next middleware); `/api/health` and the auth routes themselves are the only unauthenticated endpoints. Every user-owned table carries a `user_id` and every route scopes reads/writes to the caller (§1a); `/api/admin/*` gives admins read access to any user's content via the same scoped repos (§1b).
 
 ## 1. Endpoint table
@@ -10,12 +12,15 @@ Schema-first: Zod schemas in `src/types` are the single source of truth; OpenAPI
 | — | POST | `/api/auth/login` | Verify credentials, mint a session | sync |
 | — | POST | `/api/auth/logout` | Clear the session (idempotent) | sync |
 | — | GET | `/api/auth/session` | Current user from the session cookie | sync |
+| — | PATCH | `/api/auth/password` | Self-serve change password (reverifies current, kills every session, mints a fresh one) | sync |
+| — | GET | `/api/credits` | Caller's wallet balance + plan, for the header chip | sync |
 | F1 | POST | `/api/resume` | Upload (multipart PDF/DOCX) or paste (JSON) → parse → persist structured `Resume` | sync |
 | F1 | GET | `/api/resume` | Fetch the current résumé | sync |
 | F2 | POST | `/api/search` | Start a dual search run (global ATS + MY boards) scored against the résumé | async, 202 |
 | F2 | GET | `/api/search/:id` | Run status. JSON snapshot by default; **SSE** when `Accept: text/event-stream` | sync / SSE |
 | F2 | GET | `/api/jobs` | Scored feed (filterable, cursored) | sync |
 | F2/F3 | GET | `/api/jobs/:id` | Single job incl. `applyUrl` (F3 is client-side: open `applyUrl`; no apply endpoint) | sync |
+| — | POST | `/api/jobs/:id/evaluate` | On-demand re-score of an already-persisted job, outside a search run | sync (LLM) |
 | F4 | POST | `/api/apply/questions` | Extract application questions from a posting URL or pasted form | sync (LLM) |
 | F4 | POST | `/api/apply/answers` | Draft résumé-grounded answers for extracted questions | sync (LLM) |
 | F4 | PATCH | `/api/apply/answers/:id` | Edit a persisted answer set (user edits/regenerates after drafting) | sync |
@@ -34,10 +39,16 @@ Schema-first: Zod schemas in `src/types` are the single source of truth; OpenAPI
 | — | GET | `/api/profile` | Caller's own profile (base country + relocation). 404 when the caller hasn't onboarded yet | sync |
 | — | PUT | `/api/profile` | Upsert (create-or-replace) the caller's own profile — also the onboarding path | sync |
 | — | GET | `/api/health` | Liveness check, unauthenticated | sync |
-| — | GET | `/api/admin/users` | Admin: list every account + per-user résumé/job/application counts | sync |
+| — | POST | `/api/client-error` | Client crash beacon (rate-limited, fire-and-forget) | sync |
+| — | GET | `/api/docs` | Scalar-rendered OpenAPI reference page (serves `contract/openapi.json`) | sync |
+| — | GET | `/api/admin/users` | Admin: list every account + per-user résumé/job/application counts + credit balance/plan | sync |
 | — | GET | `/api/admin/users/:id/resume` | Admin: target user's active résumé | sync |
 | — | GET | `/api/admin/users/:id/jobs` | Admin: target user's scored feed (same query params as `GET /api/jobs`) | sync |
 | — | GET | `/api/admin/users/:id/applications` | Admin: target user's tracker rows (same query params as `GET /api/applications`) | sync |
+| — | POST | `/api/admin/users/:id/credits` | Admin: grant/debit a user's credit balance (signed `delta`) | sync |
+| — | GET | `/api/admin/sources` | Admin: source health surface (enabled/dead counts + per-source health) | sync |
+| — | GET | `/api/admin/crawl` | Admin: live crawl status + pool health (pool/staleness/running crawl/last runs/per-source) | sync |
+| — | GET | `/api/admin/pool` | Admin: postings pool composition snapshot (function mix/tz bands/freshness/concentration) | sync |
 
 `GET /api/jobs/:id` returns the frozen `Job` entity verbatim — there is no separate detail/`MatchDetail` entity in MVP; `JobDetail`'s Fit/Legitimacy/Breakdown tabs are derived entirely from `Job.fit`/`Job.legitimacy`/`Job.breakdown`. An `archetype` field (e.g. "Global remote — APAC-friendly") was drafted during component design but is **deferred** — not part of `Job`, not returned by this route.
 
@@ -63,7 +74,7 @@ Per-user data scoping is live: `user_id` (NOT NULL) sits on all 10 user-owned ta
 
 All `/api/admin/*` routes call `requireAdmin()` — 401 `UNAUTHORIZED` with no session, 403 `FORBIDDEN` for a non-admin caller (role `user`). Admin access is additive: it never impersonates a login, it reads the same scoped repos/queries the equivalent user-facing route uses, just fed the URL's target `:id` instead of the caller's own session id — no new unscoped query exists for admin.
 
-**GET /api/admin/users** — → `200 { items: AdminUser[] }`. Each `AdminUser` is `{ id, email, role, createdAt, resumeCount, jobCount, applicationCount }` — `.parse()` strips unknown keys (e.g. a stray `passwordHash`), so the hash is never on the wire.
+**GET /api/admin/users** — → `200 { items: AdminUser[] }`. Each `AdminUser` is `{ id, email, role, createdAt, resumeCount, jobCount, applicationCount, balance, plan }` — `.parse()` strips unknown keys (e.g. a stray `passwordHash`), so the hash is never on the wire.
 
 **GET /api/admin/users/:id/resume** — → `200 Resume` | `404` (unknown/non-uuid id, or the target has no résumé yet).
 
@@ -175,11 +186,15 @@ export const UrlCheck = z.object({
 export const Resume = z.object({                     // §5; `hasResume` is NOT a field — absence = 404
   id: z.string(), atsScore: z.number().int().min(0).max(100),
   updatedAt: z.string().datetime(),                  // wire form of kit's `updated`; UI derives "3d ago"
-  headline: z.string(), location: z.string(), summary: z.string(),
+  headline: z.string(), location: z.string(), summary: z.string().optional(),
   experience: z.array(z.object({ title: z.string(), company: z.string(),
     dates: z.string(), bullets: z.array(z.string()) })),
   skills: z.array(z.string()),
+  projects: z.array(z.object({ name: z.string(), url: z.string().optional(), bullets: z.array(z.string()) })),
+  certifications: z.array(z.object({ name: z.string(), issuer: z.string().optional(), year: z.string().optional() })),
+  languages: z.array(z.object({ language: z.string(), proficiency: z.string().optional() })),
   rawText: z.string(),                               // parse provenance, grounds F4/F6
+  extractionPath: z.enum(['text','vision']).optional(),  // presentational (T5b-2); every real v2 store stamps it
 });
 
 export const RunStatus = z.enum(['queued','running','completed','failed']);
@@ -191,8 +206,12 @@ export const SearchRun = z.object({
   id: z.string(), status: RunStatus, persona: Persona,
   sources: z.array(z.string()),                      // SourceRef ids in scope
   progress: Progress.nullable(),
-  stats: z.object({ scanned: z.number().int(), worth: z.number().int(),
-    ghosts: z.number().int() }),                     // §5 ScanStats
+  stats: z.object({ scanned: z.number().int(), matched: z.number().int(), scored: z.number().int(),
+    worth: z.number().int(), ghosts: z.number().int(), unscored: z.number().int(),
+    capStopped: z.boolean(), discoverMs: z.number().int(), scoreMs: z.number().int(),
+    costUsd: z.number(), policyVersion: z.string(),
+    perSource: z.array(z.object({ sourceId: z.string(), found: z.number().int(), errors: z.number().int() })).optional(),
+  }),                                                 // §5 ScanStats
   startedAt: z.string().datetime(), finishedAt: z.string().datetime().nullable(),
   error: z.string().nullable(),
 });
@@ -269,7 +288,8 @@ export const TailoredResume = z.object({
 
 export const ErrorCode = z.enum(['VALIDATION_ERROR','NOT_FOUND','CONFLICT','RUN_NOT_READY',
   'PARSE_FAILED','EXTRACTION_FAILED','UPSTREAM_LLM_ERROR','PAYLOAD_TOO_LARGE',
-  'FETCH_BLOCKED','NOT_A_JOB_POSTING','INTERNAL','UNAUTHORIZED','FORBIDDEN']);
+  'FETCH_BLOCKED','NOT_A_JOB_POSTING','RATE_LIMITED','INSUFFICIENT_CREDITS',
+  'INTERNAL','UNAUTHORIZED','FORBIDDEN']);              // 15 codes
                                                        // +2, 2026-07-12 pasted-job-ingestion spec §5:
                                                        // FETCH_BLOCKED (paste ladder: web search found nothing, needsText)
                                                        // NOT_A_JOB_POSTING (terminal — the page isn't a posting, !needsText)
@@ -279,6 +299,9 @@ export const ErrorCode = z.enum(['VALIDATION_ERROR','NOT_FOUND','CONFLICT','RUN_
                                                        // +2, auth core (§1a): UNAUTHORIZED (401, no/invalid session) and
                                                        // FORBIDDEN (403, authenticated but not admin) — thrown by
                                                        // requireUser()/requireAdmin() in the route handler.
+                                                       // +2, membership-credits: RATE_LIMITED (429, e.g. the client-error
+                                                       // beacon's per-IP limit) and INSUFFICIENT_CREDITS (402, a debit
+                                                       // blocked by the wallet — thrown as InsufficientCreditsError).
 
 export const ErrorEnvelope = z.object({
   error: z.object({
@@ -306,6 +329,7 @@ export const AdminUser = z.object({
   id: z.string(), email: z.string().email(), role: z.enum(['user','admin']),
   createdAt: z.string().datetime(),
   resumeCount: z.number().int(), jobCount: z.number().int(), applicationCount: z.number().int(),
+  balance: z.number().int(), plan: z.enum(['standard','unlimited']),
 });
 export const AdminUsersResponse = z.object({ items: z.array(AdminUser) });
 ```
@@ -369,14 +393,39 @@ Boundary rule everywhere: `Schema.parse(body)` at the route handler; `ZodError` 
 The three run endpoints (search, tailor, correlate) emit the same envelope; every `data:` payload is schema-validated JSON, and events carry monotonic `id:` for `Last-Event-ID` resume:
 
 ```ts
+// M2 concurrency-lane observability events (2026-07-15 scan-observability
+// spec) — SourceEventData is one source connector's fetch status, JobPhaseData
+// is one in-flight scoring job's sub-phase, ScanFrame is the periodic
+// full-state snapshot (all three are search-only, like `job`).
+export const SourceEventData = z.object({
+  sourceId: z.string(), name: z.string(), status: z.enum(['fetching','done','error']),
+  found: z.number().int().optional(), error: z.string().optional(),
+});
+export const JobPhaseData = z.object({
+  jobId: z.string(), title: z.string(), company: z.string(), source: z.string(),
+  phase: z.enum(['fetching','readingJD','scoring','rescoring','done','error']),
+  verdict: z.enum(['Apply','Consider','Research first','Skip']).optional(),
+  legitimacyTier: LegitimacyTier.optional(), fit: z.number().min(0).max(5).optional(),
+});
+export const ScanFrame = z.object({
+  sources: z.array(SourceEventData), activeJobs: z.array(JobPhaseData),
+  counts: z.object({ scored: z.number().int(), queued: z.number().int(), total: z.number().int() }),
+});
+
 // event: progress → Progress   e.g. {stage:'boards', current:3, total:7, label:'Scanning Hiredly…'}
-// event: job      → Job        (search only: scored job streamed into the feed as found)
-// event: done     → SearchRun | TailoredResume | CorrelationReport   (terminal snapshot, then close)
+// event: job      → Job              (search only: scored job streamed into the feed as found)
+// event: source   → SourceEventData  (M2: per-source discover status)
+// event: jobPhase → JobPhaseData     (M2: one in-flight scoring job's sub-phase)
+// event: snapshot → ScanFrame        (M2: periodic full concurrency-lane snapshot)
+// event: done     → SearchRun | TailoredResume   (terminal snapshot, then close)
 // event: error    → ErrorEnvelope                (terminal, then close)
 export const SseEvent = z.discriminatedUnion('event', [
   z.object({ event: z.literal('progress'), data: Progress }),
   z.object({ event: z.literal('job'),      data: Job }),
-  z.object({ event: z.literal('done'),     data: z.union([SearchRun, TailoredResume, CorrelationReport]) }),
+  z.object({ event: z.literal('source'),   data: SourceEventData }),
+  z.object({ event: z.literal('jobPhase'), data: JobPhaseData }),
+  z.object({ event: z.literal('snapshot'), data: ScanFrame }),
+  z.object({ event: z.literal('done'),     data: z.union([SearchRun, TailoredResume]) }),
   z.object({ event: z.literal('error'),    data: ErrorEnvelope }),
 ]);
 ```
