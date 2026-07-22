@@ -321,10 +321,12 @@ describe("ingestResume — extraction telemetry", () => {
   };
 
   function telemetryFromSpy(): Record<string, unknown> {
-    expect(logSpy).toHaveBeenCalledTimes(1);
-    const [prefix, telemetry] = logSpy.mock.calls[0];
-    expect(prefix).toBe("resume ingest: extraction telemetry");
-    return telemetry as Record<string, unknown>;
+    // ingestResume also logs a second, unrelated "attribute seeding" line
+    // (Task 4) — find the telemetry call by prefix rather than assuming it's
+    // the only console.log call.
+    const call = logSpy.mock.calls.find(([prefix]) => prefix === "resume ingest: extraction telemetry");
+    expect(call).toBeDefined();
+    return call![1] as Record<string, unknown>;
   }
 
   it("logs one telemetry line for the text path with an empty absent-list, section headings, and zero date-misses", async () => {

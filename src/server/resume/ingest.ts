@@ -9,9 +9,10 @@ import { getLlm, type LlmClient } from "@/lib/llm/client";
 import { renderTemplate } from "@/lib/llm/templates";
 import { rasterizePdfPages } from "@/lib/rasterize";
 import { resumesRepo, type ResumeRow } from "@/server/persistence/repos/resumes";
+import { profileRepo } from "@/server/persistence/repos/profile";
 import { assertAndDebit } from "@/server/credits";
 import type { Resume } from "@/types";
-import { ParseFailedError, toResumeView } from "./derive-view";
+import { ParseFailedError, toResumeView, deriveHeadline, deriveLocation } from "./derive-view";
 import { computeAtsScore } from "./atsScore";
 import { extractText } from "./extract-text";
 import { assertEnglish } from "./language";
@@ -194,6 +195,16 @@ export async function ingestResume(
     atsScore,
     isActive: true,
   });
+
+  // Seed the profile attribute layer (spec 2026-07-22 §6): sticky rules live
+  // in the repo — user-owned fields are never touched. false = no profile
+  // row yet (onboarding not done) or nothing new to seed; either way the
+  // ingest result is unaffected.
+  const seeded = await profileRepo.seedFromResume(userId, {
+    displayLocation: deriveLocation(structured),
+    targetRole: deriveHeadline(structured),
+  });
+  console.log("resume ingest: attribute seeding", { seeded });
 
   return rowToResumeView(inserted);
 }
