@@ -76,7 +76,22 @@ function ProvenanceHint({ owner }: { owner: "resume" | "user" | undefined }) {
 // salaryRules so a 422 is unreachable from here.
 export function JobTargets({ profile, busy, onSave }: JobTargetsProps) {
   const [draft, setDraft] = React.useState<Draft>(() => toDraft(profile));
-  React.useEffect(() => setDraft(toDraft(profile)), [profile]);
+
+  // Resync on the six attribute VALUES, not the `profile` object reference —
+  // a sibling save (e.g. ProfileTargets's dial chips) calls setProfile with a
+  // new object whose attribute values are unchanged, and resyncing on the
+  // reference would clobber unsaved draft text on every unrelated save.
+  const { displayLocation, targetRole, salaryMin, salaryMax, salaryCurrency, salaryCadence } = profile;
+  React.useEffect(() => {
+    setDraft({
+      displayLocation: displayLocation ?? "",
+      targetRole: targetRole ?? "",
+      salaryMin: salaryMin?.toString() ?? "",
+      salaryMax: salaryMax?.toString() ?? "",
+      salaryCurrency: salaryCurrency ?? "",
+      salaryCadence,
+    });
+  }, [displayLocation, targetRole, salaryMin, salaryMax, salaryCurrency, salaryCadence]);
 
   const min = parseAmount(draft.salaryMin);
   const max = parseAmount(draft.salaryMax);
