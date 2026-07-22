@@ -1,7 +1,8 @@
 // ResumeStore (rich storage, LLM output) → frozen Resume (wire view).
-// docs/architecture/system-architecture.md §1 reconciliation: headline/
-// location are derived, never defaulted — an underivable field throws
-// (fail-loud; no partial résumé view is ever returned).
+// Spec 2026-07-22-resume-attributes-design.md §5: headline/location are
+// derived best-effort and NULLABLE on the wire — null is explicit absence
+// (the profile attribute layer prompts the user), never a default.
+// ParseFailedError remains for genuinely unparseable documents (ingest.ts).
 import { Resume } from "@/types";
 import type { ResumeStore } from "./resume-store";
 
@@ -30,18 +31,14 @@ function dedupePreserveOrder(items: string[]): string[] {
   return out;
 }
 
-function deriveLocation(store: ResumeStore): string {
+export function deriveLocation(store: ResumeStore): string | null {
   if (store.location) return store.location;
   const fromContact = store.contact.find((c) => LOCATION_LABEL_RE.test(c.label))?.value;
   if (fromContact) return fromContact;
-  const fromExperience = store.experience[0]?.location;
-  if (fromExperience) return fromExperience;
-  throw new ParseFailedError(
-    "Could not derive a location from the résumé — no location field, no contact line matching location/city/based, and the most recent experience entry has none. Edit and re-submit with a location.",
-  );
+  return store.experience[0]?.location ?? null;
 }
 
-function deriveHeadline(store: ResumeStore): string {
+export function deriveHeadline(store: ResumeStore): string | null {
   if (store.headline) return store.headline;
   const fromContact = store.contact.find((c) => HEADLINE_LABEL_RE.test(c.label))?.value;
   if (fromContact) return fromContact;
@@ -49,17 +46,7 @@ function deriveHeadline(store: ResumeStore): string {
   if (fromExperience) return fromExperience;
   const fromEducation = store.education[0];
   if (fromEducation) return fromEducation.credential ?? fromEducation.school;
-  throw new ParseFailedError(
-    "Could not derive a headline from the résumé — no headline field, no contact line matches headline/title/role, no most-recent experience title, and no education entry. Edit and re-submit with a role.",
-  );
-}
-
-// Validates the underivable-field rules without needing id/atsScore/updatedAt
-// — lets ingest.ts fail loud before any side effect (file write / DB insert),
-// even though toResumeView itself can only run once those are known.
-export function assertResumeViewDerivable(store: ResumeStore): void {
-  deriveHeadline(store);
-  deriveLocation(store);
+  return null;
 }
 
 export function toResumeView(

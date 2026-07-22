@@ -394,10 +394,9 @@ describe("ingestResume — extraction telemetry", () => {
   });
 });
 
-// A derivable résumé fixture (headline/location present directly, so
-// assertResumeViewDerivable never fails) — distinct from the file's other
-// EMIT fixtures, kept local to this describe since only these tests exercise
-// the LLM path standalone.
+// A derivable résumé fixture (headline/location present directly) —
+// distinct from the file's other EMIT fixtures, kept local to this describe
+// since only these tests exercise the LLM path standalone.
 const DEBIT_EMIT = {
   storeVersion: 2,
   name: "Jane Doe",

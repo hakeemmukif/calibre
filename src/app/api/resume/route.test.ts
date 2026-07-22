@@ -381,14 +381,16 @@ describe("/api/resume", () => {
     expect((await GET()).status).toBe(404);
   });
 
-  it("underivable location/headline returns 502 PARSE_FAILED and persists no row", async () => {
+  it("underivable location/headline still persists — a null headline/location is not a parse failure", async () => {
     state.llm = makeMockLlm({
       "resume-extract": structuredFixture({ contact: [], experience: [] }),
     });
     const res = await POST(jsonRequest({ text: "a".repeat(120) }));
-    expect(res.status).toBe(502);
-    expect((await res.json()).error.code).toBe("PARSE_FAILED");
+    expect(res.status).toBe(200);
+    const resume = await res.json();
+    expect(resume.headline).toBeNull();
+    expect(resume.location).toBeNull();
 
-    expect((await GET()).status).toBe(404);
+    expect((await GET()).status).toBe(200);
   });
 });

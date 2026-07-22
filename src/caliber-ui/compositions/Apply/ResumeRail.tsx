@@ -76,7 +76,7 @@ export function ResumeRail({ resume, open, onToggle, active }: ResumeRailProps) 
       {open && (
         <div style={{ padding: "0 10px 12px", display: "flex", flexDirection: "column", gap: 8, maxHeight: 520, overflowY: "auto" }}>
           <Section title="Headline" active={active?.source === "headline"}>
-            {resume.headline}
+            {resume.headline ?? "—"}
           </Section>
           {resume.summary && (
             <Section title="Summary" active={active?.source === "summary"}>

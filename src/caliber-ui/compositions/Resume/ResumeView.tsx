@@ -28,9 +28,23 @@ export function ResumeView({ resume, onTailor, onReupload }: ResumeViewProps) {
       <div style={{ display: "flex", gap: 18, alignItems: "flex-start" }}>
         <ScoreBadge score={resume.atsScore} outOf={100} size="lg" tone={atsTone} label="ATS" />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ font: "var(--type-h2)", color: "var(--text-strong)" }}>{resume.headline}</div>
+          <div style={{ font: "var(--type-h2)", color: "var(--text-strong)" }}>
+            {resume.headline ?? (
+              <a href="/profile" style={{ font: "var(--type-body)", color: "var(--text-muted)" }}>
+                Add a headline in Profile &amp; targets
+              </a>
+            )}
+          </div>
           <div style={{ font: "var(--type-caption)", color: "var(--text-muted)", marginTop: 3 }}>
-            {resume.location} · Updated {agoLabel(resume.updatedAt)}
+            {resume.location ? (
+              <>{resume.location} · </>
+            ) : (
+              <>
+                <a href="/profile" style={{ color: "var(--text-muted)", textDecoration: "underline" }}>Add location</a>
+                {" · "}
+              </>
+            )}
+            Updated {agoLabel(resume.updatedAt)}
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flex: "none" }}>

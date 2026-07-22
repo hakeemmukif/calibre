@@ -41,7 +41,7 @@ function experienceDiffIndices(diff: TailoredResume["diff"], company: string): n
 }
 
 export function TailorPreview({ resume, tailoredResume, diff, accepted }: TailorPreviewProps) {
-  const headline = sectionValue(diff, accepted, "Headline", resume.headline, tailoredResume.headline);
+  const headline = sectionValue(diff, accepted, "Headline", resume.headline ?? "", tailoredResume.headline);
   const summary = sectionValue(diff, accepted, "Summary", resume.summary, tailoredResume.summary);
   const skills = sectionValue(diff, accepted, "Skills", resume.skills, tailoredResume.skills);
   const experience = resume.experience.map((entry) => {
@@ -54,7 +54,7 @@ export function TailorPreview({ resume, tailoredResume, diff, accepted }: Tailor
   return (
     <Card padding="lg" radius="md" style={{ background: "var(--surface)", maxWidth: 640 }}>
       <div style={{ font: "var(--type-h2)", color: "var(--text-strong)" }}>{headline}</div>
-      <div style={{ font: "var(--type-caption)", color: "var(--text-muted)", marginTop: 4 }}>{resume.location}</div>
+      {resume.location && (<div style={{ font: "var(--type-caption)", color: "var(--text-muted)", marginTop: 4 }}>{resume.location}</div>)}
       {summary && <div style={{ font: "var(--type-body)", color: "var(--text-body)", marginTop: 14 }}>{summary}</div>}
 
       <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 16 }}>

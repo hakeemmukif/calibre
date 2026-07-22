@@ -27,7 +27,7 @@ const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingm
 // ~2 pages of résumé text (a dense page ≈ 3.5–5k chars). Deliberate product
 // boundary, not a technical limit: caps the LLM's input+output+cost and keeps
 // resume-extract from truncating. Reject, never truncate — a silently clipped
-// résumé would drop its last sections and defeat assertResumeViewDerivable.
+// résumé would drop its last sections and starve derive-view.ts of signal.
 const MAX_RESUME_CHARS = 12_000;
 
 export interface ExtractTextInput {

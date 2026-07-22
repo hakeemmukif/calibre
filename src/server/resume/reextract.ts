@@ -2,7 +2,7 @@
 // upgrades v1 `resumes.structured` rows to the v2 store shape by
 // RE-EXTRACTING from the stored `rawText` — not an SQL heading-fold —
 // mirroring ingest.ts's TEXT path exactly (resume-extract task ->
-// emitToStore -> assertResumeViewDerivable -> computeAtsScore) so a
+// emitToStore -> computeAtsScore) so a
 // migrated row is indistinguishable from a fresh text-path ingest.
 // `tailored_resumes` is READ-ONLY here — counted for operator visibility
 // only (they have no rawText and are regenerable), never re-extracted or
@@ -21,7 +21,6 @@ import { renderTemplate } from "@/lib/llm/templates";
 import type { Db } from "../persistence/repos/db";
 import { resumes, tailoredResumes } from "../persistence/schema";
 import { getDb } from "../persistence/db";
-import { assertResumeViewDerivable } from "./derive-view";
 import { computeAtsScore } from "./atsScore";
 import { ResumeStoreEmitSchema, emitToStore } from "./resume-store";
 
@@ -66,7 +65,6 @@ export async function reextractResumes(db: Db, llm: LlmClient): Promise<Reextrac
         responseSchema: ResumeStoreEmitSchema,
       });
       const structured = emitToStore(result.data, "text");
-      assertResumeViewDerivable(structured);
       const atsScore = computeAtsScore(structured);
 
       await db.update(resumes).set({ structured, atsScore }).where(eq(resumes.id, row.id));

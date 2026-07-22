@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ResumeStore } from "./resume-store";
-import { assertResumeViewDerivable, ParseFailedError, toResumeView } from "./derive-view";
+import { toResumeView } from "./derive-view";
 
 function baseStore(overrides: Partial<ResumeStore> = {}): ResumeStore {
   return {
@@ -135,45 +135,27 @@ describe("toResumeView", () => {
     expect(resume.location).toBe("Kuala Lumpur, Malaysia");
   });
 
-  it("treats an empty top-level location as absent and still throws when nothing else derives one", () => {
+  it("returns a null location when nothing derives one, still yielding a full view", () => {
+    const store = baseStore({
+      contact: [{ label: "email", value: "jane@example.com" }],
+      experience: [
+        { company: "Acme Co", title: "Senior Backend Engineer", dates: "2022–Present", isCurrent: true, bullets: ["Led migration to Kubernetes"] },
+      ],
+    });
+    const resume = toResumeView(store, opts);
+    expect(resume.location).toBeNull();
+    expect(resume.headline).toBe("Senior Backend Engineer");
+  });
+
+  it("treats an empty top-level location as absent and returns null when nothing else derives one", () => {
     const store = baseStore({
       location: "",
       contact: [{ label: "email", value: "jane@example.com" }],
       experience: [
-        {
-          company: "Acme Co",
-          title: "Senior Backend Engineer",
-          dates: "2022–Present",
-          isCurrent: true,
-          bullets: ["Led migration to Kubernetes"],
-        },
+        { company: "Acme Co", title: "Senior Backend Engineer", dates: "2022–Present", isCurrent: true, bullets: ["Led migration to Kubernetes"] },
       ],
     });
-    expect(() => toResumeView(store, opts)).toThrow(ParseFailedError);
-  });
-
-  it("throws ParseFailedError when location cannot be derived", () => {
-    const store = baseStore({
-      contact: [{ label: "email", value: "jane@example.com" }],
-      experience: [
-        {
-          company: "Acme Co",
-          title: "Senior Backend Engineer",
-          dates: "2022–Present",
-          isCurrent: true,
-          bullets: ["Led migration to Kubernetes"],
-        },
-      ],
-    });
-    expect(() => toResumeView(store, opts)).toThrow(ParseFailedError);
-  });
-
-  it("throws ParseFailedError when headline cannot be derived", () => {
-    const store = baseStore({
-      contact: [{ label: "email", value: "jane@example.com" }],
-      experience: [],
-    });
-    expect(() => toResumeView(store, opts)).toThrow(ParseFailedError);
+    expect(toResumeView(store, opts).location).toBeNull();
   });
 
   it("prefers store.headline over contact and experience", () => {
@@ -202,8 +184,6 @@ describe("toResumeView", () => {
       education: [{ school: "University of Malaya", credential: "B.Sc. Computer Science", dates: "2022–2026", details: [] }],
     });
 
-    expect(() => assertResumeViewDerivable(store)).not.toThrow();
-
     const resume = toResumeView(store, opts);
     expect(resume.headline).toBe("B.Sc. Computer Science");
     expect(resume.location).toBe("Kuala Lumpur, Malaysia");
@@ -223,21 +203,14 @@ describe("toResumeView", () => {
     expect(resume.headline).toBe("University of Malaya");
   });
 
-  it("still throws ParseFailedError when no headline source exists at all, including education", () => {
+  it("returns a null headline when no source exists at all, including education", () => {
     const store = baseStore({
       contact: [{ label: "email", value: "jane@example.com" }],
       experience: [],
       education: [],
     });
-    expect(() => toResumeView(store, opts)).toThrow(ParseFailedError);
-  });
-
-  it("location still fails loud when genuinely absent, even on an education-only résumé", () => {
-    const store = baseStore({
-      contact: [{ label: "email", value: "jane@example.com" }],
-      experience: [],
-      education: [{ school: "University of Malaya", credential: "B.Sc. Computer Science", dates: "2022–2026", details: [] }],
-    });
-    expect(() => toResumeView(store, opts)).toThrow(ParseFailedError);
+    const resume = toResumeView(store, opts);
+    expect(resume.headline).toBeNull();
+    expect(resume.location).toBeNull();
   });
 });

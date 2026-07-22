@@ -1,7 +1,7 @@
 // F1 ingest orchestration — the only module besides route.ts's thin
-// boundary that touches DB (resumesRepo) or LLM (getLlm). Never persists a
-// partial résumé: view-derivability is asserted before any side effect
-// (file write / DB insert).
+// boundary that touches DB (resumesRepo) or LLM (getLlm). A résumé with no
+// derivable headline/location is still persisted — the profile attribute
+// layer prompts the user (spec 2026-07-22 §5).
 import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -11,7 +11,7 @@ import { rasterizePdfPages } from "@/lib/rasterize";
 import { resumesRepo, type ResumeRow } from "@/server/persistence/repos/resumes";
 import { assertAndDebit } from "@/server/credits";
 import type { Resume } from "@/types";
-import { assertResumeViewDerivable, ParseFailedError, toResumeView } from "./derive-view";
+import { ParseFailedError, toResumeView } from "./derive-view";
 import { computeAtsScore } from "./atsScore";
 import { extractText } from "./extract-text";
 import { assertEnglish } from "./language";
@@ -169,11 +169,6 @@ export async function ingestResume(
   }
 
   console.log("resume ingest: extraction telemetry", buildExtractionTelemetry(structured));
-
-  // Fail loud before any side effect: a résumé the LLM structured
-  // "successfully" but that yields no derivable location/headline must
-  // never be persisted.
-  assertResumeViewDerivable(structured);
 
   const atsScore = computeAtsScore(structured);
 
