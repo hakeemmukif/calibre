@@ -6,6 +6,7 @@
 // unseeded install — surfaced, not defaulted (fail loud).
 import * as React from "react";
 import { ProfileTargets, type ProfileDialsBundle } from "@/caliber-ui/compositions/Profile/ProfileTargets";
+import { JobTargets, type JobTargetsFields } from "@/caliber-ui/compositions/Profile/JobTargets";
 import { ChangePasswordCard } from "@/caliber-ui/compositions/Profile/ChangePasswordCard";
 import { Button } from "@/caliber-ui/components/Button";
 import { Icon } from "@/caliber-ui/components/Icon";
@@ -102,6 +103,27 @@ export default function ProfilePage() {
     void applyDials(bundle);
   }
 
+  async function applyTargets(fields: JobTargetsFields) {
+    if (!profile) return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      setProfile(
+        await updateProfile({
+          baseCountry: profile.baseCountry,
+          relocation: profile.relocation,
+          scheduleFlex: profile.scheduleFlex,
+          employmentPref: profile.employmentPref,
+          ...fields,
+        }),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't update the profile.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg-app)" }}>
       <header style={{ padding: "16px 24px", background: "var(--surface)", borderBottom: "1px solid var(--border)" }}>
@@ -135,14 +157,17 @@ export default function ProfilePage() {
           </div>
         )}
         {profile && (
-          <ProfileTargets
-            profile={profile}
-            busy={busy}
-            onRelocationChange={handleRelocationChange}
-            onScheduleChange={handleScheduleChange}
-            onEmploymentChange={handleEmploymentChange}
-            onPresetSelect={handlePresetSelect}
-          />
+          <>
+            <ProfileTargets
+              profile={profile}
+              busy={busy}
+              onRelocationChange={handleRelocationChange}
+              onScheduleChange={handleScheduleChange}
+              onEmploymentChange={handleEmploymentChange}
+              onPresetSelect={handlePresetSelect}
+            />
+            <JobTargets profile={profile} busy={busy} onSave={(f) => void applyTargets(f)} />
+          </>
         )}
         <ChangePasswordCard
           onSubmit={(current, next) => void handleChangePassword(current, next)}
