@@ -80,6 +80,28 @@ async function readSseEvents(res: Response, count: number): Promise<{ id: number
   return events;
 }
 
+// Task 5 (spec 2026-07-22 §7): the shared insertResume default has no
+// headline/experience, so a real runFanOut now throws NoRoleSignalError
+// against it. Tests that wait for an actual completed run need a résumé with
+// role signal; tests that only insert a searchRuns row directly (no
+// runFanOut) are unaffected and keep using the plain default.
+const resumeWithRoleSignal = {
+  structured: {
+    storeVersion: 2 as const,
+    extractionPath: "text" as const,
+    name: "Jane Doe",
+    contact: [{ label: "email", value: "jane@example.com" }],
+    summary: "Backend engineer.",
+    experience: [{ company: "Acme", title: "Backend Engineer", dates: "2022–Present", isCurrent: true, bullets: [] }],
+    education: [],
+    skills: [],
+    projects: [],
+    certifications: [],
+    languages: [],
+    sections: [],
+  },
+};
+
 describe("GET /api/search/:id", () => {
   beforeAll(async () => {
     state.testDb = await createTestDb();
@@ -143,7 +165,7 @@ describe("GET /api/search/:id", () => {
   });
 
   it("SSE: emits ordered progress…done events and never a job event", async () => {
-    await insertResume(state.testDb, { isActive: true });
+    await insertResume(state.testDb, { ...resumeWithRoleSignal, isActive: true });
     await insertSource(state.testDb, { id: "greenhouse", kind: "ats", persona: "remote" });
     state.hang = false; // connector completes quickly (no postings)
 
@@ -228,7 +250,7 @@ describe("GET /api/search/:id", () => {
   });
 
   it("SSE: falls back to a synthetic terminal event when no live handle exists for a completed run", async () => {
-    await insertResume(state.testDb, { isActive: true });
+    await insertResume(state.testDb, { ...resumeWithRoleSignal, isActive: true });
     await insertSource(state.testDb, { id: "greenhouse", kind: "ats", persona: "remote" });
 
     const created = await POST(

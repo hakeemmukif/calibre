@@ -1,6 +1,30 @@
 import { describe, expect, it } from "vitest";
-import { deriveRoleTargets, roleFuzzyMatch, roleTokens } from "./roleMatch";
+import type { ResumeStore } from "@/server/resume/resume-store";
+import { deriveRoleTargets, NoRoleSignalError, roleFuzzyMatch, roleTokens } from "./roleMatch";
 import { expandRoleTitles } from "./roleSynonyms";
+
+// Modeled on derive-view.test.ts's baseStore. The education entry is present
+// but never fed to deriveRoleTargets — it exercises that non-signal (§7).
+function baseStore(overrides: Partial<ResumeStore> = {}): ResumeStore {
+  return {
+    storeVersion: 2,
+    extractionPath: "text",
+    name: "Jane Doe",
+    headline: "Senior Backend Engineer",
+    contact: [{ label: "email", value: "jane@example.com" }],
+    summary: "Backend engineer with 6 years building distributed systems.",
+    experience: [
+      { company: "Acme Co", title: "Senior Backend Engineer", dates: "2022–Present", isCurrent: true, bullets: [] },
+    ],
+    education: [{ school: "State University", credential: "BSc Computer Science", details: [] }],
+    skills: [{ label: "Languages", items: ["TypeScript", "Go"] }],
+    projects: [],
+    certifications: [],
+    languages: [],
+    sections: [],
+    ...overrides,
+  };
+}
 
 function target(titles: string[], keywords: string[] = []) {
   return { titles, keywords, persona: "remote" as const };
@@ -473,7 +497,7 @@ describe("deriveRoleTargets", () => {
       },
     };
 
-    const [target] = deriveRoleTargets(resume, "remote");
+    const [target] = deriveRoleTargets(resume, "remote", null);
     expect(target.persona).toBe("remote");
     expect(target.titles).toEqual(["Senior Backend Engineer", "Backend Engineer"]);
     expect(target.keywords).toEqual(["TypeScript", "Go", "Kubernetes"]);
@@ -497,7 +521,7 @@ describe("deriveRoleTargets", () => {
       },
     };
 
-    const [target] = deriveRoleTargets(resume, "local");
+    const [target] = deriveRoleTargets(resume, "local", null);
     expect(target.titles).toEqual(["Senior Backend Engineer"]);
   });
 
@@ -520,8 +544,8 @@ describe("deriveRoleTargets", () => {
       },
     };
 
-    const [target] = deriveRoleTargets(resume, "local");
-    expect(target.titles).toEqual(["Senior Backend Engineer", "Staff Platform Engineer"]);
+    const [target] = deriveRoleTargets(resume, "local", null);
+    expect(target.titles).toEqual(["Staff Platform Engineer", "Senior Backend Engineer"]);
   });
 
   it("falls back to experience titles when store.headline is absent", () => {
@@ -542,7 +566,32 @@ describe("deriveRoleTargets", () => {
       },
     };
 
-    const [target] = deriveRoleTargets(resume, "local");
+    const [target] = deriveRoleTargets(resume, "local", null);
     expect(target.titles).toEqual(["Senior Backend Engineer"]);
+  });
+
+  it("puts the user's targetRole first in precedence, ahead of store.headline", () => {
+    const targets = deriveRoleTargets(
+      { structured: baseStore({ headline: "Senior Backend Engineer" }) },
+      "remote",
+      "Engineering Manager",
+    );
+    expect(targets[0].titles).toContain("Engineering Manager");
+  });
+
+  it("falls back to the store chain when targetRole is null", () => {
+    const targets = deriveRoleTargets({ structured: baseStore() }, "remote", null);
+    expect(targets[0].titles.length).toBeGreaterThan(0);
+  });
+
+  it("throws NoRoleSignalError when there is no targetRole, headline, or experience", () => {
+    const store = baseStore({ headline: undefined, contact: [{ label: "email", value: "jane@example.com" }], experience: [] });
+    expect(() => deriveRoleTargets({ structured: store }, "remote", null)).toThrow(NoRoleSignalError);
+  });
+
+  it("a targetRole alone rescues an empty résumé", () => {
+    const store = baseStore({ headline: undefined, contact: [{ label: "email", value: "jane@example.com" }], experience: [] });
+    const targets = deriveRoleTargets({ structured: store }, "remote", "Product Designer");
+    expect(targets[0].titles).toContain("Product Designer");
   });
 });

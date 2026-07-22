@@ -285,9 +285,11 @@ async function runFanOut(
   };
 
   try {
-    // deriveRoleTargets stays INSIDE the try — a corrupted résumé throwing here
-    // must reach the last-resort failRun net, not reject unhandled.
-    const targets = deriveRoleTargets(resumeRow, persona);
+    // deriveRoleTargets stays INSIDE the try — a corrupted résumé throwing here,
+    // or the NoRoleSignalError no-role-signal gate (spec 2026-07-22 §7, headline/
+    // experience/targetRole all absent), must reach the last-resort failRun net,
+    // not reject unhandled.
+    const targets = deriveRoleTargets(resumeRow, persona, profile.targetRole);
 
     const discoverStartedAt = Date.now();
     handle.emit({

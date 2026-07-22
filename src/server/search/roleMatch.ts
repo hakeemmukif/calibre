@@ -252,21 +252,40 @@ function dedupePreserveOrder(items: string[]): string[] {
   return out;
 }
 
+export class NoRoleSignalError extends Error {
+  constructor() {
+    super(
+      "No role signal to scan with — the résumé has no headline or experience titles, and no target role is set. Set \"What kind of job are you looking for?\" in Profile & targets, then scan again.",
+    );
+    this.name = "NoRoleSignalError";
+  }
+}
+
 /**
- * Titles from `structured.experience[].title` + a best-effort headline
- * (`structured.headline`, else the most recent experience's title — same
- * precedence as `server/resume/derive-view.ts`, kept independent since this
- * is a best-effort search input, not the fail-loud wire-view boundary).
- * Keywords from `structured.skills`. Titles are then alias-expanded through the
+ * Titles from `structured.experience[].title` + a best-effort headline, with
+ * the user's own `targetRole` (Profile & targets, spec 2026-07-22 §7) leading
+ * the precedence chain: `targetRole` → `structured.headline` → the most
+ * recent experience's title (same store-chain precedence as
+ * `server/resume/derive-view.ts`, kept independent since this is a
+ * best-effort search input, not the fail-loud wire-view boundary). Keywords
+ * from `structured.skills`. Titles are then alias-expanded through the
  * curated synonym table (`roleSynonyms.ts`, tiers report 2026-07-17 §4) — the
  * recall lever that carries Talent-Acquisition↔Recruiter, AE↔Sales-Executive,
  * People-Ops↔HR, etc.; `roleFuzzyMatch` runs unchanged against the wider set.
+ * Throws `NoRoleSignalError` when the chain yields nothing at all (fresh-grad
+ * résumé, no target role set) — a scan with no role signal can't discover
+ * anything, so it fails loud instead of silently scanning zero targets.
  */
-export function deriveRoleTargets(resume: Pick<ResumeRow, "structured">, persona: "remote" | "local"): RoleTarget[] {
+export function deriveRoleTargets(
+  resume: Pick<ResumeRow, "structured">,
+  persona: "remote" | "local",
+  targetRole: string | null,
+): RoleTarget[] {
   const store = resume.structured;
-  const headline = store.headline ?? store.experience[0]?.title;
+  const headline = targetRole ?? store.headline ?? store.experience[0]?.title;
 
-  const titles = dedupePreserveOrder([...store.experience.map((e) => e.title), ...(headline ? [headline] : [])]);
+  const titles = dedupePreserveOrder([...(headline ? [headline] : []), ...store.experience.map((e) => e.title)]);
+  if (titles.length === 0) throw new NoRoleSignalError();
   const keywords = dedupePreserveOrder(store.skills.flatMap((g) => g.items));
 
   return [{ titles: expandRoleTitles(titles), keywords, persona }];
