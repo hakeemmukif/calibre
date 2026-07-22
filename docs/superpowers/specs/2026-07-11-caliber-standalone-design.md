@@ -1,5 +1,7 @@
 # Caliber — Standalone Web App: Design Spec
 
+*Dated design (2026-07-11). Where this document disagrees with the code, the code + `docs/architecture/` win — notably: the Job shape in §5 predates `legitimacy`/`eligibility`/`applyUrl`/`persona`/`firstSeen`/`isNew` (canonical: `src/types/index.ts`), and the primitive count is now 14 (Textarea added). See `docs/architecture/README.md` reconciliations.*
+
 **Status:** Approved design (2026-07-11). Feeds implementation planning (writing-plans).
 **Home:** `/Users/hakeem/calibre` (new repo, no runtime dependency on `career-ops`).
 **See §11 — Vision expansion & niche (2026-07-11): supersedes where in conflict.** §1–§10 describe porting the 13 kit screens; §11 re-aims the product around the confirmed niche and adds the new surfaces.

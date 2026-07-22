@@ -1,5 +1,8 @@
 # Runbook — running the real app (F1–F6)
 
+For the quick path (`npm install && npm run dev`) and the `npm test` /
+`npm run check` gate, see the root `README.md` first.
+
 Verified prerequisites to boot `next dev`/`next start` against the real backend (not the spine test's mocked LLM/connectors). See `task-B10-report.md` §9 for how these were confirmed.
 
 1. Create `.env` with:

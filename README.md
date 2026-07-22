@@ -22,6 +22,9 @@ npm run dev
 
 Then open `http://localhost:3000`.
 
+Full non-mocked boot — including `npx playwright install chromium` and the
+real-model prerequisites — lives in `docs/architecture/runbook.md`.
+
 The DB is a local SQLite file via libsql (`DATABASE_URL=file:./caliber.db`) —
 no database server to install or run. `npm run db:seed` creates the
 bootstrap admin account (`ADMIN_EMAIL`/`ADMIN_PASSWORD` from `.env`) and the
@@ -48,6 +51,16 @@ LLM. The contract is Zod schemas in `src/types`, generated into
 fills a shared `postings` pool; user scans read that pool and score against
 it — there is no per-scan connector fan-out. Storybook (`npm run storybook`)
 is the canonical component/page gallery, not Figma.
+
+### Where things live
+
+| What | Path |
+|---|---|
+| Scoring — invoked from `scoreTopCandidates` | `src/server/search/run.ts` (call site); logic in `src/server/score/` |
+| Nightly crawl engine | `src/server/sources/crawler.ts` |
+| Contract source → generated | `src/types/index.ts` → `contract/openapi.json` |
+| Tracker status folding | `src/features/applied/status-map.ts` |
+| Credits | `src/server/credits/` |
 
 ## Doc map
 
