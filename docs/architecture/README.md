@@ -36,7 +36,7 @@ Contract flows one way: **Zod schemas in `src/types` → OpenAPI (`contract/open
 ## Reconciliations & spec corrections (grounded in reading the donor)
 These override the earlier spec where noted:
 - **No `scan_jobs` DB table exists in the donor** — scan state lives in `scan-history.tsv` (file plane). Spec §6's "lifts directly" was wrong; the no-file-plane rule (§3) wins → we create a `jobs` table from the TSV columns.
-- **No separate `verdict/verdict.ts` module** — legitimacy (Block G) lives *inside* the eval scoring (`compose-report.ts`), so `server/score` owns it.
+- **No separate `verdict/verdict.ts` module** — legitimacy (Block G) lives *inside* the eval scoring (`evalScores.ts`, tier resolution in `legitimacy.ts`), so `server/score` owns it.
 - **Donor rejects `.docx`** — we add `mammoth` for DOCX ingestion.
 - **LaTeX dropped** — tailoring emits a `ResumeStore` JSON + `changes[]`; PDF via in-process Playwright, not `build-cv-latex.mjs`.
 - **Eval "Stage 3 Deep" cut for MVP** — Stage 1 (JD facts) + Stage 2 (score + 5-tier legitimacy, with escalation) only.
