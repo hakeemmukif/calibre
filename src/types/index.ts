@@ -96,13 +96,54 @@ export type HiringStructure = "local-entity" | "eor" | "contractor";
 // Operator profile — singleton (single-operator MVP). `baseCountry` is
 // ISO-3166-1 alpha-2 ("MY" at launch). The seed row IS the install step
 // (seed.ts precedent); a missing row is an error, never defaulted.
-export const Profile = z.object({
+export const AttrProvenance = z.object({
+  displayLocation: z.enum(["resume", "user"]).optional(),
+  targetRole: z.enum(["resume", "user"]).optional(),
+  salary: z.literal("user").optional(), // never seeded from the résumé (spec §2)
+});
+export type AttrProvenance = z.infer<typeof AttrProvenance>;
+
+export const SalaryCadence = z.enum(["monthly", "annual"]);
+export type SalaryCadence = z.infer<typeof SalaryCadence>;
+
+// Cross-field salary rules, shared by the wire Profile and the PUT body
+// (which omits updatedAt/attrProvenance and so can't reuse the refined
+// schema directly).
+export function salaryRules(
+  p: {
+    salaryMin: number | null;
+    salaryMax: number | null;
+    salaryCurrency: string | null;
+    salaryCadence: SalaryCadence | null;
+  },
+  ctx: z.RefinementCtx,
+): void {
+  const hasAmount = p.salaryMin !== null || p.salaryMax !== null;
+  if (hasAmount && p.salaryCurrency === null)
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["salaryCurrency"], message: "salaryCurrency is required when a salary amount is set" });
+  if (hasAmount && p.salaryCadence === null)
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["salaryCadence"], message: "salaryCadence is required when a salary amount is set" });
+  if (p.salaryMin !== null && p.salaryMax !== null && p.salaryMin > p.salaryMax)
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["salaryMin"], message: "salaryMin must be less than or equal to salaryMax" });
+}
+
+export const ProfileBase = z.object({
   baseCountry: z.string().length(2),
   relocation: RelocationPref,
   scheduleFlex: ScheduleFlex,
   employmentPref: EmploymentPref,
+  // Résumé-seeded, user-editable attribute layer (spec 2026-07-22 §3).
+  // Nullable = explicitly not set; never defaulted.
+  displayLocation: z.string().min(1).nullable(),
+  targetRole: z.string().min(1).nullable(),
+  salaryMin: z.number().int().positive().nullable(),
+  salaryMax: z.number().int().positive().nullable(),
+  salaryCurrency: z.string().length(3).nullable(), // ISO-4217
+  salaryCadence: SalaryCadence.nullable(),
+  attrProvenance: AttrProvenance, // server-computed; read-only on the wire
   updatedAt: z.string().datetime(),
 });
+export const Profile = ProfileBase.superRefine(salaryRules);
 export type Profile = z.infer<typeof Profile>;
 
 export const Job = z.object({ // §5 frozen + §11.8 extensions

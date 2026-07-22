@@ -11,9 +11,9 @@ import { profileRepo, ProfileMissingError, type ProfileRow } from "@/server/pers
 import { requireUser } from "@/server/auth/session";
 import { UnauthorizedError } from "@/server/auth/errors";
 import type { ErrorEnvelope } from "@/types";
-import { Profile } from "@/types";
+import { Profile, ProfileBase, salaryRules } from "@/types";
 
-const RequestBody = Profile.omit({ updatedAt: true });
+const RequestBody = ProfileBase.omit({ updatedAt: true, attrProvenance: true }).superRefine(salaryRules);
 
 function errorResponse(status: number, code: ErrorEnvelope["error"]["code"], message: string, details?: unknown) {
   const body: ErrorEnvelope = { error: { code, message, ...(details !== undefined ? { details } : {}) } };
@@ -26,6 +26,13 @@ function toWire(row: ProfileRow): Profile {
     relocation: row.relocation,
     scheduleFlex: row.scheduleFlex,
     employmentPref: row.employmentPref,
+    displayLocation: row.displayLocation,
+    targetRole: row.targetRole,
+    salaryMin: row.salaryMin,
+    salaryMax: row.salaryMax,
+    salaryCurrency: row.salaryCurrency,
+    salaryCadence: row.salaryCadence,
+    attrProvenance: row.attrProvenance,
     updatedAt: row.updatedAt.toISOString(),
   });
 }

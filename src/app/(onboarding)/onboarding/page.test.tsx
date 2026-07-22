@@ -37,6 +37,8 @@ describe("OnboardingPage", () => {
       expect(updateProfile).toHaveBeenCalledWith({
         baseCountry: "MY", relocation: "open",
         scheduleFlex: "any-hours", employmentPref: "any",
+        displayLocation: null, targetRole: null,
+        salaryMin: null, salaryMax: null, salaryCurrency: null, salaryCadence: null,
       }),
     );
     await waitFor(() => expect(push).toHaveBeenCalledWith("/feed"));

@@ -848,7 +848,10 @@
               ],
               "type": "object"
             },
-            "type": "array"
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "finishedAt": {
             "format": "date-time",
@@ -1337,10 +1340,42 @@
       },
       "Profile": {
         "properties": {
+          "attrProvenance": {
+            "properties": {
+              "displayLocation": {
+                "enum": [
+                  "resume",
+                  "user"
+                ],
+                "type": "string"
+              },
+              "salary": {
+                "enum": [
+                  "user"
+                ],
+                "type": "string"
+              },
+              "targetRole": {
+                "enum": [
+                  "resume",
+                  "user"
+                ],
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
           "baseCountry": {
             "maxLength": 2,
             "minLength": 2,
             "type": "string"
+          },
+          "displayLocation": {
+            "minLength": 1,
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "employmentPref": {
             "enum": [
@@ -1353,6 +1388,39 @@
           "relocation": {
             "$ref": "#/components/schemas/RelocationPref"
           },
+          "salaryCadence": {
+            "enum": [
+              "monthly",
+              "annual",
+              null
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "salaryCurrency": {
+            "maxLength": 3,
+            "minLength": 3,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "salaryMax": {
+            "exclusiveMinimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "salaryMin": {
+            "exclusiveMinimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "scheduleFlex": {
             "enum": [
               "base-hours",
@@ -1360,6 +1428,13 @@
               "any-hours"
             ],
             "type": "string"
+          },
+          "targetRole": {
+            "minLength": 1,
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "updatedAt": {
             "format": "date-time",
@@ -1371,6 +1446,13 @@
           "relocation",
           "scheduleFlex",
           "employmentPref",
+          "displayLocation",
+          "targetRole",
+          "salaryMin",
+          "salaryMax",
+          "salaryCurrency",
+          "salaryCadence",
+          "attrProvenance",
           "updatedAt"
         ],
         "type": "object"
@@ -5073,6 +5155,13 @@
                     "minLength": 2,
                     "type": "string"
                   },
+                  "displayLocation": {
+                    "minLength": 1,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
                   "employmentPref": {
                     "enum": [
                       "any",
@@ -5084,6 +5173,39 @@
                   "relocation": {
                     "$ref": "#/components/schemas/RelocationPref"
                   },
+                  "salaryCadence": {
+                    "enum": [
+                      "monthly",
+                      "annual",
+                      null
+                    ],
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "salaryCurrency": {
+                    "maxLength": 3,
+                    "minLength": 3,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "salaryMax": {
+                    "exclusiveMinimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "salaryMin": {
+                    "exclusiveMinimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
                   "scheduleFlex": {
                     "enum": [
                       "base-hours",
@@ -5091,13 +5213,26 @@
                       "any-hours"
                     ],
                     "type": "string"
+                  },
+                  "targetRole": {
+                    "minLength": 1,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
                   }
                 },
                 "required": [
                   "baseCountry",
                   "relocation",
                   "scheduleFlex",
-                  "employmentPref"
+                  "employmentPref",
+                  "displayLocation",
+                  "targetRole",
+                  "salaryMin",
+                  "salaryMax",
+                  "salaryCurrency",
+                  "salaryCadence"
                 ],
                 "type": "object"
               }

@@ -17,6 +17,12 @@ export type ProfileInput = {
   relocation: "stay" | "open";
   scheduleFlex: "base-hours" | "flex-evenings" | "any-hours";
   employmentPref: "any" | "employee" | "local-entity";
+  displayLocation: string | null;
+  targetRole: string | null;
+  salaryMin: number | null;
+  salaryMax: number | null;
+  salaryCurrency: string | null;
+  salaryCadence: "monthly" | "annual" | null;
 };
 
 export class ProfileMissingError extends Error {
@@ -39,6 +45,9 @@ export function createProfileRepo(db: Db) {
         .set({
           baseCountry: input.baseCountry, relocation: input.relocation,
           scheduleFlex: input.scheduleFlex, employmentPref: input.employmentPref,
+          displayLocation: input.displayLocation, targetRole: input.targetRole,
+          salaryMin: input.salaryMin, salaryMax: input.salaryMax,
+          salaryCurrency: input.salaryCurrency, salaryCadence: input.salaryCadence,
           updatedAt: new Date(),
         })
         .where(eq(profile.userId, userId))
@@ -57,12 +66,18 @@ export function createProfileRepo(db: Db) {
           id: crypto.randomUUID(), userId,
           baseCountry: input.baseCountry, relocation: input.relocation,
           scheduleFlex: input.scheduleFlex, employmentPref: input.employmentPref,
+          displayLocation: input.displayLocation, targetRole: input.targetRole,
+          salaryMin: input.salaryMin, salaryMax: input.salaryMax,
+          salaryCurrency: input.salaryCurrency, salaryCadence: input.salaryCadence,
         })
         .onConflictDoUpdate({
           target: profile.userId,
           set: {
             baseCountry: input.baseCountry, relocation: input.relocation,
             scheduleFlex: input.scheduleFlex, employmentPref: input.employmentPref,
+            displayLocation: input.displayLocation, targetRole: input.targetRole,
+            salaryMin: input.salaryMin, salaryMax: input.salaryMax,
+            salaryCurrency: input.salaryCurrency, salaryCadence: input.salaryCadence,
             updatedAt: new Date(),
           },
         })

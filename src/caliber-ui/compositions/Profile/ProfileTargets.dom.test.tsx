@@ -14,6 +14,13 @@ const profile = {
   relocation: "stay" as const,
   scheduleFlex: "any-hours" as const,
   employmentPref: "any" as const,
+  displayLocation: null,
+  targetRole: null,
+  salaryMin: null,
+  salaryMax: null,
+  salaryCurrency: null,
+  salaryCadence: null,
+  attrProvenance: {},
   updatedAt: "2026-07-12T00:00:00.000Z",
 };
 

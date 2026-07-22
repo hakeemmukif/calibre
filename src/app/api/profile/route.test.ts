@@ -48,7 +48,12 @@ describe("/api/profile", () => {
 
   it("PUT 401s with UNAUTHORIZED when there is no session", async () => {
     requireUser.mockRejectedValue(new UnauthorizedError());
-    const res = await PUT(putRequest({ baseCountry: "MY", relocation: "open" }));
+    const res = await PUT(
+      putRequest({
+        baseCountry: "MY", relocation: "open",
+        displayLocation: null, targetRole: null, salaryMin: null, salaryMax: null, salaryCurrency: null, salaryCadence: null,
+      }),
+    );
     expect(res.status).toBe(401);
     expect((await res.json()).error.code).toBe("UNAUTHORIZED");
   });
@@ -67,13 +72,20 @@ describe("/api/profile", () => {
     const body = await res.json();
     expect(() => Profile.parse(body)).not.toThrow();
     expect(body.relocation).toBe("stay");
+    expect(body.attrProvenance).toEqual({});
   });
 
   it("PUT creates the caller's row when none exists (onboarding path)", async () => {
-    const res = await PUT(putRequest({ baseCountry: "MY", relocation: "open", scheduleFlex: "any-hours", employmentPref: "any" }));
+    const res = await PUT(
+      putRequest({
+        baseCountry: "MY", relocation: "open", scheduleFlex: "any-hours", employmentPref: "any",
+        displayLocation: null, targetRole: null, salaryMin: null, salaryMax: null, salaryCurrency: null, salaryCadence: null,
+      }),
+    );
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(Profile.parse(body).relocation).toBe("open");
+    expect(body.attrProvenance).toEqual({});
 
     const getRes = await GET();
     expect(getRes.status).toBe(200);
@@ -81,7 +93,12 @@ describe("/api/profile", () => {
 
   it("PUT upserts (full-replaces) an existing row and returns the updated Profile", async () => {
     await state.testDb.insert(profile).values({ id: "default", userId: BOOTSTRAP_ADMIN_ID, baseCountry: "MY", relocation: "stay", scheduleFlex: "any-hours", employmentPref: "any" });
-    const res = await PUT(putRequest({ baseCountry: "MY", relocation: "open", scheduleFlex: "any-hours", employmentPref: "any" }));
+    const res = await PUT(
+      putRequest({
+        baseCountry: "MY", relocation: "open", scheduleFlex: "any-hours", employmentPref: "any",
+        displayLocation: null, targetRole: null, salaryMin: null, salaryMax: null, salaryCurrency: null, salaryCadence: null,
+      }),
+    );
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(Profile.parse(body).relocation).toBe("open");
@@ -93,7 +110,10 @@ describe("/api/profile", () => {
   it("PUT flips scheduleFlex and returns it on the updated Profile", async () => {
     await state.testDb.insert(profile).values({ id: "default", userId: BOOTSTRAP_ADMIN_ID, baseCountry: "MY", relocation: "stay", scheduleFlex: "any-hours", employmentPref: "any" });
     const res = await PUT(
-      putRequest({ baseCountry: "MY", relocation: "stay", scheduleFlex: "base-hours", employmentPref: "any" }),
+      putRequest({
+        baseCountry: "MY", relocation: "stay", scheduleFlex: "base-hours", employmentPref: "any",
+        displayLocation: null, targetRole: null, salaryMin: null, salaryMax: null, salaryCurrency: null, salaryCadence: null,
+      }),
     );
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -108,6 +128,31 @@ describe("/api/profile", () => {
     expect(body.error.code).toBe("VALIDATION_ERROR");
   });
 
+  it("PUT 422s when a salary amount is set without a currency", async () => {
+    const res = await PUT(
+      putRequest({
+        baseCountry: "MY", relocation: "stay", scheduleFlex: "base-hours", employmentPref: "any",
+        displayLocation: null, targetRole: null,
+        salaryMin: 8000, salaryMax: 12000, salaryCurrency: null, salaryCadence: "monthly",
+      }),
+    );
+    expect(res.status).toBe(422);
+  });
+
+  it("PUT round-trips the attribute fields", async () => {
+    const res = await PUT(
+      putRequest({
+        baseCountry: "MY", relocation: "stay", scheduleFlex: "base-hours", employmentPref: "any",
+        displayLocation: "Kuala Lumpur, Malaysia", targetRole: "Backend Engineer",
+        salaryMin: 8000, salaryMax: 12000, salaryCurrency: "MYR", salaryCadence: "monthly",
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.targetRole).toBe("Backend Engineer");
+    expect(body.salaryCurrency).toBe("MYR");
+  });
+
   it("a second user's PUT does not affect the first user's row (cross-tenant isolation)", async () => {
     const [userB] = await state.testDb
       .insert(users)
@@ -117,7 +162,12 @@ describe("/api/profile", () => {
     await state.testDb.insert(profile).values({ id: "default", userId: BOOTSTRAP_ADMIN_ID, baseCountry: "MY", relocation: "stay", scheduleFlex: "any-hours", employmentPref: "any" });
 
     requireUser.mockResolvedValue({ id: userB.id, email: userB.email, role: "user" });
-    const res = await PUT(putRequest({ baseCountry: "SG", relocation: "open", scheduleFlex: "any-hours", employmentPref: "any" }));
+    const res = await PUT(
+      putRequest({
+        baseCountry: "SG", relocation: "open", scheduleFlex: "any-hours", employmentPref: "any",
+        displayLocation: null, targetRole: null, salaryMin: null, salaryMax: null, salaryCurrency: null, salaryCadence: null,
+      }),
+    );
     expect(res.status).toBe(200);
 
     requireUser.mockResolvedValue({ id: BOOTSTRAP_ADMIN_ID, email: "admin@example.com", role: "admin" });

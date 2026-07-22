@@ -48,16 +48,27 @@ export default function ProfilePage() {
     void load();
   }, [load]);
 
-  // Every PUT carries the full four-field body — Profile requires all of
-  // them (Task 1), and this is also what keeps a preset selection atomic:
-  // ONE PUT with all three dials, never three racing per-dial PUTs off the
-  // same stale `profile` snapshot.
+  // Every PUT carries the full body — Profile requires all fields (Task 1),
+  // and this is also what keeps a preset selection atomic: ONE PUT with all
+  // three dials, never three racing per-dial PUTs off the same stale
+  // `profile` snapshot.
   async function applyDials(next: ProfileDialsBundle) {
     if (!profile) return;
     setBusy(true);
     setError(undefined);
     try {
-      setProfile(await updateProfile({ baseCountry: profile.baseCountry, ...next }));
+      setProfile(
+        await updateProfile({
+          baseCountry: profile.baseCountry,
+          displayLocation: profile.displayLocation,
+          targetRole: profile.targetRole,
+          salaryMin: profile.salaryMin,
+          salaryMax: profile.salaryMax,
+          salaryCurrency: profile.salaryCurrency,
+          salaryCadence: profile.salaryCadence,
+          ...next,
+        }),
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't update the profile.");
     } finally {

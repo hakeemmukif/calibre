@@ -46,7 +46,10 @@ describe("profileRepo", () => {
     expect(userB.baseCountry).toBe("SG");
 
     await expect(
-      repo.update(userBId, { baseCountry: "US", relocation: "stay", scheduleFlex: "any-hours", employmentPref: "any" }),
+      repo.update(userBId, {
+        baseCountry: "US", relocation: "stay", scheduleFlex: "any-hours", employmentPref: "any",
+        displayLocation: null, targetRole: null, salaryMin: null, salaryMax: null, salaryCurrency: null, salaryCadence: null,
+      }),
     ).resolves.toMatchObject({ baseCountry: "US" });
     const adminAfter = await repo.get(BOOTSTRAP_ADMIN_ID);
     expect(adminAfter.baseCountry).toBe("MY"); // unaffected by userB's update
@@ -62,6 +65,7 @@ describe("profileRepo", () => {
     const before = await repo.get(BOOTSTRAP_ADMIN_ID);
     const updated = await repo.update(BOOTSTRAP_ADMIN_ID, {
       baseCountry: "MY", relocation: "open", scheduleFlex: "any-hours", employmentPref: "any",
+      displayLocation: null, targetRole: null, salaryMin: null, salaryMax: null, salaryCurrency: null, salaryCadence: null,
     });
     expect(updated.relocation).toBe("open");
     expect(updated.updatedAt.getTime()).toBeGreaterThanOrEqual(before.updatedAt.getTime());
@@ -71,7 +75,10 @@ describe("profileRepo", () => {
     const db = await createTestDb();
     const repo = createProfileRepo(db);
     await expect(
-      repo.update(BOOTSTRAP_ADMIN_ID, { baseCountry: "MY", relocation: "open", scheduleFlex: "any-hours", employmentPref: "any" }),
+      repo.update(BOOTSTRAP_ADMIN_ID, {
+        baseCountry: "MY", relocation: "open", scheduleFlex: "any-hours", employmentPref: "any",
+        displayLocation: null, targetRole: null, salaryMin: null, salaryMax: null, salaryCurrency: null, salaryCadence: null,
+      }),
     ).rejects.toBeInstanceOf(ProfileMissingError);
   });
 
@@ -84,6 +91,7 @@ describe("profileRepo", () => {
     const repo = createProfileRepo(db);
     const updated = await repo.update(BOOTSTRAP_ADMIN_ID, {
       baseCountry: "MY", relocation: "stay", scheduleFlex: "flex-evenings", employmentPref: "employee",
+      displayLocation: null, targetRole: null, salaryMin: null, salaryMax: null, salaryCurrency: null, salaryCadence: null,
     });
     expect(updated.scheduleFlex).toBe("flex-evenings");
     expect(updated.employmentPref).toBe("employee");
@@ -94,11 +102,17 @@ describe("profileRepo", () => {
     const userBId = await insertSecondUser(db);
     const repo = createProfileRepo(db);
 
-    const created = await repo.upsert(userBId, { baseCountry: "SG", relocation: "stay", scheduleFlex: "any-hours", employmentPref: "any" });
+    const created = await repo.upsert(userBId, {
+      baseCountry: "SG", relocation: "stay", scheduleFlex: "any-hours", employmentPref: "any",
+      displayLocation: null, targetRole: null, salaryMin: null, salaryMax: null, salaryCurrency: null, salaryCadence: null,
+    });
     expect(created.userId).toBe(userBId);
     expect(created.baseCountry).toBe("SG");
 
-    const updated = await repo.upsert(userBId, { baseCountry: "SG", relocation: "open", scheduleFlex: "any-hours", employmentPref: "any" });
+    const updated = await repo.upsert(userBId, {
+      baseCountry: "SG", relocation: "open", scheduleFlex: "any-hours", employmentPref: "any",
+      displayLocation: null, targetRole: null, salaryMin: null, salaryMax: null, salaryCurrency: null, salaryCadence: null,
+    });
     expect(updated.id).toBe(created.id); // same row, not a duplicate
     expect(updated.relocation).toBe("open");
 
@@ -119,7 +133,10 @@ describe("profileRepo", () => {
     });
     const repo = createProfileRepo(db);
 
-    const result = await repo.upsert(BOOTSTRAP_ADMIN_ID, { baseCountry: "SG", relocation: "open", scheduleFlex: "any-hours", employmentPref: "any" });
+    const result = await repo.upsert(BOOTSTRAP_ADMIN_ID, {
+      baseCountry: "SG", relocation: "open", scheduleFlex: "any-hours", employmentPref: "any",
+      displayLocation: null, targetRole: null, salaryMin: null, salaryMax: null, salaryCurrency: null, salaryCadence: null,
+    });
     expect(result.id).toBe("default");
     expect(result.baseCountry).toBe("SG");
 
@@ -132,8 +149,14 @@ describe("profileRepo", () => {
     const userBId = await insertSecondUser(db);
     const repo = createProfileRepo(db);
 
-    await repo.upsert(BOOTSTRAP_ADMIN_ID, { baseCountry: "MY", relocation: "stay", scheduleFlex: "any-hours", employmentPref: "any" });
-    await repo.upsert(userBId, { baseCountry: "SG", relocation: "open", scheduleFlex: "any-hours", employmentPref: "any" });
+    await repo.upsert(BOOTSTRAP_ADMIN_ID, {
+      baseCountry: "MY", relocation: "stay", scheduleFlex: "any-hours", employmentPref: "any",
+      displayLocation: null, targetRole: null, salaryMin: null, salaryMax: null, salaryCurrency: null, salaryCadence: null,
+    });
+    await repo.upsert(userBId, {
+      baseCountry: "SG", relocation: "open", scheduleFlex: "any-hours", employmentPref: "any",
+      displayLocation: null, targetRole: null, salaryMin: null, salaryMax: null, salaryCurrency: null, salaryCadence: null,
+    });
 
     const rows = await db.select().from(profile);
     expect(rows).toHaveLength(2);

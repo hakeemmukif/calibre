@@ -15,7 +15,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 import type { ResumeStore } from "../resume/resume-store";
-import type { ScanResult, WebEvidence } from "@/types";
+import type { AttrProvenance, ScanResult, WebEvidence } from "@/types";
 
 // ---- shared jsonb shapes (only where a precise contract shape exists) ----
 
@@ -128,6 +128,16 @@ export const profile = sqliteTable(
     relocation: text("relocation", { enum: ["stay", "open"] }).notNull(),
     scheduleFlex: text("schedule_flex", { enum: ["base-hours", "flex-evenings", "any-hours"] }).notNull(),
     employmentPref: text("employment_pref", { enum: ["any", "employee", "local-entity"] }).notNull(),
+    displayLocation: text("display_location"),
+    targetRole: text("target_role"),
+    salaryMin: integer("salary_min"),
+    salaryMax: integer("salary_max"),
+    salaryCurrency: text("salary_currency"),
+    salaryCadence: text("salary_cadence", { enum: ["monthly", "annual"] }),
+    attrProvenance: text("attr_provenance", { mode: "json" })
+      .$type<AttrProvenance>()
+      .notNull()
+      .default(sql`'{}'`),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
   },

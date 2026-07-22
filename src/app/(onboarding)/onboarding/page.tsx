@@ -20,6 +20,9 @@ import type { Profile, RelocationPref, ScheduleFlex, EmploymentPref } from "@/ty
 const INITIAL_PROFILE: Profile = {
   baseCountry: "MY", relocation: "stay",
   scheduleFlex: "any-hours", employmentPref: "any",
+  displayLocation: null, targetRole: null,
+  salaryMin: null, salaryMax: null, salaryCurrency: null, salaryCadence: null,
+  attrProvenance: {},
   updatedAt: new Date(0).toISOString(),
 };
 
@@ -52,6 +55,8 @@ export default function OnboardingPage() {
       await updateProfile({
         baseCountry: profile.baseCountry, relocation: profile.relocation,
         scheduleFlex: profile.scheduleFlex, employmentPref: profile.employmentPref,
+        displayLocation: null, targetRole: null,
+        salaryMin: null, salaryMax: null, salaryCurrency: null, salaryCadence: null,
       });
       router.push("/feed");
     } catch (err) {

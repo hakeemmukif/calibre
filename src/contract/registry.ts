@@ -34,6 +34,7 @@ import {
   Source,
   RelocationPref,
   Profile,
+  ProfileBase,
   Job,
   Resume,
   RunStatus,
@@ -172,7 +173,7 @@ registry.registerPath({
   method: "put",
   path: "/api/profile",
   summary: "Create-or-replace the caller's profile (onboarding path)",
-  request: { body: { content: { "application/json": { schema: Profile.omit({ updatedAt: true }) } } } },
+  request: { body: { content: { "application/json": { schema: ProfileBase.omit({ updatedAt: true, attrProvenance: true }) } } } },
   responses: {
     200: { description: "The created/updated profile", content: { "application/json": { schema: Profile } } },
     401: { description: "No session", content: { "application/json": { schema: ErrorEnvelope } } },
