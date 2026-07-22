@@ -1,6 +1,7 @@
 # Handoff — Parallel Scoring (concurrent background scoring + live UI)
 
 **Status:** Design complete and committed. Implementation NOT started.
+(Update 2026-07-22: since shipped — see docs/superpowers/specs/2026-07-13-parallel-scoring-design.md and the batched url-check worker.)
 **Branch:** `feat/parallel-scoring` (off `main`; spec commit `66dd71b`).
 **Authoritative spec:** `docs/superpowers/specs/2026-07-13-parallel-scoring-design.md`
 **Memory:** `project-parallel-scoring-spec.md`
