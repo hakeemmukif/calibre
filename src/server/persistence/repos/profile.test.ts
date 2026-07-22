@@ -162,3 +162,73 @@ describe("profileRepo", () => {
     expect(rows).toHaveLength(2);
   });
 });
+
+const FULL_INPUT = {
+  baseCountry: "MY", relocation: "stay" as const, scheduleFlex: "base-hours" as const, employmentPref: "any" as const,
+  displayLocation: null, targetRole: null, salaryMin: null, salaryMax: null, salaryCurrency: null, salaryCadence: null,
+};
+
+describe("profileRepo provenance + seeding", () => {
+  it("seedFromResume fills empty fields and marks them resume-owned", async () => {
+    const db = await createTestDb();
+    const repo = createProfileRepo(db);
+    const userId = BOOTSTRAP_ADMIN_ID;
+
+    await repo.upsert(userId, FULL_INPUT);
+    const seeded = await repo.seedFromResume(userId, { displayLocation: "Kuala Lumpur", targetRole: "Backend Engineer" });
+    expect(seeded).toBe(true);
+    const row = await repo.get(userId);
+    expect(row.displayLocation).toBe("Kuala Lumpur");
+    expect(row.targetRole).toBe("Backend Engineer");
+    expect(row.attrProvenance).toEqual({ displayLocation: "resume", targetRole: "resume" });
+  });
+
+  it("re-seeding overwrites resume-owned fields but never user-owned ones", async () => {
+    const db = await createTestDb();
+    const repo = createProfileRepo(db);
+    const userId = BOOTSTRAP_ADMIN_ID;
+
+    await repo.upsert(userId, FULL_INPUT);
+    await repo.seedFromResume(userId, { displayLocation: "Kuala Lumpur", targetRole: "Backend Engineer" });
+    await repo.upsert(userId, { ...FULL_INPUT, displayLocation: "Kuala Lumpur", targetRole: "Platform Engineer" }); // user edits targetRole
+    await repo.seedFromResume(userId, { displayLocation: "Singapore", targetRole: "Data Engineer" });
+    const row = await repo.get(userId);
+    expect(row.displayLocation).toBe("Singapore"); // resume-owned → refreshed
+    expect(row.targetRole).toBe("Platform Engineer"); // user-owned → sticky
+    expect(row.attrProvenance).toEqual({ displayLocation: "resume", targetRole: "user" });
+  });
+
+  it("a PUT that changes a salary field marks the salary unit user-owned", async () => {
+    const db = await createTestDb();
+    const repo = createProfileRepo(db);
+    const userId = BOOTSTRAP_ADMIN_ID;
+
+    await repo.upsert(userId, FULL_INPUT);
+    await repo.upsert(userId, { ...FULL_INPUT, salaryMin: 8000, salaryMax: 12000, salaryCurrency: "MYR", salaryCadence: "monthly" });
+    const row = await repo.get(userId);
+    expect(row.attrProvenance.salary).toBe("user");
+  });
+
+  it("seedFromResume with null seeds and no row returns false and writes nothing", async () => {
+    const db = await createTestDb();
+    const repo = createProfileRepo(db);
+    const userId = BOOTSTRAP_ADMIN_ID;
+
+    expect(await repo.seedFromResume("no-such-user", { displayLocation: "KL", targetRole: "X" })).toBe(false);
+    await repo.upsert(userId, FULL_INPUT);
+    expect(await repo.seedFromResume(userId, { displayLocation: null, targetRole: null })).toBe(false);
+  });
+
+  it("an unchanged PUT does not flip resume-owned provenance to user", async () => {
+    const db = await createTestDb();
+    const repo = createProfileRepo(db);
+    const userId = BOOTSTRAP_ADMIN_ID;
+
+    await repo.upsert(userId, FULL_INPUT);
+    await repo.seedFromResume(userId, { displayLocation: "Kuala Lumpur", targetRole: null });
+    const before = await repo.get(userId);
+    await repo.upsert(userId, { ...FULL_INPUT, displayLocation: "Kuala Lumpur" }); // same value round-tripped
+    const after = await repo.get(userId);
+    expect(after.attrProvenance).toEqual(before.attrProvenance);
+  });
+});
