@@ -58,7 +58,10 @@ export default function ResumePage() {
       setProfileMissing(false);
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) setProfileMissing(true);
-      else setSetupError(err instanceof Error ? err.message : "Couldn't load the profile.");
+      else {
+        setProfileMissing(false);
+        setSetupError(err instanceof Error ? err.message : "Couldn't load the profile.");
+      }
     }
   }, []);
 

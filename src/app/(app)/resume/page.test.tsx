@@ -7,6 +7,7 @@ import * as React from "react";
 import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi, afterEach, beforeEach } from "vitest";
 import { resume } from "@/caliber-ui/fixtures";
+import { ApiError } from "@/features/http";
 
 afterEach(cleanup);
 
@@ -126,5 +127,24 @@ describe("ResumePage review-then-scan flow", () => {
 
     expect(screen.queryByText("Résumé ready")).not.toBeInTheDocument();
     expect(startSearch).not.toHaveBeenCalled();
+  });
+});
+
+describe("ResumePage profile-load error state", () => {
+  it("clears the stale profile-missing card when a re-upload's profile load hits a non-404 error", async () => {
+    getResume.mockResolvedValue(resume);
+    getProfile.mockReset();
+    getProfile.mockRejectedValueOnce(new ApiError(404, "NOT_FOUND", "no profile"));
+    getProfile.mockRejectedValueOnce(new ApiError(500, "INTERNAL", "profile store is down"));
+
+    render(<ResumePage />);
+
+    expect(await screen.findByText("Complete your profile to enable scanning.")).toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Re-upload" }));
+    await pasteResumeText();
+
+    expect(await screen.findByText("profile store is down")).toBeInTheDocument();
+    expect(screen.queryByText("Complete your profile to enable scanning.")).not.toBeInTheDocument();
   });
 });
