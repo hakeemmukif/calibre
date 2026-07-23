@@ -52,6 +52,7 @@ export default function ResumePage() {
   }
 
   const loadProfile = React.useCallback(async () => {
+    setSetupError(undefined);
     try {
       setProfile(await getProfile());
       setProfileMissing(false);
@@ -165,6 +166,29 @@ export default function ResumePage() {
                   </div>
                 </div>
               </Card>
+            )}
+            {!profile && !profileMissing && setupError && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  marginBottom: 12,
+                  padding: "10px 14px",
+                  borderRadius: "var(--radius-sm)",
+                  background: "var(--danger-soft)",
+                  color: "var(--danger-ink)",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <Icon name="triangle-alert" size={16} />
+                  <span style={{ font: "var(--type-body)" }}>{setupError}</span>
+                </div>
+                <Button variant="secondary" iconLeft="refresh-cw" onClick={() => void loadProfile()}>
+                  Retry
+                </Button>
+              </div>
             )}
             {profile && profile.targetRole === null && (
               <FinishSetupCard
