@@ -139,13 +139,38 @@ export const EmploymentPref = z.enum(['any', 'employee', 'local-entity']); // 'e
 // dials (scheduleFlex/employmentPref) are required on every write, no
 // runtime default. (2026-07-12-remote-local-eligibility-design.md §3;
 // per-user since the multi-tenant migration.)
+//
+// Résumé-seeded, user-editable attribute layer (2026-07-22-resume-attributes
+// spec §3/§6): displayLocation/targetRole/salary* are nullable (explicitly
+// not set; never defaulted). attrProvenance is server-computed, read-only on
+// the wire — sticky rule: user edits win, résumé re-seeds only its own
+// fields, salary is never résumé-seeded (AttrProvenance.salary is always
+// literal 'user' once set).
+export const AttrProvenance = z.object({
+  displayLocation: z.enum(['resume', 'user']).optional(),
+  targetRole: z.enum(['resume', 'user']).optional(),
+  salary: z.literal('user').optional(),
+});
+
+export const SalaryCadence = z.enum(['monthly', 'annual']);
+
 export const Profile = z.object({
   baseCountry: z.string().length(2),
   relocation: RelocationPref,
   scheduleFlex: ScheduleFlex,
   employmentPref: EmploymentPref,
+  displayLocation: z.string().min(1).nullable(),
+  targetRole: z.string().min(1).nullable(),
+  salaryMin: z.number().int().positive().nullable(),
+  salaryMax: z.number().int().positive().nullable(),
+  salaryCurrency: z.string().length(3).nullable(),   // ISO-4217
+  salaryCadence: SalaryCadence.nullable(),
+  attrProvenance: AttrProvenance,
   updatedAt: z.string().datetime(),
-});
+})
+  // Cross-field: salaryCurrency/salaryCadence required once any salary
+  // amount is set; salaryMin <= salaryMax when both are set.
+  .superRefine(salaryRules);
 
 export const Job = z.object({                        // §5 frozen + §11.8 extensions
   id: z.string(), score: z.number().min(0).max(5), ghost: z.boolean().optional(),
@@ -186,7 +211,8 @@ export const UrlCheck = z.object({
 export const Resume = z.object({                     // §5; `hasResume` is NOT a field — absence = 404
   id: z.string(), atsScore: z.number().int().min(0).max(100),
   updatedAt: z.string().datetime(),                  // wire form of kit's `updated`; UI derives "3d ago"
-  headline: z.string(), location: z.string(), summary: z.string().optional(),
+  headline: z.string().nullable(), location: z.string().nullable(),  // nullable: non-blocking derivation (2026-07-22-resume-attributes spec §2) — a résumé missing these is still persisted, not discarded
+  summary: z.string().optional(),
   experience: z.array(z.object({ title: z.string(), company: z.string(),
     dates: z.string(), bullets: z.array(z.string()) })),
   skills: z.array(z.string()),
@@ -342,7 +368,7 @@ Boundary rule everywhere: `Schema.parse(body)` at the route handler; `ZodError` 
 
 **GET /api/resume** — → `200 Resume` | `404 NOT_FOUND`. No `{hasResume:false}` sentinel — absence is a 404 and the kit's `hasResume` flag is derived client-side.
 
-**GET /api/profile** — the caller's own profile (scoped by `requireUser()`'s session id). → `200 Profile` | `404 NOT_FOUND` (no row yet — the caller hasn't onboarded). **PUT /api/profile** — `Profile.omit({ updatedAt })`, upsert (create-or-replace) keyed on `user_id` — this is the onboarding path, not just an edit route: a fresh registrant's first `PUT` creates the row instead of 404ing. → `200 Profile` | `422`.
+**GET /api/profile** — the caller's own profile (scoped by `requireUser()`'s session id). → `200 Profile` | `404 NOT_FOUND` (no row yet — the caller hasn't onboarded). **PUT /api/profile** — `Profile.omit({ updatedAt, attrProvenance })` (both server-computed), upsert (create-or-replace) keyed on `user_id` — this is the onboarding path, not just an edit route: a fresh registrant's first `PUT` creates the row instead of 404ing. → `200 Profile` | `422`.
 
 **POST /api/search** — `{ persona: Persona, sources?: z.array(z.string()).min(1).optional() }` (omitted `sources` = persona's full configured set — an explicit empty array is a 422, not a silent all). → `202 SearchRun` (`status:'queued'`). `409 CONFLICT` if a run is already active for that persona (`details: { activeRunId }`). `409` also if no résumé exists (search scores against it).
 
