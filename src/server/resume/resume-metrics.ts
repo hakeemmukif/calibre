@@ -1,6 +1,6 @@
 // Deterministic résumé metrics — no LLM. Fed by the start/end/isCurrent
 // atoms resume-store.ts normalizes. Many real résumés (live-confirmed on
-// the "SampleB" sample) carry year-only date ranges with no month atoms, so
+// the year-only sample) carry year-only date ranges with no month atoms, so
 // duration derivation falls back to parsing the verbatim `dates` string at
 // year granularity (Jan convention) — never fabricated back into the
 // stored atoms, this parsing lives only here.

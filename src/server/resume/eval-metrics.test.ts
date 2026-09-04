@@ -16,7 +16,7 @@ function baseStore(overrides: Partial<ResumeStore> = {}): ResumeStore {
   return {
     storeVersion: 2,
     extractionPath: "text",
-    name: "REDACTED_NAME",
+    name: "Tan Mei Ling",
     contact: [],
     experience: [],
     education: [],
@@ -31,12 +31,12 @@ function baseStore(overrides: Partial<ResumeStore> = {}): ResumeStore {
 
 describe("fuzzyContains", () => {
   it("matches a token-reordered / de-scrambled value", () => {
-    const haystack = "REDACTED_NAME, PMP Product-Focused UX / Pre-Sales Specialist";
-    expect(fuzzyContains(haystack, "REDACTED_NAME")).toBe(true);
+    const haystack = "TAN MEI LING, PMP Product-Focused UX / Pre-Sales Specialist";
+    expect(fuzzyContains(haystack, "Mei Ling Tan")).toBe(true);
   });
 
   it("returns false for a genuinely-absent value", () => {
-    const haystack = "REDACTED_NAME, PMP Product-Focused UX / Pre-Sales Specialist";
+    const haystack = "TAN MEI LING, PMP Product-Focused UX / Pre-Sales Specialist";
     expect(fuzzyContains(haystack, "Software Engineer")).toBe(false);
   });
 
@@ -50,7 +50,7 @@ describe("fuzzyContains", () => {
   });
 
   it("still matches a token-reordered de-scramble (regression)", () => {
-    expect(fuzzyContains("REDACTED_NAME, PMP", "REDACTED_NAME")).toBe(true);
+    expect(fuzzyContains("TAN MEI LING, PMP", "Mei Ling Tan")).toBe(true);
   });
 
   it("still catches a hallucination absent from the haystack blob", () => {
@@ -102,11 +102,11 @@ describe("dateAtomMatch", () => {
 });
 
 describe("containmentViolations", () => {
-  const rawText = "REDACTED_NAME, PMP. Skilled in Figma and stakeholder alignment. Led UX ideation.";
+  const rawText = "Tan Mei Ling, PMP. Skilled in Figma and stakeholder alignment. Led UX ideation.";
 
   it("returns empty for a clean store", () => {
     const store = baseStore({
-      name: "REDACTED_NAME",
+      name: "Tan Mei Ling",
       skills: [{ items: ["Figma"] }],
       experience: [
         {
@@ -123,7 +123,7 @@ describe("containmentViolations", () => {
 
   it("flags a hallucinated skill not present in rawText", () => {
     const store = baseStore({
-      name: "REDACTED_NAME",
+      name: "Tan Mei Ling",
       skills: [{ items: ["Figma", "Kubernetes"] }],
     });
     const violations = containmentViolations(store, rawText);
@@ -132,9 +132,9 @@ describe("containmentViolations", () => {
   });
 
   it("flags a hallucinated digit even when every other token matches", () => {
-    const digitRawText = "REDACTED_NAME, PMP. Completed migration in 3 days.";
+    const digitRawText = "Tan Mei Ling, PMP. Completed migration in 3 days.";
     const store = baseStore({
-      name: "REDACTED_NAME",
+      name: "Tan Mei Ling",
       experience: [
         {
           company: "Techtics Solutions",
@@ -153,13 +153,13 @@ describe("containmentViolations", () => {
 
 describe("scoreGolden", () => {
   it("scores an aggregate between 0 and 1 and folds containment into it", () => {
-    const rawText = "REDACTED_NAME, PMP. Skilled in Figma.";
+    const rawText = "Tan Mei Ling, PMP. Skilled in Figma.";
     const store = baseStore({
-      name: "REDACTED_NAME",
+      name: "Tan Mei Ling",
       skills: [{ items: ["Figma", "Hallucinated Skill"] }],
     });
     const expected = {
-      name: "REDACTED_NAME",
+      name: "Tan Mei Ling",
       certifications: [],
       languages: [],
       projects: [],

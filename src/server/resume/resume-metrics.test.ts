@@ -163,9 +163,9 @@ describe("computeResumeMetrics", () => {
     expect(computeResumeMetrics(store).quantifiedBulletRatio).toBe(0);
   });
 
-  it("parses a year-only dates string when start/end atoms are absent (SampleB-like fixture)", () => {
+  it("parses a year-only dates string when start/end atoms are absent (year-only fixture)", () => {
     const store = baseStore({
-      experience: [experience({ company: "SampleB Co", dates: "2021 - 2024" })],
+      experience: [experience({ company: "Meridian Co", dates: "2021 - 2024" })],
     });
     // Year-only range parsed at Jan-granularity: 2021-01 to 2024-01 = 3 years.
     expect(computeResumeMetrics(store).totalYearsExperience).toBe(3);
@@ -174,7 +174,7 @@ describe("computeResumeMetrics", () => {
 
   it("parses an ongoing year-only dates string ('YYYY – Present') to `now` when atoms are absent", () => {
     const store = baseStore({
-      experience: [experience({ company: "SampleB Co", dates: "2022 – Present", isCurrent: true })],
+      experience: [experience({ company: "Meridian Co", dates: "2022 – Present", isCurrent: true })],
     });
     const now = new Date(2024, 0, 1); // Jan 2024
     expect(computeResumeMetrics(store, now).currentTenureMonths).toBe(24);

@@ -1,0 +1,36 @@
+{
+  "id": "mobile-dev-monthly-dates",
+  "category": "synthetic",
+  "rawText": "Muhamad Ariff Zahin bin Rahman Results-driven Front-End Mobile Developer specializing in React Native, with a track record of contributing to high-impact consumer applications. Demonstrates a commitment to building scalable and maintainable features, coupled with a proactive approach to understanding backend systems for enhanced front-end development. Proficient in implementing robust unit testing strategies, managing CI/CD pipelines (Azure DevOps with platform-specific .yml configurations), and leveraging crash reporting and analytics for comprehensive application monitoring. WORKING EXPERIENCE Northgate Digital, Kuala Lumpur - Mobile App Developer July 2023 - PRESENT - Maintenance of the React Native version: upgrade React Native and all related libraries to avoid outdated versions. Currently using React Native 0.76.6. - App deployment and PR review: handled app deployment once a sprint ends and QA greenlights, synced with backend deployment. After each deployment, monitored crash reporting for release health. Reviewed PRs for readability and robustness. - Enhanced the withdrawal flow: converted modals into full screens to carry more information, cleaned up state management for performance, and implemented lazy loading for better UX. - Bill and top-up payment: introduced bill and mobile top-up payment across three countries with different third-party service integrations, requiring careful state management across sources. - Insurance payments: allowed users to pay motor insurance in full or by installment via a third-party integration, delivered on a constrained timeline. - General app enhancement: refactored and standardized components (text input, modals, tab navigation), improved notification handling across device vendors, and leaned on TypeScript's type system to prevent runtime errors. - Micro app POC: a web app letting employers embed the product or letting users transact from a phone browser without installing the app. - Employer and admin portals: new UI for employee details and leave management, additional suspension reasons, built with React.js. Kuala Lumpur +6019 5550101 ariff.zahin@example.com SKILLS ReactNative ReactJs Redux Javascript Typescript CSS Git Detox Test Python PHP Laravel Core Strength - Mobile Apps Development LANGUAGES Malay . English Meridian Bank, Kuala Lumpur - Associate Engineer January 2022 - June 2023 - International remittance project: developed screens and API integrations, added five new products, extending existing transfer modules to enable international transactions. - Real-time payment project: developed screens and API integrations as a front-end developer, extending instant transfer features with more end-to-end flows. - Analytics: added tracking events across all transfer modules based on product requirements. - Assisted the team building an internal bot for attendance and leave tracking. Vireo Healthcare Sdn Bhd, Kuala Lumpur - Data Engineering Intern January 2021 - June 2021 - Handled data extraction and data cleaning. - Wrote Python scripts to manage data automation. - Developed data visualization using Flask. - Queried data from the database using MySQL for the Python scripts. - Used WordPress and Laravel for managing and developing the company website. EDUCATION B. Engineering in Electronic - Computer and Information (Honors), Selangor Institute of Technology - Degree January 2017 - June 2021 - Program coordinator and assistant program manager for industry site visits. - Dean's list awards for 4 semesters.",
+  "expected": {
+    "name": "Ariff Zahin",
+    "headline": "Front-End Mobile Developer",
+    "certifications": [],
+    "languages": [
+      "Malay",
+      "English"
+    ],
+    "projects": [],
+    "skillsMin": 10,
+    "roles": [
+      {
+        "company": "Northgate Digital",
+        "start": "2023-07",
+        "end": null,
+        "isCurrent": true
+      },
+      {
+        "company": "Meridian Bank",
+        "start": "2022-01",
+        "end": "2023-06",
+        "isCurrent": false
+      },
+      {
+        "company": "Vireo Healthcare",
+        "start": "2021-01",
+        "end": "2021-06",
+        "isCurrent": false
+      }
+    ]
+  }
+}

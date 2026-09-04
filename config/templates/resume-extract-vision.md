@@ -38,8 +38,8 @@ into one coherent value.
 
 Field-specific rules:
 - `name`: the person's name ONLY. Strip trailing credentials or
-  certifications from the name line — e.g. "REDACTED_NAME, PMP" has name
-  "REDACTED_NAME"; "PMP" belongs in `certifications`, not in `name`.
+  certifications from the name line — e.g. "TAN MEI LING, PMP" has name
+  "Tan Mei Ling"; "PMP" belongs in `certifications`, not in `name`.
 - `headline`: a SHORT current-or-target role line (e.g. "Senior Product
   Manager"), taken from a title line near the top of the résumé. If the
   résumé states no such line, use `null`. NEVER use the summary paragraph

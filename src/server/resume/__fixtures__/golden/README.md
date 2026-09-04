@@ -36,15 +36,20 @@ follow-up, not in scope for this harness.
 
 ## Fixtures
 
-- `sample-a.json`, `sample-b.json` — **real** résumés. `rawText` was extracted
-  verbatim (pure text extraction, no LLM) from two real PDFs via a throwaway
-  script calling the repo's own `extractPdfText`, then deleted. `expected` is
-  labeled from that `rawText` plus documented ground truth from prior live
-  extraction runs (see comments in the JSON's originating task spec):
-  SampleA's name shortens from the full legal name in `rawText` to "REDACTED_NAME";
-  SampleB's dates are all year-only ("2024- 2026" etc.) so every role atom is
-  `start: null, end: null` — bare years never produce a `YYYY-MM` atom, this
+- `mobile-dev-monthly-dates.json`, `credential-suffix-year-only.json` —
+  **synthetic**, modelled on the layout and failure shapes of two real résumés
+  that seeded this harness. No real person's data lives in this repo: names,
+  employers, schools, emails and phone numbers are invented.
+  `mobile-dev-monthly-dates` covers full `Month YYYY` ranges plus a name that
+  must shorten from the full form in `rawText` to a two-token display name.
+  `credential-suffix-year-only` covers a credential suffix in the name line
+  ("TAN MEI LING, PMP" → name is `Tan Mei Ling`, `PMP` belongs in
+  `certifications`) and year-only dates ("2024- 2026") so every role atom is
+  `start: null, end: null` — bare years never produce a `YYYY-MM` atom, which
   is spec-correct per `resume-store.ts`'s `coerceMonth`.
+
+  **Rule: never commit a real person's résumé here.** Real failures get
+  reduced to a synthetic fixture that reproduces the failing shape.
 - `fresh-grad.json`, `table-heavy.json`, `single-column.json` — **synthetic**,
   authored to exercise coverage gaps (education-only/no-experience,
   scrambled-looking skills table, a plain single-column résumé). Labels are

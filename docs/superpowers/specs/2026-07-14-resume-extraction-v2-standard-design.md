@@ -13,8 +13,8 @@ Evidenced by three real résumés the operator supplied:
 
 | Résumé | Failure today |
 |---|---|
-| **SampleA** (flat skill list, 2-column) | LLM returns `skills` as flat strings → **Zod `invalid_type` error** (the reported crash). When it *doesn't* crash, it coerces to 12 groups with empty `items` → downstream sees **zero skills** (silently broken). |
-| **SampleB** (PM/UX, 2-column) | PMP® + 2 Google certs, 4 languages w/ proficiency, and a proper `location` all **lost or mis-bucketed**; name carries a trailing credential ("REDACTED_NAME, PMP"). |
+| **Sample A** (flat skill list, 2-column) | LLM returns `skills` as flat strings → **Zod `invalid_type` error** (the reported crash). When it *doesn't* crash, it coerces to 12 groups with empty `items` → downstream sees **zero skills** (silently broken). |
+| **Sample B** (PM/UX, 2-column) | PMP® + 2 Google certs, 4 languages w/ proficiency, and a proper `location` all **lost or mis-bucketed**; name carries a trailing credential ("NAME, PMP"). |
 | **Syed** (design-heavy PDF) | **Zero extractable text** — the résumé is an image; `unpdf` returns 0 chars, so no schema can help. |
 
 Root causes:
@@ -27,8 +27,8 @@ Root causes:
 
 Real `openai/gpt-oss-120b` on the three résumés with the v2 emit schema below + `strict:true`:
 
-- **SampleA** → parses clean; flat skills round-trip (`label:null`, 12 items); CGPA 3.33 / Dean's List captured. Reproduced the current bug both ways (crash *and* silent-empty).
-- **SampleB** → captured PMP® + both Google certs, all 4 languages with proficiency; de-scrambled her location out of interleaved text; stripped the name credential.
+- **Sample A** → parses clean; flat skills round-trip (`label:null`, 12 items); CGPA 3.33 / Dean's List captured. Reproduced the current bug both ways (crash *and* silent-empty).
+- **Sample B** → captured PMP® + both Google certs, all 4 languages with proficiency; de-scrambled the location out of interleaved text; stripped the name credential.
 - `strict:true` **is** supported on OpenRouter for gpt-oss-120b. Cost ≈ **$0.0003/résumé**, ~400 reasoning tokens at `reasoningEffort: low`.
 - v2's larger output **occasionally hits maxTokens=6000** (non-deterministic on dense résumés) → raise to **8000**.
 - One prompt bug: with no explicit title line, the model stuffed the summary into `headline` → prompt must define `headline` as a short role line, null if absent.
@@ -98,7 +98,7 @@ Seniority classification stays out (judgment → match-scoring's LLM).
 
 ## Layout robustness (prompt-first ladder)
 
-1. Prompt hardening: map sections by meaning; reassemble scrambled fragments; name = person only. **(Validated sufficient for SampleB.)**
+1. Prompt hardening: map sections by meaning; reassemble scrambled fragments; name = person only. **(Validated sufficient for Sample B.)**
 2. If a scrambled résumé still fails: raise `resume-extract` reasoning-effort (one-line `models.yml`).
 3. Last resort: coordinate-based (x/y) column extraction.
 
@@ -163,4 +163,4 @@ The core thesis: **you don't enumerate résumé *types* — you normalize every 
 
 ## Verification
 
-TDD per module, gated by the **eval harness** (the anti-overfit control — a growing labeled set, not the 3 design samples). End-to-end: drive extract → scan-jobs on the three résumés (SampleA/SampleB via text, Syed via vision); update job sources for the roles present (mobile dev, PM/UX) as needed. Note the harness is the real generalization test; the end-to-end run is a smoke check, not the quality gate.
+TDD per module, gated by the **eval harness** (the anti-overfit control — a growing labeled set, not the 3 design samples). End-to-end: drive extract → scan-jobs on the three sample résumés (two via text, one via vision); update job sources for the roles present (mobile dev, PM/UX) as needed. Note the harness is the real generalization test; the end-to-end run is a smoke check, not the quality gate.

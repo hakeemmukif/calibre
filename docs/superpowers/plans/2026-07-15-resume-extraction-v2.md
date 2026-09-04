@@ -581,7 +581,7 @@ git commit -m "feat(models): resume-extract 8000+strict, tailor bump, resume-ext
 ### Wave 1 GATE (before any Wave 2 fan-out)
 
 - [ ] Full suite + typecheck + contract:check + build all green: `npx vitest run && npx tsc --noEmit && npm run contract:check && npm run build`
-- [ ] **Live smoke** (needs `OPENROUTER_API_KEY`): a throwaway `npx tsx --env-file=.env` script that runs `ingestResume`-equivalent text extraction on **SampleA** (`/Users/hakeem/Downloads/redacted-resume.pdf`) and **SampleB** (`/Users/hakeem/Downloads/REDACTED_NAME CV.pdf`) and asserts: parses clean under strict; SampleA's flat skills round-trip (`label` undefined, items non-empty); SampleB's PMP + Google certs land in `certifications`, 4 languages in `languages`, name has no trailing credential. Do NOT commit the script.
+- [ ] **Live smoke** (needs `OPENROUTER_API_KEY`): a throwaway `npx tsx --env-file=.env` script that runs `ingestResume`-equivalent text extraction on two local sample PDFs (a mobile-developer resume and a PM/UX resume with a credential suffix) and asserts: parses clean under strict; the mobile resume's flat skills round-trip (`label` undefined, items non-empty); the PM/UX resume's certs land in `certifications`, 4 languages in `languages`, name has no trailing credential. Do NOT commit the script.
 
 Only proceed to Wave 2 once the gate passes.
 
@@ -705,7 +705,7 @@ Disjoint files; dispatch concurrently. Each task is TDD, medium effort, small su
 
 ### Task 14: End-to-end smoke (the eval harness is the real gate)
 
-- [ ] Use the `verify` project skill to drive the app: extract all 3 résumés (SampleA/SampleB via text, **Syed via vision**) → scan jobs → update job **sources** for the roles present (mobile dev, PM/UX) if the current sources don't cover them. This is a smoke check; the eval harness (Task 9) is the quality gate.
+- [ ] Use the `verify` project skill to drive the app: extract all 3 sample résumés (two via text, **one via vision**) → scan jobs → update job **sources** for the roles present (mobile dev, PM/UX) if the current sources don't cover them. This is a smoke check; the eval harness (Task 9) is the quality gate.
 
 ---
 

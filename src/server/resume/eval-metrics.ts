@@ -7,7 +7,7 @@ import type { ResumeStore } from "./resume-store";
 // The extractor de-scrambles two-column layouts and strips trailing
 // credentials (resume-extract.md's "Field-specific rules"), so an extracted
 // value is often NOT an exact substring of rawText even when it is faithful
-// — e.g. name "REDACTED_NAME" vs rawText "REDACTED_NAME, PMP". Token-level
+// — e.g. name "Tan Mei Ling" vs rawText "TAN MEI LING, PMP". Token-level
 // matching (every significant token of `needle` present in `haystack`,
 // case/punctuation-insensitive) is what actually distinguishes a faithful
 // de-scramble from a hallucination.
@@ -228,8 +228,8 @@ export function scoreGolden(expected: ExpectedGolden, store: ResumeStore, rawTex
 
 // Calibrated 2026-07-15 against a live `npm run eval:resume` run over the
 // 5-golden set (gpt-oss-120b, resume-extract, strict). Observed per-golden
-// aggregates: sample-a 0.875, fresh-grad 1.0, single-column 0.917,
-// table-heavy 1.0, sample-b clean — mean ~0.94. BASELINE sits near the observed
+// aggregates: mobile-dev-monthly-dates 0.875, fresh-grad 1.0, single-column 0.917,
+// table-heavy 1.0, credential-suffix clean — mean ~0.94. BASELINE sits near the observed
 // mean; EPSILON is the tolerated regression (nondeterminism headroom) before
 // the suite fails: threshold = BASELINE - EPSILON = 0.85. The growth rule
 // (every prod failure joins the golden set) and future runs refine these.
